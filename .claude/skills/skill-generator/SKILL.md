@@ -1,67 +1,51 @@
 ---
 name: skill-generator
-description: Break down tasks into steps and generate sub-skills based on user profile. Use this when: (1) Commander creates a new task, (2) User requests task breakdown, (3) A complex task needs to be decomposed into executable sub-skills.
+description: 根据用户任务和画像，将任务拆解为步骤并生成子技能。使用场景：(1) 指挥官创建新任务时调用，(2) 用户请求任务拆解时使用，(3) 复杂任务需要分解时使用。
 ---
 
-# Skill Generator
+# 技能生成器
 
-Break down tasks into executable sub-skills, customized based on user profile.
+将用户任务拆解为可执行的子技能，每个步骤生成独立的技能。
 
-## When to Use
+## 处理流程
 
-- **Task creation**: When `/k start` creates a new task
-- **Task breakdown**: Decompose complex tasks into 2-10 steps
-- **Sub-skill generation**: Create individual skills for each step
+1. 读取用户画像 `.info/usr.json`
+2. 分配任务编号（k01, k02, ...）
+3. 分析任务类型，详见 [任务类型](references/task-types.md)
+4. 拆解为 2-10 个步骤
+5. 为每个步骤生成子技能
+6. 创建 `results/k01/` 目录和文件
+7. 更新 `.info/tasks.json`
 
-## Process
+## 子技能命名
 
-1. Read user profile from `.info/usr.json`
-2. Assign task ID (k01, k02, ...)
-3. Analyze task type (web/cli/api/tool/config)
-4. Break down into steps (2-10 steps)
-5. Generate sub-skill for each step
-6. Create `results/k01/` with plan files
-7. Update `.info/tasks.json`
+详见 [命名规范](references/naming-conventions.md)：
 
-## Sub-skill Naming
+| 类型 | 模式 | 示例 |
+|------|------|------|
+| 初始化 | `k[任务]_init_[项目]` | k01_init_project |
+| 配置 | `k[任务]_config_[功能]` | k01_config_mdx |
+| 创建 | `k[任务]_create_[组件]` | k01_create_layout |
+| 实现 | `k[任务]_[功能]` | k01_article_list |
+| 修复 | `k[任务]_fix_[问题]` | k01_fix_routing |
 
-| Type | Pattern | Example |
-|------|---------|---------|
-| Initialize | `k[task]_init_[project]` | k01_init_project |
-| Configure | `k[task]_config_[feature]` | k01_config_mdx |
-| Create | `k[task]_create_[component]` | k01_create_layout |
-| Implement | `k[task]_[feature]` | k01_article_list |
-| Fix | `k[task]_fix_[issue]` | k01_fix_routing |
-| Test | `k[task]_test_[module]` | k01_test_api |
-
-## Output Files
-
-For each task `k01`:
+## 输出结构
 
 ```
 .claude/skills/
 ├── k01_init_project/SKILL.md
 ├── k01_config_mdx/SKILL.md
-└── ...
+└── k01_create_layout/SKILL.md
 
 results/k01/
-├── README.md       # Task overview
-├── plan.md         # Task plan
-├── execution.md    # Execution log
-├── notes.md        # Notes
-└── artifacts/      # Generated files
+├── README.md        # 任务总览
+├── plan.md          # 任务计划
+├── execution.md     # 执行记录
+├── notes.md         # 笔记
+└── artifacts/       # 生成的文件
 ```
 
-## Customization
-
-Generated sub-skills are tailored based on user profile:
-
-- **tech_stack.primary_languages** → Use familiar languages
-- **preferences.code_style** → Follow naming/formatting conventions
-- **preferences.response_format** → Adapt communication style
-- **goals.pain_points** → Avoid known problem areas
-
-## tasks.json Structure
+## tasks.json 结构
 
 ```json
 {
@@ -80,9 +64,23 @@ Generated sub-skills are tailored based on user profile:
 }
 ```
 
-## Error Handling
+## 基于画像的定制
 
-- If user profile doesn't exist: Prompt to run `/user-profile`
-- If steps < 2: Task too simple, consider direct execution
-- If steps > 10: Task too complex, suggest splitting
-- If user cancels: Restore tasks.json next_id
+生成的子技能会根据用户画像定制：
+
+| 画像字段 | 用途 |
+|---------|------|
+| `tech_stack.primary_languages` | 使用熟悉的编程语言 |
+| `preferences.code_style` | 遵循命名和格式规范 |
+| `preferences.response_format` | 适配代码优先/解释优先 |
+| `behavioral_patterns.work_style` | 采用迭代式/规划式开发 |
+| `goals.pain_points` | 避开已知的技术难点 |
+
+## 错误处理
+
+| 场景 | 处理方式 |
+|------|---------|
+| 用户画像不存在 | 提示运行 `/user-profile` |
+| 步骤少于 2 个 | 任务过于简单，可直接执行 |
+| 步骤多于 10 个 | 任务过于复杂，建议拆分为多个任务 |
+| 用户取消生成 | 恢复 tasks.json 的 next_id |

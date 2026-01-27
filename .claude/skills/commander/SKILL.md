@@ -1,129 +1,65 @@
 ---
 name: commander
-description: Main entry point for task management. Use this to: (1) Start new tasks with /k start, (2) Check global status with /k status, (3) View task progress, (4) Continue execution, (5) Manage task lifecycle. Automatically checks profile freshness before starting tasks.
+description: 任务管理主入口。用于：(1) 使用 /k start 启动新任务，(2) 使用 /k status 查看全局状态，(3) 查看任务进度，(4) 继续执行任务，(5) 管理任务生命周期。启动任务前会自动检查用户画像新鲜度。
 ---
 
 # Commander
 
-Main entry point for task management. Coordinates the entire system workflow.
+任务管理系统的主入口，协调整个工作流程。
 
-## Commands
+## 命令
 
-### `/k start [task description]`
+| 命令 | 功能 |
+|-----|------|
+| `/k start [描述]` | 启动新任务 |
+| `/k status` | 显示全局状态 |
+| `/k progress k01` | 显示任务详细进度 |
+| `/k list` | 列出所有任务 |
+| `/k results k01` | 显示任务结果文件 |
+| `/k continue k01` | 继续执行下一步 |
+| `/k complete k01` | 标记任务完成 |
+| `/k archive k01` | 归档已完成任务 |
 
-Start a new task.
+详见 [命令详细说明](references/commands.md)
 
-**Pre-check**: Verifies user profile freshness before proceeding.
+## 用户画像检查
 
-**Process**:
-1. Check `.info/usr.json` exists
-2. Scan `info/` directory for new/modified files
-3. If profile outdated → prompt to run `/user-profile`
-4. Assign task ID (k01, k02, ...)
-5. Call skill-generator to break down task
-6. Show plan and wait for confirmation
-7. Generate sub-skills
-8. Create `results/k01/` directory
-9. Update `.info/tasks.json`
+启动任务前自动检查 `info/` 目录是否有新文件，提示更新画像。
 
-### `/k status`
+详见 [画像检查流程](references/profile-check.md)
 
-Display global status overview.
+## 目录管理
 
-```
-═══════════════════════════════════════════════════════
-全局状态
-═══════════════════════════════════════════════════════
-
-用户画像: ✓ 已生成 (更新时间: 2026-01-27 14:30)
-
-任务统计:
-  总任务数: 3
-  进行中:   2
-  已完成:   1
-
-任务列表:
-  k01  搭建 Next.js 博客      [████░░] 3/5  进行中
-  k02  文章搜索功能           [██░░░░] 1/4  进行中
-  k03  用户认证系统           [█████] 5/5  已完成
-
-═══════════════════════════════════════════════════════
-```
-
-### `/k progress k01`
-
-Show detailed progress for a specific task.
-
-### `/k list`
-
-List all tasks with brief status.
-
-### `/k results k01`
-
-Show task results and files in `results/k01/`.
-
-### `/k continue k01`
-
-Continue to next step of the task.
-
-### `/k complete k01`
-
-Mark task as completed.
-
-### `/k archive k01`
-
-Archive completed task to `results/archived/`.
-
-## Profile Freshness Check
-
-Before starting any task, Commander performs:
-
-```python
-# 1. Check profile exists
-if not exists(".info/usr.json"):
-    prompt "请先运行 /user-profile 生成用户画像"
-
-# 2. Get profile timestamp
-profile_time = usr.json.metadata.generated_at
-
-# 3. Scan info/ directory
-info_files = glob("info/*")
-info_timestamps = [get_mtime(f) for f in info_files]
-
-# 4. Compare timestamps
-if any(f > profile_time for f in info_timestamps):
-    prompt f"检测到 info/ 目录有新文件，建议运行 /user-profile 更新画像"
-    prompt "是否现在更新？[y/n]"
-```
-
-## Directory Management
-
-### results/ Structure
+每个任务在 `results/k01/` 下创建独立目录：
 
 ```
-results/
-├── k01/
-│   ├── README.md        # Task overview
-│   ├── plan.md          # Task plan
-│   ├── execution.md     # Execution log
-│   ├── notes.md         # Notes
-│   └── artifacts/       # Generated files
-└── archived/            # Archived tasks
+results/k01/
+├── README.md       # 任务总览
+├── plan.md         # 任务计划
+├── execution.md    # 执行记录
+├── notes.md        # 笔记
+└── artifacts/      # 生成的文件
 ```
 
-## Task States
+详见 [目录管理](references/directory-management.md)
 
-| State | Description |
-|-------|-------------|
-| `active` | Currently in progress |
-| `completed` | All steps finished |
-| `archived` | Moved to archived/ |
+## 任务状态
 
-## Error Handling
+| 状态 | 说明 |
+|-----|------|
+| `active` | 进行中 |
+| `completed` | 已完成 |
+| `archived` | 已归档 |
 
-| Scenario | Action |
-|----------|--------|
-| Profile missing | Prompt `/user-profile` |
-| Profile outdated | Prompt to update, show new files |
-| tasks.json corrupt | Rebuild with default structure |
-| Task ID conflict | Auto-increment next_id |
+详见 [状态管理](references/task-states.md)
+
+## 错误处理
+
+| 场景 | 处理方式 |
+|-----|---------|
+| 画像缺失 | 提示运行 `/user-profile` |
+| 画像过期 | 提示更新，显示新文件 |
+| tasks.json 损坏 | 重建默认结构 |
+| 任务 ID 冲突 | 自动递增 next_id |
+
+详见 [错误处理](references/error-handling.md)

@@ -1,46 +1,41 @@
 ---
 name: user-profile
-description: Analyze user files in info/ directory and generate structured user profile. Use this when: (1) Initial setup to create user profile, (2) User modified info/ files and needs to refresh profile, (3) Commander detects outdated profile.
+description: 分析 info/ 目录下的用户文件，生成结构化用户画像。使用场景：(1) 首次使用时创建画像，(2) 修改 info/ 文件后刷新画像，(3) 指挥官检测到画像过期时自动触发。
 ---
 
-# User Profile Generator
+# 用户画像生成
 
-Generate a structured user profile from files in the `info/` directory.
+分析 `info/` 目录中的用户文件，生成结构化用户画像。
 
-## When to Use
+## 支持的文件格式
 
-- **Initial setup**: First time running the system
-- **Profile update**: After modifying files in `info/`
-- **Commander trigger**: Automatically triggered when profile is outdated
+| 格式 | 用途 | 详情 |
+|------|------|------|
+| `.md` | 个人自述、文档 | 详见 [文件格式说明](references/) |
+| `.json` | 结构化配置 | 详见 [文件格式说明](references/) |
+| `.pdf` | 简历、文档 | 详见 [文件格式说明](references/) |
+| `.txt` | 笔记、随笔 | 详见 [文件格式说明](references/) |
 
-## Supported File Formats
+## 画像结构
 
-| Format | Usage |
-|--------|--------|
-| `.md` | Personal bio, documentation |
-| `.json` | Structured configuration |
-| `.pdf` | Resume, documentation (use Read tool) |
-| `.txt` | Notes, thoughts |
+用户画像包含以下维度，详见 [维度详细说明](references/dimensions.md)：
 
-## Profile Structure
+- **basic_info**: 姓名、角色、经验等级
+- **tech_stack**: 语言、框架、工具
+- **preferences**: 代码风格、沟通方式
+- **behavioral_patterns**: 工作风格、协作偏好
+- **goals**: 当前焦点、痛点、志向
+- **metadata**: 版本、时间戳、源文件
 
-The generated `.info/usr.json` contains:
+## 处理流程
 
-- **basic_info**: Name, role, experience level
-- **tech_stack**: Languages, frameworks, tools
-- **preferences**: Code style, communication style
-- **behavioral_patterns**: Work style, collaboration
-- **goals**: Current focus, pain points, aspirations
-- **metadata**: Version, timestamps, source files
+1. 扫描 `info/` 目录所有文件
+2. 按类型提取信息，详见 [提取规则](references/extraction-rules.md)
+3. 合并多源信息
+4. 生成结构化 JSON
+5. 保存到 `.info/usr.json`
 
-## Process
-
-1. Scan all files in `info/`
-2. Extract and merge information from multiple sources
-3. Generate structured JSON profile
-4. Save to `.info/usr.json`
-
-## Output Format
+## 输出示例
 
 ```json
 {
@@ -52,13 +47,18 @@ The generated `.info/usr.json` contains:
   "metadata": {
     "version": "1.0.0",
     "generated_at": "2026-01-27T16:00:00Z",
-    "source_files": ["info/bio.md", "info/skills.md", ...]
+    "last_checked_at": "2026-01-27T16:00:00Z",
+    "source_files": ["info/bio.md", ...],
+    "source_mtimes": {},
+    "confidence": "high"
   }
 }
 ```
 
-## Error Handling
+## 错误处理
 
-- If `info/` is empty: Prompt user to add files
-- If profile exists: Merge updates rather than overwrite
-- Conflict resolution: Prefer latest modified file
+| 场景 | 处理方式 |
+|------|---------|
+| `info/` 为空 | 提示用户添加文件 |
+| 画像已存在 | 合并更新而非覆盖 |
+| 冲突处理 | 优先使用最新修改的文件 |
