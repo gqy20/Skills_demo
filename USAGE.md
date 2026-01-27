@@ -7,7 +7,18 @@
 ```
 用户信息 (info/) → 用户画像 (.info/usr.json)
                                   ↓
-任务输入 (/new-skill) → 定制化 Skill (.claude/skills/k01_article_search/)
+任务输入 (/new-skill) → 任务拆解 → 子技能生成 (k01_xxx, k01_yyy, ...)
+```
+
+**核心概念**: 一个任务 = 多个子技能
+
+```
+任务 k01 (搭建 Next.js 博客)
+    ├─ k01_init_project     (初始化项目)
+    ├─ k01_config_mdx        (配置 MDX)
+    ├─ k01_create_layout     (创建布局)
+    ├─ k01_article_list      (文章列表页)
+    └─ k01_article_detail    (文章详情页)
 ```
 
 ## 核心概念
@@ -20,19 +31,28 @@
 - **行为模式**: 工作风格、协作偏好
 - **目标痛点**: 学习方向、常见问题
 
-### 2. 任务编号 (Task ID)
-每个任务自动分配唯一编号：`k01`, `k02`, `k03`...
-- 便于管理和追溯
-- 自动递增，无需手动指定
+### 2. 任务与子技能
 
-### 3. 技能生成 (Skill Generation)
-根据任务 + 用户画像，生成定制化的 Skill：
-- 使用用户熟悉的技术栈
-- 遵循用户的代码风格
-- 适配用户的工作习惯
-- 避开用户的已知痛点
+| 层级 | 说明 | 示例 |
+|------|------|------|
+| **任务** | 一个完整的项目或功能 | k01: 搭建 Next.js 博客 |
+| **子技能** | 任务中的一个执行步骤 | k01_init_project |
 
-**命名格式**: `k01_task_name`（编号_任务描述）
+- 每个任务分配唯一编号：`k01`, `k02`, `k03`...
+- 一个任务拆解为 2-10 个步骤
+- 每个步骤生成一个独立的子技能
+
+### 3. 技能生成流程
+
+```
+1. 读取用户画像
+2. 分配任务编号 (k01)
+3. 拆解任务为步骤
+4. 为每步规划 Skill 内容
+5. 展示计划并确认
+6. 批量生成子技能
+7. 更新文档
+```
 
 ## 目录结构
 
@@ -43,8 +63,10 @@
 │   └── skills/
 │       ├── user-profile/       # 用户画像生成技能
 │       ├── skill-generator/    # 技能生成器
-│       ├── k01_nextjs_blog/    # 生成的技能
-│       └── k02_article_search/ # 生成的技能
+│       ├── k01_init_project/   # k01 任务的子技能
+│       ├── k01_config_mdx/     # k01 任务的子技能
+│       ├── k01_create_layout/  # k01 任务的子技能
+│       └── k02_xxx/            # k02 任务的子技能
 ├── .info/
 │   ├── usr.json                # 用户画像
 │   ├── usr.json.template       # 画像模板
@@ -77,7 +99,7 @@ info/
 
 系统将分析所有文件，生成 `.info/usr.json`。
 
-### 第二步：为任务生成 Skill
+### 第二步：创建任务并生成子技能
 
 当有新任务时，使用：
 ```
@@ -87,96 +109,92 @@ info/
 例如：
 ```
 /new-skill 搭建 Next.js 博客
-/new-skill 文章搜索功能
-/new-skill Git 工作流自动化
+/new-skill 实现用户认证系统
+/new-skill 编写 API 接口
 ```
 
-系统会：
-1. 读取用户画像
-2. 分配任务编号（如 k01）
-3. 从描述中提取关键词生成标识符（如 `k01_nextjs_blog`）
-4. 生成定制化的 Skill
-5. 保存到 `.claude/skills/k01_nextjs_blog/SKILL.md`
+### 第三步：确认计划并生成
 
-### 第三步：使用生成的 Skill
+系统会展示生成计划：
 
-生成的 Skill 可以直接使用：
 ```
-/k01_nextjs_blog
-```
+═══════════════════════════════════════════════════════
+任务: 搭建 Next.js 博客
+编号: k01
+类型: web 开发
+═══════════════════════════════════════════════════════
 
-## 命名规则
+将生成 5 个子技能:
 
-| 任务描述 | 生成的 Skill 目录 |
-|---------|------------------|
-| 搭建 Next.js 博客 | `k01_nextjs_blog` |
-| 文章搜索功能 | `k02_article_search` |
-| Git 工作流自动化 | `k03_git_automation` |
-| TypeScript CLI 工具 | `k04_ts_cli_tool` |
+1. k01_init_project     - 初始化 Next.js 项目
+2. k01_config_mdx        - 配置 MDX 支持
+3. k01_create_layout     - 创建基础布局组件
+4. k01_article_list      - 实现文章列表页
+5. k01_article_detail    - 实现文章详情页
 
-命名格式：`k[编号]_[关键词]`
-- 编号自动递增
-- 使用英文小写
-- 用下划线连接
+技术栈: TypeScript, Next.js, TailwindCSS (基于你的画像)
 
-## 完整示例
-
-### 场景：搭建博客
-
-```bash
-# 1. 准备用户信息（已配置）
-
-# 2. 生成用户画像
-/user-profile
-# → 生成 .info/usr.json
-
-# 3. 为博客任务生成 Skill
-/new-skill 搭建 Next.js 博客
-# → 生成 .claude/skills/k01_nextjs_blog/SKILL.md
-# → 更新 .info/tasks.json
-
-# 4. 使用生成的 Skill
-/k01_nextjs_blog
-# → 获得定制化的开发指导
+是否继续生成?
+[确认] [调整] [取消]
 ```
 
-### 生成结果
+### 第四步：使用子技能
 
-`.claude/skills/k01_nextjs_blog/SKILL.md` 会包含：
-- 使用 TypeScript（你熟悉的语言）
-- 迭代式开发步骤（符合你的工作风格）
-- 代码优先响应（你的偏好）
-- 注意类型推导问题（避开你的痛点）
+确认后，系统批量生成子技能，然后可以逐个使用：
+
+```
+/k01_init_project     # 执行步骤 1
+/k01_config_mdx        # 执行步骤 2
+/k01_create_layout     # 执行步骤 3
+...
+```
+
+## 子技能命名规范
+
+| 步骤类型 | 命名模式 | 示例 |
+|---------|---------|------|
+| 初始化 | `k[任务]_init_[项目]` | k01_init_project |
+| 配置 | `k[任务]_config_[功能]` | k01_config_mdx |
+| 创建 | `k[任务]_create_[组件]` | k01_create_layout |
+| 实现 | `k[任务]_[feature]` | k01_article_list |
+| 修复 | `k[任务]_fix_[问题]` | k01_fix_routing |
+| 测试 | `k[任务]_test_[模块]` | k01_test_api |
 
 ## tasks.json 结构
 
 ```json
 {
-  "next_id": 3,
+  "next_id": 2,
   "tasks": {
-    "k01_nextjs_blog": {
-      "id": "k01_nextjs_blog",
+    "k01": {
+      "id": "k01",
       "name": "搭建 Next.js 博客",
-      "description": "基于 Next.js 的个人博客系统",
-      "created_at": "2026-01-27T15:00:00Z"
-    },
-    "k02_article_search": {
-      "id": "k02_article_search",
-      "name": "文章搜索功能",
-      "description": "实现全文搜索功能",
-      "created_at": "2026-01-27T15:10:00Z"
+      "type": "web",
+      "status": "active",
+      "steps": [
+        "k01_init_project",
+        "k01_config_mdx",
+        "k01_create_layout",
+        "k01_article_list",
+        "k01_article_detail"
+      ],
+      "created_at": "2026-01-27T16:00:00Z"
     }
   }
 }
 ```
+
+## 已生成任务
+
+*(此部分会在生成第一个任务后自动更新)*
 
 ## 常用命令
 
 | 命令 | 功能 |
 |------|------|
 | `/user-profile` | 重新生成用户画像 |
-| `/new-skill [任务]` | 为任务生成定制化 Skill |
-| `/k[编号]_[名称]` | 使用生成的 Skill |
+| `/new-skill [任务]` | 创建任务并生成子技能 |
+| `/k[任务]_[步骤]` | 使用指定的子技能 |
 
 ## 文件格式支持
 
@@ -194,15 +212,24 @@ info/
 ### 更新用户画像
 修改 `info/` 下的文件后，运行 `/user-profile` 重新生成。
 
-### 查看所有 Skill
-`ls .claude/skills/` 查看所有生成的技能。
+### 查看所有子技能
+`ls .claude/skills/` 查看所有生成的子技能。
 
-### 删除 Skill
-删除对应的 `.claude/skills/k[编号]_[名称]/` 目录即可。
+### 删除任务
+删除任务对应的所有子技能目录即可：
+```bash
+rm -rf .claude/skills/k01_*
+```
+
+### 任务状态
+在 `tasks.json` 中修改 `status` 字段：
+- `active`: 进行中
+- `completed`: 已完成
+- `archived`: 已归档
 
 ## 设计理念
 
+- **任务驱动**: 以任务为中心，拆解为可执行的子技能
 - **简单优先**: 核心流程清晰，不引入过多抽象
-- **增量迭代**: 先可用，再完善
+- **增量迭代**: 每个子技能完成一步，逐步推进
 - **以人为本**: 围绕用户画像定制 AI 行为
-- **可扩展**: 易于添加新的 Skills 和功能
