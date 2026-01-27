@@ -7,7 +7,7 @@
 ```
 用户信息 (info/) → 用户画像 (.info/usr.json)
                                   ↓
-/k start [任务] → 任务拆解 → 子技能生成 (k01_init, k01_config, ...)
+/commander start [任务] → 任务拆解 → 子技能生成 (k01_init, k01_config, ...)
                                   ↓
                         逐步执行 → 结果记录 (results/k01/)
 ```
@@ -29,14 +29,14 @@
 
 | 命令 | 说明 |
 |------|------|
-| `/k start [任务]` | 启动新任务 |
-| `/k status` | 全局状态视图 |
-| `/k progress k01` | 任务详细进度 |
-| `/k list` | 列出所有任务 |
-| `/k results k01` | 查看任务结果 |
-| `/k continue k01` | 继续执行下一步 |
-| `/k complete k01` | 标记任务完成 |
-| `/k archive k01` | 归档任务 |
+| `/commander start [任务]` | 启动新任务 |
+| `/commander status` | 全局状态视图 |
+| `/commander progress k01` | 任务详细进度 |
+| `/commander list` | 列出所有任务 |
+| `/commander results k01` | 查看任务结果 |
+| `/commander continue k01` | 继续执行下一步 |
+| `/commander complete k01` | 标记任务完成 |
+| `/commander archive k01` | 归档任务 |
 
 ### 其他命令
 
@@ -69,7 +69,7 @@ info/
 ### 第二步：启动任务
 
 ```
-/k start 搭建 Next.js 博客
+/commander start 搭建 Next.js 博客
 ```
 
 指挥官会：
@@ -89,13 +89,13 @@ info/
 
 或使用：
 ```
-/k continue k01       # 自动执行下一步
+/commander continue k01       # 自动执行下一步
 ```
 
 ### 第四步：查看结果
 
 ```
-/k results k01        # 查看任务结果
+/commander results k01        # 查看任务结果
 ```
 
 结果保存在 `results/k01/`：
@@ -202,7 +202,7 @@ results/                     # 任务结果
 /user-profile
 
 # 3. 启动任务
-/k start 搭建 Next.js 博客
+/commander start 搭建 Next.js 博客
 
 # 系统展示计划，确认后生成子技能
 
@@ -210,13 +210,13 @@ results/                     # 任务结果
 /k01_init_project
 
 # 5. 查看进度
-/k progress k01
+/commander progress k01
 
 # 6. 继续下一步
-/k continue k01
+/commander continue k01
 
 # 7. 查看结果
-/k results k01
+/commander results k01
 ```
 
 ## 文件格式支持

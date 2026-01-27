@@ -1,6 +1,6 @@
 # 命令详细说明
 
-## `/k start [任务描述]`
+## `/commander start [任务描述]`
 
 启动新任务。
 
@@ -53,7 +53,7 @@
 是否确认创建此任务？[y/n]
 ```
 
-## `/k status`
+## `/commander status`
 
 显示全局状态概览。
 
@@ -84,7 +84,7 @@
 - 用户画像状态：检查 `.info/usr.json` 存在性及时间戳
 - 任务统计：统计 `.info/tasks.json` 中的任务状态
 
-## `/k progress k01`
+## `/commander progress k01`
 
 显示特定任务的详细进度。
 
@@ -126,7 +126,7 @@ k01 任务进度
 ═══════════════════════════════════════════════════════
 ```
 
-## `/k list`
+## `/commander list`
 
 列出所有任务及其简要状态。
 
@@ -139,7 +139,7 @@ k02   文章搜索功能          进行中    1/4
 k03   用户认证系统          已完成    5/5
 ```
 
-## `/k results k01`
+## `/commander results k01`
 
 显示任务结果文件。
 
@@ -162,7 +162,7 @@ results/k01/
 查看哪个文件？[文件名 / skip]
 ```
 
-## `/k continue k01`
+## `/commander continue k01`
 
 继续执行任务的下一步。
 
@@ -174,7 +174,7 @@ results/k01/
 4. 更新 current_step
 5. 更新 execution.md
 
-## `/k complete k01`
+## `/commander complete k01`
 
 手动标记任务为已完成。
 
@@ -184,7 +184,7 @@ results/k01/
 2. 在 results/k01/README.md 添加完成时间
 3. 提示是否归档
 
-## `/k archive k01`
+## `/commander archive k01`
 
 归档已完成任务。
 

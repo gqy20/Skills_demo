@@ -11,7 +11,7 @@
 ### 工作流程
 
 1. **建立画像** - 在 `info/` 目录添加个人信息，运行 `/user-profile`
-2. **启动任务** - 使用 `/k start [任务描述]` 创建新任务
+2. **启动任务** - 使用 `/commander start [任务描述]` 创建新任务
 3. **执行步骤** - 逐个使用生成的子技能完成每一步
 4. **查看结果** - 在 `results/k01/` 查看执行过程和产出文件
 
@@ -23,14 +23,14 @@
 /user-profile
 
 # 3. 启动任务
-/k start 搭建 Next.js 博客
+/commander start 搭建 Next.js 博客
 
 # 4. 执行第一步
 /k01_init_project
 
 # 5. 查看进度
-/k status
-/k progress k01
+/commander status
+/commander progress k01
 ```
 
 ## 目录结构
@@ -57,9 +57,9 @@ results/           # 任务结果（执行过程文件）
 | 命令 | 说明 |
 |------|------|
 | `/user-profile` | 生成用户画像 |
-| `/k start [任务]` | 启动新任务 |
-| `/k status` | 全局状态 |
-| `/k progress k01` | 任务进度 |
+| `/commander start [任务]` | 启动新任务 |
+| `/commander status` | 全局状态 |
+| `/commander progress k01` | 任务进度 |
 | `/k01_init_project` | 执行子技能 |
 
 ## 设计理念

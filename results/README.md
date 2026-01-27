@@ -57,7 +57,7 @@ results/
 
 ```bash
 # 查看任务结果
-/k results k01
+/commander results k01
 
 # 直接打开文件
 cat results/k01/README.md
@@ -66,4 +66,4 @@ cat results/k01/plan.md
 
 ## 归档
 
-任务完成后，使用 `/k archive k01` 归档到 `results/archived/`。
+任务完成后，使用 `/commander archive k01` 归档到 `results/archived/`。
