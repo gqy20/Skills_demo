@@ -1,0 +1,66 @@
+{
+  "basic_info": {
+    "name": "林远",
+    "role": "全栈开发者",
+    "domain": "fullstack/ai-tools/developer-experience",
+    "experience_level": "senior",
+    "background": "6年软件开发经验，曾任职于科技公司负责内部工具平台开发"
+  },
+  "tech_stack": {
+    "primary_languages": ["TypeScript", "Python", "Rust", "Go"],
+    "frameworks": ["React", "Next.js", "Fastify", "Hono", "FastAPI", "TailwindCSS"],
+    "ai_tools": ["LangChain", "OpenAI API"],
+    "tools": ["Git", "Docker", "Kubernetes", "NeoVim", "tmux"],
+    "expertise": ["AI Agent 系统", "开发者工具", "开源项目维护"]
+  },
+  "preferences": {
+    "code_style": {
+      "naming": "camelCase for JS/TS, snake_case for Python",
+      "formatting": "Prettier + ESLint",
+      "comments": "只注释复杂逻辑，简单代码不言自明"
+    },
+    "communication_style": "简洁直接，不喜欢过多寒暄",
+    "response_format": "先给代码，再解释关键点",
+    "learning_style": "动手实践为主，文档为辅",
+    "editor": "NeoVim (重度用户)"
+  },
+  "behavioral_patterns": {
+    "work_style": "迭代式开发，先快速验证想法再逐步完善",
+    "time_preference": "夜间工作效率高",
+    "task_management": "使用 GitHub Issues 跟踪",
+    "collaboration": "喜欢异步协作，减少会议",
+    "philosophy": "不追求完美，但求可用"
+  },
+  "goals": {
+    "current_focus": "AI Agent 开发、开发者体验优化、系统编程",
+    "learning_goals": ["Rust 深入学习", "AI Agent 编程范式", "eBPF 和系统级编程"],
+    "pain_points": [
+      "TypeScript 复杂类型推导",
+      "异步编程 (callback/promise/async-await 混用)",
+      "系统性能调试"
+    ],
+    "aspirations": "成为 AI 时代的开发者工具专家，帮助更多开发者提升效率"
+  },
+  "tags": [
+    "fullstack",
+    "typescript",
+    "python",
+    "rust",
+    "ai-agent",
+    "developer-tools",
+    "neovim",
+    "devex",
+    "opensource"
+  ],
+  "metadata": {
+    "version": "1.0.0",
+    "generated_at": "2026-01-27T14:37:00Z",
+    "source_files": [
+      "info/bio.md",
+      "info/skills.md",
+      "info/preferences.json",
+      "info/goals.md"
+    ],
+    "confidence": "high"
+  }
+}

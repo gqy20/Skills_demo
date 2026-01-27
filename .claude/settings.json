@@ -1,0 +1,23 @@
+{
+  "env": {
+    "ANTHROPIC_MODEL": "glm-4.7",
+    "ANTHROPIC_SMALL_FAST_MODEL": "glm-4.7"
+  },
+  "permissions": {
+    "allow": [
+      "Read",
+      "Write",
+      "Edit",
+      "MultiEdit",
+      "Bash",
+      "WebSearch",
+      "WebFetch"
+    ],
+    "deny": [
+      "Bash(sudo:*)",
+      "Read(*/secrets/*)",
+      "Write(.env*)"
+    ]
+  },
+  "enableAllProjectMcpServers": true
+}

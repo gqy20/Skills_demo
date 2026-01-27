@@ -1,0 +1,41 @@
+{
+  "basic_info": {
+    "name": null,
+    "role": null,
+    "domain": null,
+    "location": null,
+    "experience_level": null
+  },
+  "tech_stack": {
+    "primary_languages": [],
+    "frameworks": [],
+    "databases": [],
+    "tools": [],
+    "platforms": []
+  },
+  "preferences": {
+    "code_style": null,
+    "communication_style": null,
+    "learning_style": null,
+    "response_format": null
+  },
+  "behavioral_patterns": {
+    "work_style": null,
+    "problem_solving": null,
+    "collaboration": null,
+    "time_management": null
+  },
+  "goals": {
+    "current_focus": null,
+    "learning_goals": [],
+    "pain_points": [],
+    "aspirations": null
+  },
+  "metadata": {
+    "version": "1.0.0",
+    "generated_at": null,
+    "updated_at": null,
+    "source_files": [],
+    "confidence": "high"
+  }
+}
