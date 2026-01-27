@@ -55,12 +55,21 @@
   "metadata": {
     "version": "1.0.0",
     "generated_at": "2026-01-27T14:37:00Z",
+    "last_checked_at": "2026-01-27T14:37:00Z",
     "source_files": [
+      "info/README.md",
       "info/bio.md",
       "info/skills.md",
       "info/preferences.json",
       "info/goals.md"
     ],
+    "source_mtimes": {
+      "info/README.md": 1769525813,
+      "info/bio.md": 1769525813,
+      "info/skills.md": 1769525813,
+      "info/preferences.json": 1769525813,
+      "info/goals.md": 1769525813
+    },
     "confidence": "high"
   }
 }

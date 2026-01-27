@@ -1,270 +1,129 @@
-# 指挥官 (Commander)
-
-协调整个系统的核心技能，负责任务的全生命周期管理。
-
-## 职责
-
-- 检查用户画像状态
-- 启动新任务并协调生成
-- 跟踪任务执行进度
-- 管理 results/ 结果文件
-- 提供全局状态视图
-
+---
+name: commander
+description: Main entry point for task management. Use this to: (1) Start new tasks with /k start, (2) Check global status with /k status, (3) View task progress, (4) Continue execution, (5) Manage task lifecycle. Automatically checks profile freshness before starting tasks.
 ---
 
-## 命令
+# Commander
 
-### /k start [任务描述]
+Main entry point for task management. Coordinates the entire system workflow.
 
-启动一个新任务。
+## Commands
 
-**流程**:
-```
-1. 检查 .info/usr.json 是否存在
-   ↓ 否 → 提示运行 /user-profile
-   ↓ 是
-2. 分配任务编号 (k01, k02, ...)
-3. 调用 skill-generator 拆解任务
-4. 展示计划，等待用户确认
-5. 创建 results/k01/
-6. 生成子技能到 .claude/skills/
-7. 保存文件到 results/k01/
-8. 更新 .info/tasks.json
-```
+### `/k start [task description]`
 
-**示例**:
-```
-/k start 搭建 Next.js 博客
-/k start 实现用户认证系统
-/k start 编写 API 接口
-```
+Start a new task.
 
----
+**Pre-check**: Verifies user profile freshness before proceeding.
 
-### /k status
+**Process**:
+1. Check `.info/usr.json` exists
+2. Scan `info/` directory for new/modified files
+3. If profile outdated → prompt to run `/user-profile`
+4. Assign task ID (k01, k02, ...)
+5. Call skill-generator to break down task
+6. Show plan and wait for confirmation
+7. Generate sub-skills
+8. Create `results/k01/` directory
+9. Update `.info/tasks.json`
 
-显示全局状态视图。
+### `/k status`
+
+Display global status overview.
 
 ```
 ═══════════════════════════════════════════════════════
 全局状态
 ═══════════════════════════════════════════════════════
 
-用户画像: ✓ 已生成 (林远 | TypeScript/Python)
-更新时间: 2026-01-27 14:30:00
+用户画像: ✓ 已生成 (更新时间: 2026-01-27 14:30)
 
 任务统计:
   总任务数: 3
   进行中:   2
   已完成:   1
-  已归档:   0
 
 任务列表:
   k01  搭建 Next.js 博客      [████░░] 3/5  进行中
   k02  文章搜索功能           [██░░░░] 1/4  进行中
   k03  用户认证系统           [█████] 5/5  已完成
 
-当前步骤: k01_create_layout
-
 ═══════════════════════════════════════════════════════
 ```
 
----
+### `/k progress k01`
 
-### /k progress k01
+Show detailed progress for a specific task.
 
-查看指定任务的详细进度。
+### `/k list`
 
-```
-═══════════════════════════════════════════════════════
-任务 k01: 搭建 Next.js 博客
-═══════════════════════════════════════════════════════
+List all tasks with brief status.
 
-状态: 进行中
-进度: [████░░] 3/5 步骤完成
-开始: 2026-01-27 16:00:00
-更新: 2026-01-27 17:30:00
+### `/k results k01`
 
-步骤:
-  ✓ 步骤 1: init_project       (16:05 - 16:08)
-  ✓ 步骤 2: config_mdx          (16:10 - 16:15)
-  ✓ 步骤 3: create_layout       (16:20 - 16:35)
-  → 步骤 4: article_list        (进行中)
-  ⏸ 步骤 5: article_detail      (待开始)
+Show task results and files in `results/k01/`.
 
-下一步: 执行 /k01/article_list
+### `/k continue k01`
 
-查看详细结果: /k results k01
-═══════════════════════════════════════════════════════
-```
+Continue to next step of the task.
 
----
+### `/k complete k01`
 
-### /k list
+Mark task as completed.
 
-列出所有任务。
+### `/k archive k01`
 
-```
-═══════════════════════════════════════════════════════
-任务列表
-═══════════════════════════════════════════════════════
+Archive completed task to `results/archived/`.
 
-k01  搭建 Next.js 博客      [████░░] 3/5  进行中
-k02  文章搜索功能           [██░░░░] 1/4  进行中
-k03  用户认证系统           [█████] 5/5  已完成
+## Profile Freshness Check
 
-使用 /k progress k01 查看详情
-═══════════════════════════════════════════════════════
+Before starting any task, Commander performs:
+
+```python
+# 1. Check profile exists
+if not exists(".info/usr.json"):
+    prompt "请先运行 /user-profile 生成用户画像"
+
+# 2. Get profile timestamp
+profile_time = usr.json.metadata.generated_at
+
+# 3. Scan info/ directory
+info_files = glob("info/*")
+info_timestamps = [get_mtime(f) for f in info_files]
+
+# 4. Compare timestamps
+if any(f > profile_time for f in info_timestamps):
+    prompt f"检测到 info/ 目录有新文件，建议运行 /user-profile 更新画像"
+    prompt "是否现在更新？[y/n]"
 ```
 
----
+## Directory Management
 
-### /k results k01
-
-查看任务结果文件。
-
-```
-results/k01/
-├── README.md        # 任务总览
-├── plan.md          # 任务计划
-├── execution.md     # 执行记录
-├── notes.md         # 备注笔记
-└── artifacts/       # 生成的文件
-    ├── next.config.js
-    └── layout.tsx
-
-要查看某个文件: /k results k01 plan.md
-```
-
----
-
-### /k continue k01
-
-继续执行任务的下一步。
-
-**流程**:
-```
-1. 读取 tasks.json，获取 k01 的当前步骤
-2. 显示当前步骤和下一步
-3. 等待用户确认
-4. 执行下一步的子技能
-5. 更新进度
-6. 保存结果到 results/k01/
-```
-
----
-
-### /k complete k01
-
-标记任务为已完成。
-
-```
-✓ 任务 k01 已标记为完成
-
-状态更新: active → completed
-results/k01/README.md 已更新
-```
-
----
-
-### /k archive k01
-
-归档任务。
-
-**流程**:
-```
-1. 标记任务状态为 archived
-2. 将 results/k01/ 移动到 results/archived/k01/
-3. 更新 tasks.json
-```
-
----
-
-## results/ 目录结构
+### results/ Structure
 
 ```
 results/
 ├── k01/
-│   ├── README.md        # 任务总览
-│   ├── plan.md          # 任务计划
-│   ├── execution.md     # 执行记录
-│   ├── notes.md         # 备注笔记
-│   └── artifacts/       # 生成的文件
-│       ├── config/      # 配置文件
-│       ├── code/        # 代码文件
-│       └── diagrams/    # 图表
-└── archived/            # 归档的任务
-    └── k00_old_task/
+│   ├── README.md        # Task overview
+│   ├── plan.md          # Task plan
+│   ├── execution.md     # Execution log
+│   ├── notes.md         # Notes
+│   └── artifacts/       # Generated files
+└── archived/            # Archived tasks
 ```
 
-## 文件格式说明
+## Task States
 
-### README.md - 任务总览
-```markdown
-# 任务 k01: 搭建 Next.js 博客
+| State | Description |
+|-------|-------------|
+| `active` | Currently in progress |
+| `completed` | All steps finished |
+| `archived` | Moved to archived/ |
 
-- 状态: 进行中
-- 进度: 3/5 步骤
-- 创建: 2026-01-27
+## Error Handling
 
-## 进度
-[████░░] 3/5
-
-## 下一步
-执行 /k01/article_list
-```
-
-### plan.md - 任务计划
-```markdown
-# 任务计划
-
-## 步骤列表
-1. init_project - 初始化项目
-2. config_mdx - 配置 MDX
-...
-```
-
-### execution.md - 执行记录
-```markdown
-# 执行记录
-
-## 步骤 1: init_project
-- 时间: 16:05 - 16:08
-- 内容: 创建项目
-- 结果: 成功
-```
-
----
-
-## 错误处理
-
-| 场景 | 处理 |
-|------|------|
-| 用户画像不存在 | 提示运行 /user-profile |
-| 任务不存在 | 提示使用 /k list 查看 |
-| results/ 创建失败 | 报告错误并终止 |
-| tasks.json 损坏 | 重建为默认格式 |
-
----
-
-## 使用示例
-
-```bash
-# 启动新任务
-/k start 搭建 Next.js 博客
-
-# 查看全局状态
-/k status
-
-# 查看任务进度
-/k progress k01
-
-# 继续执行下一步
-/k continue k01
-
-# 标记完成
-/k complete k01
-
-# 归档旧任务
-/k archive k00
-```
+| Scenario | Action |
+|----------|--------|
+| Profile missing | Prompt `/user-profile` |
+| Profile outdated | Prompt to update, show new files |
+| tasks.json corrupt | Rebuild with default structure |
+| Task ID conflict | Auto-increment next_id |

@@ -34,8 +34,9 @@
   "metadata": {
     "version": "1.0.0",
     "generated_at": null,
-    "updated_at": null,
+    "last_checked_at": null,
     "source_files": [],
+    "source_mtimes": {},
     "confidence": "high"
   }
 }
