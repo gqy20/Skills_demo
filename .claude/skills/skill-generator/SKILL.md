@@ -2,6 +2,8 @@
 
 根据用户任务和用户画像，通过**任务拆解→子技能生成**的流程，为每个步骤创建独立的 Skill。
 
+**注意**: 此技能由 `/k start` (指挥官) 调用，不应直接使用。
+
 ## 核心概念
 
 ```
@@ -21,8 +23,8 @@
 ## 核心流程
 
 ```
-用户输入任务 → 读取画像 → 分配任务编号 → 拆解步骤
-→ 为每步生成 Skill → 用户确认 → 批量生成 → 更新文档
+/k start 调用 → 读取画像 → 分配任务编号 → 拆解步骤
+→ 为每步生成 Skill → 用户确认 → 批量生成 → 创建 results/k01/ → 更新文档
 ```
 
 ---
@@ -187,10 +189,98 @@ npm install @next/mdx @mdx-js/loader @mdx-js/react
         "k01_article_list",
         "k01_article_detail"
       ],
+      "current_step": 0,
       "created_at": "2026-01-27T16:00:00Z"
     }
   }
 }
+```
+
+### 5.4 创建 results/k01/ 目录结构
+```
+results/k01/
+├── README.md        # 任务总览（自动生成）
+├── plan.md          # 任务计划（自动生成）
+├── execution.md     # 执行记录（初始化为空）
+├── notes.md         # 备注笔记（初始化为空）
+└── artifacts/       # 生成的文件目录
+    ├── config/
+    ├── code/
+    └── diagrams/
+```
+
+### 5.5 生成 results/k01/README.md
+```markdown
+# 任务 k01: 搭建 Next.js 博客
+
+## 基本信息
+- **编号**: k01
+- **类型**: web 开发
+- **状态**: 进行中
+- **创建时间**: 2026-01-27 16:00:00
+
+## 进度
+[────░░] 0/5 步骤完成
+
+### 待执行
+1. init_project - 初始化项目
+2. config_mdx - 配置 MDX
+3. create_layout - 创建布局
+4. article_list - 文章列表页
+5. article_detail - 文章详情页
+
+## 查看详情
+- 计划: [plan.md](plan.md)
+- 执行记录: [execution.md)
+
+## 下一步
+执行 `/k01_init_project` 开始第一步
+
+---
+由指挥官 `/k start` 自动生成
+```
+
+### 5.6 生成 results/k01/plan.md
+```markdown
+# 任务 k01 计划
+
+## 任务概述
+搭建一个基于 Next.js 的个人博客系统
+
+## 技术栈
+- **语言**: TypeScript
+- **框架**: Next.js
+- **样式**: TailwindCSS
+- **内容**: MDX
+
+## 步骤列表
+1. **init_project** - 初始化 Next.js 项目
+   - 使用 create-next-app 脚手架
+   - 配置 TypeScript 和 TailwindCSS
+
+2. **config_mdx** - 配置 MDX 支持
+   - 安装 @next/mdx 相关依赖
+   - 配置 next.config.js
+
+3. **create_layout** - 创建基础布局
+   - 设计页面布局组件
+   - 实现响应式设计
+
+4. **article_list** - 实现文章列表页
+   - 展示所有文章
+   - 支持分页
+
+5. **article_detail** - 实现文章详情页
+   - 渲染 MDX 内容
+   - 代码高亮
+
+## 预期产出
+- 可运行的 Next.js 博客项目
+- 支持 Markdown 写作
+- 响应式设计
+
+---
+由指挥官 `/k start` 自动生成
 ```
 
 ---
@@ -232,16 +322,21 @@ npm install @next/mdx @mdx-js/loader @mdx-js/react
 ## 完整示例流程
 
 ```
-用户: /new-skill 搭建一个 Next.js 博客
+用户: /k start 搭建一个 Next.js 博客
 
-[系统] 读取用户画像...
+[指挥官] 检查用户画像...
+       → ✓ 已存在
+
+[指挥官] 调用 skill-generator...
+
+[skill-generator] 读取用户画像...
        → 林远 | TypeScript/Python | 迭代式开发 | 代码优先
 
-[系统] 分配任务编号: k01
+[skill-generator] 分配任务编号: k01
 
-[系统] 分析任务类型: web
+[skill-generator] 分析任务类型: web
 
-[系统] 拆解步骤...
+[skill-generator] 拆解步骤...
        → 5 个步骤
 
 ═══════════════════════════════════════════════════════
@@ -264,19 +359,28 @@ npm install @next/mdx @mdx-js/loader @mdx-js/react
 
 [用户] 确认
 
-[系统] 批量生成 Skills...
+[skill-generator] 批量生成 Skills...
        ✓ k01_init_project
        ✓ k01_config_mdx
        ✓ k01_create_layout
        ✓ k01_article_list
        ✓ k01_article_detail
 
-[系统] 更新文档...
+[skill-generator] 创建 results/k01/...
+       ✓ README.md
+       ✓ plan.md
+       ✓ execution.md
+       ✓ notes.md
+       ✓ artifacts/
+
+[skill-generator] 更新文档...
        ✓ tasks.json
        ✓ USAGE.md
        ✓ CLAUDE.md
 
-✓ 任务 k01 完成！使用 /k01_xxx 启动各个步骤
+[指挥官] 任务 k01 创建成功！
+           执行 /k01_init_project 开始第一步
+           或使用 /k progress k01 查看详情
 ```
 
 ---
@@ -295,14 +399,18 @@ npm install @next/mdx @mdx-js/loader @mdx-js/react
 ---
 
 ## 使用方式
+
+此技能由指挥官调用，用户使用：
 ```
-/new-skill [任务描述]
+/k start [任务描述]
 ```
 
+指挥官会自动调用本技能进行任务拆解和子技能生成。
+
 例如：
-- `/new-skill 搭建 Next.js 博客`
-- `/new-skill 实现用户认证系统`
-- `/new-skill 编写 API 接口`
+- `/k start 搭建 Next.js 博客`
+- `/k start 实现用户认证系统`
+- `/k start 编写 API 接口`
 
 ---
 
