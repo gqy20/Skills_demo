@@ -1,152 +1,135 @@
-# Skills Demo System 使用指南
+# Skills Demo 使用指南
 
-这是一个基于 Claude Code Skills 的个人 AI 辅助开发系统，通过用户画像和任务驱动的技能生成，提供定制化的开发帮助。
+基于 Claude Code Skills 的个人 AI 辅助开发系统。
 
 ## 系统概述
 
 ```
 用户信息 (info/) → 用户画像 (.info/usr.json)
                                   ↓
-任务输入 (/new-skill) → 任务拆解 → 子技能生成 (k01_xxx, k01_yyy, ...)
+/k start [任务] → 任务拆解 → 子技能生成 (k01_init, k01_config, ...)
+                                  ↓
+                        逐步执行 → 结果记录 (results/k01/)
 ```
 
 **核心概念**: 一个任务 = 多个子技能
 
 ```
 任务 k01 (搭建 Next.js 博客)
-    ├─ k01_init_project     (初始化项目)
-    ├─ k01_config_mdx        (配置 MDX)
-    ├─ k01_create_layout     (创建布局)
-    ├─ k01_article_list      (文章列表页)
-    └─ k01_article_detail    (文章详情页)
+    ├─ k01_init_project     # 子技能 1
+    ├─ k01_config_mdx        # 子技能 2
+    ├─ k01_create_layout     # 子技能 3
+    ├─ k01_article_list      # 子技能 4
+    └─ k01_article_detail    # 子技能 5
 ```
 
-## 核心概念
+## 核心命令
 
-### 1. 用户画像 (User Profile)
-系统根据 `info/` 目录下的文件自动生成用户画像，包含：
-- **基础信息**: 姓名、角色、经验等级
-- **技术栈**: 语言、框架、工具
-- **偏好风格**: 代码风格、沟通方式
-- **行为模式**: 工作风格、协作偏好
-- **目标痛点**: 学习方向、常见问题
+### 指挥官命令 (主入口)
 
-### 2. 任务与子技能
+| 命令 | 说明 |
+|------|------|
+| `/k start [任务]` | 启动新任务 |
+| `/k status` | 全局状态视图 |
+| `/k progress k01` | 任务详细进度 |
+| `/k list` | 列出所有任务 |
+| `/k results k01` | 查看任务结果 |
+| `/k continue k01` | 继续执行下一步 |
+| `/k complete k01` | 标记任务完成 |
+| `/k archive k01` | 归档任务 |
 
-| 层级 | 说明 | 示例 |
-|------|------|------|
-| **任务** | 一个完整的项目或功能 | k01: 搭建 Next.js 博客 |
-| **子技能** | 任务中的一个执行步骤 | k01_init_project |
+### 其他命令
 
-- 每个任务分配唯一编号：`k01`, `k02`, `k03`...
-- 一个任务拆解为 2-10 个步骤
-- 每个步骤生成一个独立的子技能
-
-### 3. 技能生成流程
-
-```
-1. 读取用户画像
-2. 分配任务编号 (k01)
-3. 拆解任务为步骤
-4. 为每步规划 Skill 内容
-5. 展示计划并确认
-6. 批量生成子技能
-7. 更新文档
-```
-
-## 目录结构
-
-```
-.
-├── .claude/
-│   ├── settings.json           # Claude Code 配置
-│   └── skills/
-│       ├── user-profile/       # 用户画像生成技能
-│       ├── skill-generator/    # 技能生成器
-│       ├── k01_init_project/   # k01 任务的子技能
-│       ├── k01_config_mdx/     # k01 任务的子技能
-│       ├── k01_create_layout/  # k01 任务的子技能
-│       └── k02_xxx/            # k02 任务的子技能
-├── .info/
-│   ├── usr.json                # 用户画像
-│   ├── usr.json.template       # 画像模板
-│   └── tasks.json              # 任务索引
-└── info/                       # 用户输入文件
-    ├── bio.md                  # 个人简介
-    ├── skills.md               # 技能清单
-    ├── preferences.json        # 偏好配置
-    └── goals.md                # 目标规划
-```
+| 命令 | 说明 |
+|------|------|
+| `/user-profile` | 生成用户画像 |
+| `/k01_init_project` | 执行指定子技能 |
 
 ## 使用流程
 
 ### 第一步：建立用户画像
 
-在 `info/` 目录下添加个人信息文件：
+在 `info/` 目录添加个人信息文件：
 
-```bash
+```
 info/
-├── bio.md              # 推荐：Markdown 格式
-├── skills.md           # 技术栈说明
-├── preferences.json    # 结构化偏好
+├── bio.md              # 个人简介
+├── skills.md           # 技术栈
+├── preferences.json    # 偏好配置
 └── goals.md            # 目标与痛点
 ```
 
-然后运行：
+运行：
 ```
 /user-profile
 ```
 
-系统将分析所有文件，生成 `.info/usr.json`。
+生成 `.info/usr.json` 用户画像。
 
-### 第二步：创建任务并生成子技能
-
-当有新任务时，使用：
-```
-/new-skill [任务描述]
-```
-
-例如：
-```
-/new-skill 搭建 Next.js 博客
-/new-skill 实现用户认证系统
-/new-skill 编写 API 接口
-```
-
-### 第三步：确认计划并生成
-
-系统会展示生成计划：
+### 第二步：启动任务
 
 ```
-═══════════════════════════════════════════════════════
-任务: 搭建 Next.js 博客
-编号: k01
-类型: web 开发
-═══════════════════════════════════════════════════════
-
-将生成 5 个子技能:
-
-1. k01_init_project     - 初始化 Next.js 项目
-2. k01_config_mdx        - 配置 MDX 支持
-3. k01_create_layout     - 创建基础布局组件
-4. k01_article_list      - 实现文章列表页
-5. k01_article_detail    - 实现文章详情页
-
-技术栈: TypeScript, Next.js, TailwindCSS (基于你的画像)
-
-是否继续生成?
-[确认] [调整] [取消]
+/k start 搭建 Next.js 博客
 ```
 
-### 第四步：使用子技能
+指挥官会：
+1. 检查用户画像
+2. 拆解任务为步骤
+3. 展示计划并等待确认
+4. 生成子技能
+5. 创建 `results/k01/` 目录
 
-确认后，系统批量生成子技能，然后可以逐个使用：
+### 第三步：执行步骤
 
 ```
-/k01_init_project     # 执行步骤 1
-/k01_config_mdx        # 执行步骤 2
-/k01_create_layout     # 执行步骤 3
+/k01_init_project    # 执行第一步
+/k01_config_mdx       # 执行第二步
 ...
+```
+
+或使用：
+```
+/k continue k01       # 自动执行下一步
+```
+
+### 第四步：查看结果
+
+```
+/k results k01        # 查看任务结果
+```
+
+结果保存在 `results/k01/`：
+- `README.md` - 任务总览
+- `plan.md` - 任务计划
+- `execution.md` - 执行记录
+- `artifacts/` - 生成的文件
+
+## 目录结构
+
+```
+.claude/skills/              # 技能目录
+├── user-profile/            # 画像生成
+├── commander/               # 指挥官（主入口）
+├── skill-generator/         # 技能生成器
+└── k01_init_project/        # 生成的子技能
+
+.info/                       # 数据目录
+├── usr.json                 # 用户画像
+└── tasks.json               # 任务索引
+
+info/                        # 用户输入
+├── bio.md
+├── skills.md
+├── preferences.json
+└── goals.md
+
+results/                     # 任务结果
+├── k01/                     # 任务 k01 的结果
+│   ├── README.md
+│   ├── plan.md
+│   ├── execution.md
+│   └── artifacts/
+└── archived/                # 归档的任务
 ```
 
 ## 子技能命名规范
@@ -178,27 +161,67 @@ info/
         "k01_article_list",
         "k01_article_detail"
       ],
+      "current_step": 0,
       "created_at": "2026-01-27T16:00:00Z"
     }
   }
 }
 ```
 
-## 已生成任务
+## 结果文件说明
 
-*(此部分会在生成第一个任务后自动更新)*
+### results/k01/README.md
+任务总览，包含：
+- 基本信息（编号、类型、状态）
+- 进度条
+- 步骤列表
+- 下一步指引
 
-## 常用命令
+### results/k01/plan.md
+任务计划，包含：
+- 步骤列表
+- 每步的预期产出
+- 技术栈选型
 
-| 命令 | 功能 |
-|------|------|
-| `/user-profile` | 重新生成用户画像 |
-| `/new-skill [任务]` | 创建任务并生成子技能 |
-| `/k[任务]_[步骤]` | 使用指定的子技能 |
+### results/k01/execution.md
+执行记录，包含：
+- 每步的开始/完成时间
+- 执行内容
+- 遇到的问题和解决方案
+
+### results/k01/artifacts/
+执行过程中生成的文件
+
+## 完整示例
+
+```
+# 1. 准备用户信息
+# 在 info/ 目录添加 bio.md, skills.md 等
+
+# 2. 生成用户画像
+/user-profile
+
+# 3. 启动任务
+/k start 搭建 Next.js 博客
+
+# 系统展示计划，确认后生成子技能
+
+# 4. 执行第一步
+/k01_init_project
+
+# 5. 查看进度
+/k progress k01
+
+# 6. 继续下一步
+/k continue k01
+
+# 7. 查看结果
+/k results k01
+```
 
 ## 文件格式支持
 
-`info/` 目录支持多种文件格式：
+`info/` 目录支持：
 
 | 格式 | 用途 | 示例 |
 |------|------|------|
@@ -207,25 +230,13 @@ info/
 | `.pdf` | 简历、文档 | resume.pdf |
 | `.txt` | 笔记、随笔 | notes.txt |
 
-## 更新与维护
+## 任务状态
 
-### 更新用户画像
-修改 `info/` 下的文件后，运行 `/user-profile` 重新生成。
-
-### 查看所有子技能
-`ls .claude/skills/` 查看所有生成的子技能。
-
-### 删除任务
-删除任务对应的所有子技能目录即可：
-```bash
-rm -rf .claude/skills/k01_*
-```
-
-### 任务状态
-在 `tasks.json` 中修改 `status` 字段：
-- `active`: 进行中
-- `completed`: 已完成
-- `archived`: 已归档
+| 状态 | 说明 |
+|------|------|
+| `active` | 进行中 |
+| `completed` | 已完成 |
+| `archived` | 已归档 |
 
 ## 设计理念
 
@@ -233,3 +244,4 @@ rm -rf .claude/skills/k01_*
 - **简单优先**: 核心流程清晰，不引入过多抽象
 - **增量迭代**: 每个子技能完成一步，逐步推进
 - **以人为本**: 围绕用户画像定制 AI 行为
+- **过程可见**: 所有执行记录保存在 results/ 目录
