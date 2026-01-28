@@ -25,3 +25,4 @@ Thumbs.db
 
 # Node (if any node_modules in future)
 node_modules/
+.info/.status.json
