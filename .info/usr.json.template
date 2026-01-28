@@ -31,6 +31,23 @@
     "pain_points": [],
     "aspirations": null
   },
+  "experience": [
+    {
+      "project": null,
+      "skill_id": null,
+      "tech_stack": [],
+      "executable_approach": {
+        "step_1": null,
+        "step_2": null,
+        "step_3": null,
+        "step_4": null,
+        "step_5": null
+      },
+      "best_practices": [],
+      "avoid_pitfalls": [],
+      "related_tasks": []
+    }
+  ],
   "metadata": {
     "version": "1.0.0",
     "generated_at": null,
