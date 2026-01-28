@@ -1,16 +1,14 @@
-# Results - task execution files (keep README.md)
+# .info/ - Runtime generated files (all ignored)
+.info/
+
+# info/ - User personal input (ignore all, keep README.md as guide)
+info/*
+!info/README.md
+
+# Results - Task execution files (keep README.md)
 results/*/
 !results/README.md
 results/*/artifacts/
-
-# User sensitive input
-info/bio.md
-info/preferences.json
-info/*.pdf
-info/*.txt
-
-# Generated user profile (optional - comment out if you want to track it)
-# .info/usr.json
 
 # IDE
 .vscode/
@@ -25,4 +23,3 @@ Thumbs.db
 
 # Node (if any node_modules in future)
 node_modules/
-.info/.status.json
