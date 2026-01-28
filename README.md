@@ -17,20 +17,104 @@
 
 ### 快速开始
 
+### 第一步：Fork 项目
+
+1. 访问 [Skills Demo](https://github.com/your-repo/skills-demo) 仓库
+2. 点击右上角的 **Fork** 按钮
+3. 将项目 fork 到你自己的 GitHub 账号下
+
+### 第二步：创建 Codespace
+
+1. 在你 fork 的仓库页面，点击 **Code** 按钮
+2. 选择 **Codespaces** 标签
+3. 点击 **Create codespace on main** 创建新的 Codespace
+4. 等待 Codespace 启动完成
+
+### 第三步：配置 Claude Code
+
 ```bash
-# 1. 准备用户信息（在 info/ 目录下添加文件）
-# 2. 生成用户画像
+# 1. 安装 Claude Code CLI（Codespace 中通常已预装）
+npm install -g @anthropic-ai/claude-code
+
+# 2. 登录 Claude
+claude auth login
+
+# 3. 配置 API Key（或使用 Claude 账号登录）
+export ANTHROPIC_API_KEY="your-api-key-here"
+
+# 4. 验证安装
+claude --version
+```
+
+### 第四步：清理默认文件
+
+首次使用需要清理示例内容：
+
+```bash
+# 删除示例任务技能（保留核心技能）
+rm -rf .claude/skills/k01_*
+rm -rf .claude/skills/k02_*
+
+# 保留的核心技能：
+# - user-profile/   # 用户画像生成
+# - commander/      # 任务指挥官
+# - skill-generator/ # 技能生成器
+```
+
+### 第五步：准备个人信息
+
+**上传你的个人文档到 `info/` 目录**
+
+支持的文件格式：`.md`、`.json`、`.pdf`、`.txt`
+
+建议文件：
+```
+info/
+├── bio.md              # 个人简介
+├── skills.md           # 技术栈
+├── preferences.json    # 偏好配置
+└── goals.md            # 目标与痛点
+```
+
+你可以上传任何包含你个人信息的文件，系统会自动分析并生成画像。
+
+### 第五步（可选）：运行一键脚本
+
+```bash
+./scripts/quick-start.sh
+```
+
+脚本会自动完成：
+1. 检查并安装 Claude Code
+2. 清理示例技能
+3. 清理旧数据
+4. 初始化配置文件
+
+### 第六步：运行第一个任务
+
+```bash
+# 1. 生成用户画像
 /user-profile
 
-# 3. 启动任务
-/commander start 搭建 Next.js 博客
+# 2. 查看生成的画像
+cat .info/usr.json
 
-# 4. 执行第一步
-/k01_init_project
+# 3. 启动一个简单任务测试
+/commander start 创建一个 Hello World 页面
 
-# 5. 查看进度
-/commander status
-/commander progress k01
+# 4. 按提示确认计划后，执行第一步
+/commander continue k01
+```
+
+### 完整示例流程
+
+```bash
+# 从零开始的完整流程
+fork 项目 → 创建 Codespace → 配置 Claude Code
+    ↓
+清理示例技能 → 准备个人信息 → 生成用户画像
+    ↓
+启动任务 → 逐步执行 → 查看结果
 ```
 
 ## 目录结构
