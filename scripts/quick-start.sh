@@ -21,8 +21,8 @@ echo -e "${BLUE}[1/4]${NC} 检查 Claude Code..."
 if command -v claude &> /dev/null; then
     echo -e "${GREEN}✓${NC} Claude Code 已安装: $(claude --version 2>/dev/null || echo 'ok')"
 else
-    echo -e "${CYAN}→${NC} 正在安装 Claude Code..."
-    npm install -g @anthropic-ai/claude-code
+    echo -e "${CYAN}→${NC} 正在安装 Claude Code（官方 Native Install）..."
+    curl -fsSL https://claude.ai/install.sh | bash
     echo -e "${GREEN}✓${NC} 安装完成"
 fi
 

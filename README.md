@@ -19,7 +19,7 @@
 
 ### 第一步：Fork 项目
 
-1. 访问 [Skills Demo](https://github.com/your-repo/skills-demo) 仓库
+1. 访问 [Skills Demo](https://github.com/gqy20/Skills_demo) 仓库
 2. 点击右上角的 **Fork** 按钮
 3. 将项目 fork 到你自己的 GitHub 账号下
 
@@ -30,23 +30,39 @@
 3. 点击 **Create codespace on main** 创建新的 Codespace
 4. 等待 Codespace 启动完成
 
-### 第三步：配置 Claude Code
+### 第三步：安装 Claude Code
 
+官方推荐使用 **Native Install** 方式：
+
+**macOS / Linux / WSL:**
 ```bash
-# 1. 安装 Claude Code CLI（Codespace 中通常已预装）
-npm install -g @anthropic-ai/claude-code
-
-# 2. 登录 Claude
-claude auth login
-
-# 3. 配置 API Key（或使用 Claude 账号登录）
-export ANTHROPIC_API_KEY="your-api-key-here"
-
-# 4. 验证安装
-claude --version
+curl -fsSL https://claude.ai/install.sh | bash
 ```
 
-### 第四步：清理默认文件
+**Windows PowerShell:**
+```powershell
+irm https://claude.ai/install.ps1 | iex
+```
+
+**其他方式:**
+```bash
+# Homebrew
+brew install --cask claude-code
+
+# WinGet
+winget install Anthropic.ClaudeCode
+```
+
+### 第四步：配置认证信息
+
+配置环境变量以使用本地 API：
+
+```bash
+export ANTHROPIC_AUTH_TOKEN="your-auth-token-here"
+export ANTHROPIC_BASE_URL="https://open.bigmodel.cn/api/anthropic"
+```
+
+### 第五步：清理默认文件
 
 首次使用需要清理示例内容：
 
@@ -61,7 +77,7 @@ rm -rf .claude/skills/k02_*
 # - skill-generator/ # 技能生成器
 ```
 
-### 第五步：准备个人信息
+### 第六步：准备个人信息
 
 **上传你的个人文档到 `info/` 目录**
 
@@ -78,7 +94,7 @@ info/
 
 你可以上传任何包含你个人信息的文件，系统会自动分析并生成画像。
 
-### 第五步（可选）：运行一键脚本
+### 第七步（可选）：运行一键脚本
 
 ```bash
 ./scripts/quick-start.sh
@@ -90,7 +106,7 @@ info/
 3. 清理旧数据
 4. 初始化配置文件
 
-### 第六步：运行第一个任务
+### 第八步：运行第一个任务
 
 ```bash
 # 1. 生成用户画像
@@ -152,4 +168,8 @@ results/           # 任务结果（执行过程文件）
 - **任务驱动** - 将大任务拆解为可执行的子技能
 - **过程可见** - 所有执行记录保存在 results/ 目录
 
-详细使用说明请查看 [USAGE.md](USAGE.md)。
+## 文档
+
+- [docs/usage.md](docs/usage.md) - 详细使用说明
+- [docs/results.md](docs/results.md) - results/ 目录结构说明
+- [docs/statusline.md](docs/statusline.md) - 状态栏配置说明
