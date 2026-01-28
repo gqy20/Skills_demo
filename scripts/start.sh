@@ -17,7 +17,7 @@ echo -e "${CYAN}╚════════════════════�
 echo ""
 
 # 1. 检查并安装 Claude Code
-echo -e "${BLUE}[1/4]${NC} 检查 Claude Code..."
+echo -e "${BLUE}[1/5]${NC} 检查 Claude Code..."
 if command -v claude &> /dev/null; then
     echo -e "${GREEN}✓${NC} Claude Code 已安装: $(claude --version 2>/dev/null || echo 'ok')"
 else
@@ -26,9 +26,20 @@ else
     echo -e "${GREEN}✓${NC} 安装完成"
 fi
 
-# 2. 清理示例技能
+# 2. 检查并安装 uv
 echo ""
-echo -e "${BLUE}[2/4]${NC} 清理示例技能..."
+echo -e "${BLUE}[2/5]${NC} 检查 uv..."
+if command -v uv &> /dev/null; then
+    echo -e "${GREEN}✓${NC} uv 已安装: $(uv --version 2>/dev/null || echo 'ok')"
+else
+    echo -e "${CYAN}→${NC} 正在安装 uv..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    echo -e "${GREEN}✓${NC} 安装完成"
+fi
+
+# 3. 清理示例技能
+echo ""
+echo -e "${BLUE}[3/5]${NC} 清理示例技能..."
 if ls .claude/skills/k[0-9]* 2>/dev/null; then
     rm -rf .claude/skills/k[0-9]*
     echo -e "${GREEN}✓${NC} 已删除示例技能"
@@ -36,16 +47,16 @@ else
     echo -e "${GREEN}✓${NC} 无需清理"
 fi
 
-# 3. 清理旧数据
+# 4. 清理旧数据
 echo ""
-echo -e "${BLUE}[3/4]${NC} 清理旧数据..."
+echo -e "${BLUE}[4/5]${NC} 清理旧数据..."
 rm -f .info/usr.json .info/tasks.json
 rm -rf results
 echo -e "${GREEN}✓${NC} 清理完成"
 
-# 4. 初始化 tasks.json
+# 5. 初始化 tasks.json
 echo ""
-echo -e "${BLUE}[4/4]${NC} 初始化配置..."
+echo -e "${BLUE}[5/5]${NC} 初始化配置..."
 if [ -f ".info/tasks.json.template" ]; then
     cp .info/tasks.json.template .info/tasks.json
     echo -e "${GREEN}✓${NC} 已创建 tasks.json"

@@ -27,11 +27,23 @@ C_RESET=$'\033[0m'
 format_tokens() {
     local tokens=$1
     if [ "$tokens" -ge 1000000000 ]; then
-        echo "$(echo "scale=1; $tokens / 1000000000" | bc 2>/dev/null)B"
+        local billions=$((tokens / 1000000000))
+        local remainder=$((tokens % 1000000000))
+        if [ $remainder -ge 100000000 ]; then
+            echo "${billions}.$((remainder / 100000000))B"
+        else
+            echo "${billions}B"
+        fi
     elif [ "$tokens" -ge 1000000 ]; then
-        echo "$(echo "scale=1; $tokens / 1000000" | bc 2>/dev/null)M"
+        local millions=$((tokens / 1000000))
+        local remainder=$((tokens % 1000000))
+        if [ $remainder -ge 100000 ]; then
+            echo "${millions}.$((remainder / 100000))M"
+        else
+            echo "${millions}M"
+        fi
     elif [ "$tokens" -ge 1000 ]; then
-        echo "$(echo "scale=0; $tokens / 1000" | bc 2>/dev/null)K"
+        echo "$((tokens / 1000))K"
     else
         echo "${tokens}"
     fi
@@ -82,11 +94,23 @@ get_glm_quota() {
     # 格式化剩余 token
     local remaining_str
     if [ "$remaining" -ge 1000000000 ]; then
-        remaining_str="$(echo "scale=1; $remaining / 1000000000" | bc)B"
+        local billions=$((remaining / 1000000000))
+        local remainder=$((remaining % 1000000000))
+        if [ $remainder -ge 100000000 ]; then
+            remaining_str="${billions}.$((remainder / 100000000))B"
+        else
+            remaining_str="${billions}B"
+        fi
     elif [ "$remaining" -ge 1000000 ]; then
-        remaining_str="$(echo "scale=1; $remaining / 1000000" | bc)M"
+        local millions=$((remaining / 1000000))
+        local remainder=$((remaining % 1000000))
+        if [ $remainder -ge 100000 ]; then
+            remaining_str="${millions}.$((remainder / 100000))M"
+        else
+            remaining_str="${millions}M"
+        fi
     elif [ "$remaining" -ge 1000 ]; then
-        remaining_str="$(echo "scale=0; $remaining / 1000" | bc)K"
+        remaining_str="$((remaining / 1000))K"
     else
         remaining_str="${remaining}"
     fi
@@ -111,11 +135,16 @@ get_glm_quota() {
 
 # 获取上下文使用率
 get_context_usage() {
+    # 检查 input 是否为空
+    if [ -z "$input" ]; then
+        return 1
+    fi
+
     local context_size=$(echo "$input" | jq -r '.context_window.context_window_size // 0')
     local input_tokens=$(echo "$input" | jq -r '.context_window.total_input_tokens // 0')
     local output_tokens=$(echo "$input" | jq -r '.context_window.total_output_tokens // 0')
 
-    if [ "$context_size" -le 0 ]; then
+    if [ -z "$context_size" ] || [ "$context_size" = "null" ] || [ "$context_size" -le 0 ]; then
         return 1
     fi
 
@@ -182,6 +211,13 @@ get_system_status() {
     local profile_fresh=$(jq -r '.profile_fresh // true' "$STATUS_FILE" 2>/dev/null)
     local skills_count=$(jq -r '.skills_count // 0' "$STATUS_FILE" 2>/dev/null)
 
+    # 获取技能使用次数（通过解析会话文件）
+    local skills_usage=0
+    local usage_script="$PROJECT_DIR/.claude/hooks/count-skills-usage.sh"
+    if [ -f "$usage_script" ]; then
+        skills_usage=$("$usage_script" 2>/dev/null) || skills_usage=0
+    fi
+
     local result=""
     local has_content=false
 
@@ -221,11 +257,19 @@ get_system_status() {
         fi
     fi
 
-    # 技能统计
+    # 技能统计（显示数量和使用次数）
     if [ "$has_content" = true ]; then
-        result="${result} | ${C_CYAN}🔧${C_RESET} ${skills_count}技能"
+        if [ "$skills_usage" -gt 0 ]; then
+            result="${result} | ${C_CYAN}🔧${C_RESET} ${skills_count}技能(${skills_usage}次)"
+        else
+            result="${result} | ${C_CYAN}🔧${C_RESET} ${skills_count}技能"
+        fi
     else
-        result="${C_CYAN}🔧${C_RESET} ${skills_count}技能"
+        if [ "$skills_usage" -gt 0 ]; then
+            result="${C_CYAN}🔧${C_RESET} ${skills_count}技能(${skills_usage}次)"
+        else
+            result="${C_CYAN}🔧${C_RESET} ${skills_count}技能"
+        fi
     fi
 
     echo "$result"
