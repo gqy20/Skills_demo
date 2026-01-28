@@ -1,30 +1,50 @@
 ---
 name: skill-generator
-description: 根据用户任务和画像，将任务拆解为步骤并生成子技能。使用场景：(1) 指挥官创建新任务时调用，(2) 用户请求任务拆解时使用，(3) 复杂任务需要分解时使用。
+description: 根据用户任务和画像，分析所需能力并生成子技能。使用场景：(1) 指挥官创建新任务时调用，(2) 用户请求技能分析时使用。每个任务生成 2-3 个核心 k_ 技能，u_ 技能总数保持在 5 个以内。
 ---
 
 # 技能生成器
 
-将用户任务拆解为可执行的子技能，每个步骤生成独立的技能。
+分析任务所需能力，生成可复用的技能单元。
+
+**核心原则**：聚焦核心能力，避免过度拆解。
 
 ## 处理流程
 
-### 任务模式 (k_ 前缀)
+### 任务模式 (k_ 前缀) - 技能分析
+
+**原则**：每个任务只生成 **2-3 个核心技能**
 
 1. 读取用户画像 `.info/usr.json`
 2. 分配任务编号（k01, k02, ...）
-3. 分析任务类型，详见 [任务类型](references/task-types.md)
-4. 拆解为 2-10 个步骤
-5. 为每个步骤生成子技能
-6. 创建 `results/k01/` 目录和文件
-7. 更新 `.info/tasks.json`
+3. 分析任务所需的核心能力
+   - 识别关键技术点（框架、语言、工具）
+   - 匹配用户已有的 u_ 技能
+   - 找出能力空白
+4. 生成 2-3 个填补能力空白的 k_ 技能
+5. 创建 `results/k01/` 目录和文件
+6. 更新 `.info/tasks.json`
 
-### 经验模式 (u_ 前缀)
+**数量控制**：
+- 技能少于 2 个：任务太简单，直接执行
+- 技能多于 3 个：任务太复杂，建议拆分或合并
+
+### 经验模式 (u_ 前缀) - 经验提取
+
+**原则**：总数保持在 **5 个以内**
 
 1. 读取用户画像中的 `experience` 维度
-2. 为每个经验生成 `u_` 前缀技能
-3. 技能内容包含：执行流程、最佳实践、踩坑记录
-4. 更新 `.info/tasks.json` 的 `user_skills` 字段
+2. 评估每个经验的复用价值
+   - 是否是核心技能
+   - 是否有通用性
+   - 是否有独特的最佳实践
+3. 只保留高价值的经验，生成 `u_` 技能
+4. 技能内容包含：执行流程、最佳实践、踩坑记录
+5. 更新 `.info/tasks.json` 的 `user_skills` 字段
+
+**数量控制**：
+- 超过 5 个时：保留最近、最常用的 5 个
+- 归档低频经验到 `results/archived/u_skills/`
 
 ## 子技能命名
 
@@ -52,11 +72,12 @@ description: 根据用户任务和画像，将任务拆解为步骤并生成子�
 
 ```
 .claude/skills/
-├── u_blog_mdx/SKILL.md       # 用户经验技能
-├── u_react_hooks/SKILL.md    # 用户经验技能
-├── k01_init_project/SKILL.md # 任务子技能
-├── k01_config_mdx/SKILL.md
-└── k01_create_layout/SKILL.md
+├── u_next_mdx/SKILL.md       # 用户经验技能（最多5个）
+├── u_docker_deploy/SKILL.md
+├── u_fastapi_crud/SKILL.md
+├── k01_mdx_integration/SKILL.md  # 任务技能（2-3个）
+├── k01_dynamic_routing/SKILL.md
+└── k02_auth_system/SKILL.md
 
 results/k01/
 ├── README.md        # 任务总览
@@ -117,21 +138,29 @@ npx create-next-app@latest blog --typescript --tailwind --app
       "name": "任务名称",
       "type": "web",
       "status": "active",
-      "steps": ["k01_init_project", "k01_config_mdx", ...],
+      "skills": ["k01_mdx_integration", "k01_dynamic_routing"],
       "current_step": 0,
       "created_at": "2026-01-27T16:00:00Z"
     }
   },
   "user_skills": {
-    "u_blog_mdx": {
-      "name": "Next.js MDX 博客",
+    "u_next_mdx": {
+      "name": "Next.js + MDX 博客",
       "level": "proficient",
       "created_at": "2026-01-28T10:00:00Z",
-      "related_tasks": ["k01"]
+      "related_tasks": ["k01"],
+      "usage_count": 3
     }
-  }
+  },
+  "archived_u_skills": ["u_old_react_classic"]
 }
 ```
+
+**字段说明**：
+- `tasks.k01.skills`: 2-3 个核心技能 ID（复用 u_ 或新生成 k_）
+- `user_skills`: 最多 5 个活跃的用户经验技能
+- `archived_u_skills`: 已归档的低频 u_ 技能列表
+- `usage_count`: u_ 技能被引用次数，用于归档决策
 
 ## 基于画像的定制
 
@@ -150,6 +179,7 @@ npx create-next-app@latest blog --typescript --tailwind --app
 | 场景 | 处理方式 |
 |------|---------|
 | 用户画像不存在 | 提示运行 `/user-profile` |
-| 步骤少于 2 个 | 任务过于简单，可直接执行 |
-| 步骤多于 10 个 | 任务过于复杂，建议拆分为多个任务 |
+| k_ 技能少于 2 个 | 任务过于简单，可直接执行 |
+| k_ 技能多于 3 个 | 任务过于复杂，建议拆分或合并技能 |
+| u_ 技能超过 5 个 | 归档低频经验，保留最常用的 5 个 |
 | 用户取消生成 | 恢复 tasks.json 的 next_id |
