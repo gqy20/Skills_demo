@@ -1,6 +1,5 @@
 #!/bin/bash
 # Claude Code 状态行脚本 - Skills Demo 版本
-# 参考 cc_plugins 优化，保留项目特有功能
 
 # 从 stdin 读取 Claude Code 提供的 JSON
 input=$(cat || true)
@@ -16,31 +15,8 @@ STATUS_FILE="$PROJECT_DIR/.info/.status.json"
 QUOTA_CACHE="$HOME/.claude/glm_quota_cache.txt"
 
 # ====== 统一提取常用 JSON 字段（jq 性能优化） ======
-# 一次性提取所有常用字段，避免重复调用 jq
 
-# 1. context_window 相关（合并多个 jq 为 1 次）
-context_data=$(echo "$input" | jq -r '
-    .context_window.context_window_size // "0",
-    .context_window.current_usage.input_tokens // "0",
-    .context_window.current_usage.output_tokens // "0",
-    .context_window.current_usage.cache_read_input_tokens // "0",
-    .context_window.current_usage.cache_creation_input_tokens // "0",
-    .context_window.total_input_tokens // "0",
-    .context_window.total_output_tokens // "0"
-' 2>/dev/null)
-
-context_window_size=$(echo "$context_data" | sed -n '1p')
-context_input=$(echo "$context_data" | sed -n '2p')
-context_output=$(echo "$context_data" | sed -n '3p')
-context_cache_read=$(echo "$context_data" | sed -n '4p')
-context_cache_creation=$(echo "$context_data" | sed -n '5p')
-total_input_tokens=$(echo "$context_data" | sed -n '6p')
-total_output_tokens=$(echo "$context_data" | sed -n '7p')
-
-# 如果 context_window 存在，则保留 context_usage 用于验证
-context_usage=$(echo "$input" | jq -r '.context_window.current_usage // empty')
-
-# 2. cost 相关（合并 3 个 jq 为 1 次）
+# 1. cost 相关（合并多个 jq 为 1 次）
 cost_data=$(echo "$input" | jq -r '
     .cost.total_duration_ms // "0",
     .cost.total_lines_added // "0",
@@ -51,7 +27,7 @@ cost_total_duration_ms=$(echo "$cost_data" | sed -n '1p')
 cost_lines_added=$(echo "$cost_data" | sed -n '2p')
 cost_lines_removed=$(echo "$cost_data" | sed -n '3p')
 
-# 3. model 信息
+# 2. model 信息
 MODEL=$(echo "$input" | jq -r '.model.display_name // "Claude"')
 
 # ====== JSON 字段提取完成 ======
@@ -68,108 +44,8 @@ C_RESET=$'\033[0m'
 
 # ====== 工具函数 ======
 
-# 格式化 token 数量为 K/M/B
-format_tokens() {
-    local tokens=$1
-
-    if [ -z "$tokens" ] || [ "$tokens" = "null" ] || [ "$tokens" -le 0 ] 2>/dev/null; then
-        echo "0"
-        return
-    fi
-
-    if [ "$tokens" -ge 1000000000 ] 2>/dev/null; then
-        local billions=$((tokens / 1000000000))
-        local remainder=$((tokens % 1000000000))
-        if [ $remainder -ge 100000000 ]; then
-            echo "${billions}.$((remainder / 100000000))B"
-        else
-            echo "${billions}B"
-        fi
-    elif [ "$tokens" -ge 1000000 ] 2>/dev/null; then
-        local millions=$((tokens / 1000000))
-        local remainder=$((tokens % 1000000))
-        if [ $remainder -ge 100000 ]; then
-            echo "${millions}.$((remainder / 100000))M"
-        else
-            echo "${millions}M"
-        fi
-    elif [ "$tokens" -ge 1000 ] 2>/dev/null; then
-        echo "$((tokens / 1000))K"
-    else
-        echo "${tokens}"
-    fi
-}
-
-# 获取上下文窗口使用百分比（参考 cc_plugins）
-get_context_usage() {
-    # 使用全局变量（已在脚本开头提取）
-    if [ -z "$context_usage" ] || [ "$context_usage" = "null" ]; then
-        return 0
-    fi
-
-    # 当前上下文总量 = 输入 + 缓存创建 + 缓存读取
-    local current=$((context_input + context_cache_creation + context_cache_read))
-
-    if [ "$context_window_size" -gt 0 ] 2>/dev/null; then
-        local pct=$((current * 100 / context_window_size))
-        if [ "$pct" -gt 80 ]; then
-            echo "${C_RED}📊 ${pct}%${C_RESET}"
-        elif [ "$pct" -gt 50 ]; then
-            echo "${C_YELLOW}📊 ${pct}%${C_RESET}"
-        else
-            echo "${C_GREEN}📊 ${pct}%${C_RESET}"
-        fi
-    fi
-}
-
-# 获取上下文详细统计 (输入/输出)
-get_context_io() {
-    # 使用全局变量（已在脚本开头提取）
-    if [ -z "$context_usage" ] || [ "$context_usage" = "null" ]; then
-        return 0
-    fi
-
-    # 使用公共函数格式化
-    local input_str=$(format_tokens "$context_input")
-    local output_str=$(format_tokens "$context_output")
-
-    echo "${C_CYAN}↑${input_str}${C_RESET} ${C_CYAN}↓${output_str}${C_RESET}"
-}
-
-# 获取缓存命中率
-get_cache_hit_rate() {
-    # 使用全局变量（已在脚本开头提取）
-    if [ -z "$context_usage" ] || [ "$context_usage" = "null" ]; then
-        return 0
-    fi
-
-    # 缓存命中率计算公式
-    # total_tokens = input_tokens + cache_read_input_tokens
-    # 缓存命中率 = cache_read / (input + cache_read)
-    local total_tokens=$((context_input + context_cache_read))
-
-    if [ "$total_tokens" -le 0 ] 2>/dev/null; then
-        return 0
-    fi
-
-    local cache_pct=$((context_cache_read * 100 / total_tokens))
-
-    # 根据命中率设置颜色
-    local color
-    if [ "$cache_pct" -gt 50 ]; then
-        color="${C_GREEN}"
-    elif [ "$cache_pct" -gt 20 ]; then
-        color="${C_CYAN}"
-    else
-        color="${C_YELLOW}"
-    fi
-
-    echo "${color}💾 ${cache_pct}%${C_RESET}"
-}
-
 # 获取会话持续时间
 get_session_duration() {
-    # 使用全局变量（已在脚本开头提取）
     local duration_ms="$cost_total_duration_ms"
 
     if [ -z "$duration_ms" ] || [ "$duration_ms" = "null" ] || [ "$duration_ms" = "0" ]; then
@@ -189,7 +65,6 @@ get_session_duration() {
 
 # 获取代码变更统计
 get_code_changes() {
-    # 使用全局变量（已在脚本开头提取）
     local lines_added="$cost_lines_added"
     local lines_removed="$cost_lines_removed"
 
@@ -398,9 +273,6 @@ get_system_status() {
 
 # 获取各模块数据（使用已提取的全局变量）
 QUOTA_INFO=$(get_glm_quota)
-CONTEXT_PCT=$(get_context_usage)
-CONTEXT_IO=$(get_context_io)
-CACHE_RATE=$(get_cache_hit_rate)
 SESSION_TIME=$(get_session_duration)
 CODE_CHANGES=$(get_code_changes)
 SYSTEM_STATUS=$(get_system_status)
@@ -408,17 +280,12 @@ SYSTEM_STATUS=$(get_system_status)
 # 构建输出
 OUTPUT="[${MODEL}]"
 
-# 第一行：核心信息
-OUTPUT="$OUTPUT $QUOTA_INFO $CONTEXT_PCT"
+# GLM 配额
+OUTPUT="$OUTPUT $QUOTA_INFO"
 
 # 会话时间
 if [ -n "$SESSION_TIME" ]; then
     OUTPUT="$OUTPUT $SESSION_TIME"
-fi
-
-# Token 统计和缓存命中率
-if [ -n "$CONTEXT_IO" ] && [ -n "$CACHE_RATE" ]; then
-    OUTPUT="$OUTPUT $CONTEXT_IO $CACHE_RATE"
 fi
 
 # 代码变更
