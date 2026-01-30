@@ -11,10 +11,63 @@ description: 分析 info/ 目录下的用户文件，生成结构化用户画像
 
 | 格式 | 用途 | 详情 |
 |------|------|------|
-| `.md` | 个人自述、文档 | 详见 [文件格式说明](references/) |
+| `.md` | 个人自述、文档、对话记录 | 详见 [文件格式说明](references/) |
 | `.json` | 结构化配置 | 详见 [文件格式说明](references/) |
 | `.pdf` | 简历、文档 | 详见 [文件格式说明](references/) |
 | `.txt` | 笔记、随笔 | 详见 [文件格式说明](references/) |
+
+### 对话记录分析
+
+**特殊文件类型**：AI 对话记录（如 Continue.dev、Cursor、Claude Code 的会话导出）
+
+#### 识别特征
+
+文件包含以下模式时识别为对话记录：
+- `#### _User_` / `#### _Assistant_` 或类似标记
+- `### [Continue]` / `### [Cursor]` 等工具名称
+- `>` 引用格式的 AI 回复
+
+#### 提取维度
+
+| 维度 | 提取内容 | 示例指标 |
+|-----|---------|---------|
+| **专业领域** | 对话主题、项目类型 | AI4S 研究、Web 开发、数据分析 |
+| **使用工具** | AI 工具、开发环境 | Continue.dev、Cursor、VS Code |
+| **工作模式** | 与 AI 协作方式 | 迭代式优化、多轮对话、代码生成 |
+| **沟通风格** | 提问方式、反馈习惯 | 简洁指令 vs 详细说明、是否追问细节 |
+| **关注重点** | 常用词汇、请求类型 | 项目申报、代码实现、文档撰写 |
+| **技术栈** | 讨论的技术内容 | Python、Mermaid、Markdown、特定框架 |
+| **输出偏好** | 常请求的输出格式 | Markdown 文件、Mermaid 图表、PPT 提纲 |
+
+#### 分析规则
+
+```yaml
+conversation_analysis:
+  # 用户行为模式识别
+  behavior_patterns:
+    iterative_refinement:  # 迭代优化模式
+      indicator: "多次相似请求，逐步完善需求"
+      example: ["生成", "继续", "优化", "修改"]
+    code_first:           # 代码优先模式
+      indicator: "直接请求代码实现"
+      example: ["实现", "写一个", "生成代码"]
+    documentation_first:  # 文档优先模式
+      indicator: "重视文档和说明"
+      example: ["文档", "说明", "注释", "README"]
+
+  # 专业领域识别
+  domain_detection:
+    keywords:
+      research: ["研究", "项目申报", "课题", "框架", "范式"]
+      development: ["实现", "部署", "调试", "优化"]
+      design: ["设计", "UI", "交互", "体验"]
+
+  # 工具栈识别
+  tool_detection:
+    ai_tools: ["Continue", "Cursor", "Claude", "Copilot"]
+    dev_tools: ["VS Code", "Typora", "Git", "Docker"]
+    formats: ["Markdown", "Mermaid", "JSON", "YAML"]
+```
 
 ## 画像结构
 
@@ -26,17 +79,40 @@ description: 分析 info/ 目录下的用户文件，生成结构化用户画像
 - **behavioral_patterns**: 工作风格、协作偏好
 - **goals**: 当前焦点、痛点、志向
 - **experience**: 项目经验的可执行化方案
+- **conversation_patterns**: 从对话记录中提取的行为模式（新增）
+  - `ai_tools`: 使用的 AI 工具（Continue、Cursor、Claude 等）
+  - `collaboration_style`: 与 AI 协作的风格（iterative、direct、exploratory）
+  - `output_preferences`: 偏好的输出格式（markdown、diagram、code）
+  - `conversation_domains`: 对话中体现的专业领域
 - **metadata**: 版本、时间戳、源文件
 
 ## 处理流程
 
 1. 扫描 `info/` 目录所有文件
-2. 按类型提取信息，详见 [提取规则](references/extraction-rules.md)
-3. 合并多源信息
-4. 提取项目经验并生成可执行化方案
-5. 生成结构化 JSON
-6. **用户确认**：展示画像摘要，等待用户确认
-7. 保存到 `.info/usr.json`
+2. **检测对话记录**：识别 AI 对话记录文件（Continue、Cursor 等）
+3. **分析对话记录**：
+   - 提取专业领域和关注重点
+   - 识别使用工具和技术栈
+   - 分析工作模式和沟通风格
+4. 按类型提取其他文件信息，详见 [提取规则](references/extraction-rules.md)
+5. 合并多源信息（对话记录 + 结构化文件）
+6. 提取项目经验并生成可执行化方案
+7. 生成结构化 JSON
+8. **用户确认**：展示画像摘要，等待用户确认
+9. 保存到 `.info/usr.json`
+
+### 对话记录分析示例
+
+```
+分析 note.md (Continue.dev 会话记录):
+├─ 识别类型: AI 对话记录
+├─ 专业领域: AI4S 研究、科研管理
+├─ 使用工具: Continue.dev、Mermaid、VS Code、Typora
+├─ 工作模式: 迭代式与 AI 协作，多轮完善内容
+├─ 沟通风格: 简洁指令 + 请求文件输出
+├─ 关注重点: 项目申报书、研究框架、可视化图表
+└─ 补充画像: behavioral_patterns.work_style = "iterative_ai_collaboration"
+```
 
 ## 经验提取 (experience)
 
