@@ -191,6 +191,53 @@ get_glm_quota() {
     fi
 }
 
+# 获取 Hook 统计（解析 debug 日志）
+get_hook_stats() {
+    local cache_file="$PROJECT_DIR/.info/hook_stats_cache.txt"
+    local cache_ttl=60  # 60秒缓存
+    local current_time=$(date +%s)
+
+    # 检查缓存
+    if [ -f "$cache_file" ]; then
+        local cache_time=$(stat -c %Y "$cache_file" 2>/dev/null || echo "0")
+        if [ $((current_time - cache_time)) -lt $cache_ttl ]; then
+            cat "$cache_file"
+            return 0
+        fi
+    fi
+
+    # 获取最新 debug 日志
+    local debug_log=$(ls -t "$HOME/.claude/debug"/*.txt 2>/dev/null | head -1)
+    if [ -z "$debug_log" ]; then
+        return 0
+    fi
+
+    # 解析统计：PreToolUse, PostToolUse, 其他
+    local stats=$(grep "Getting matching hook commands for" "$debug_log" 2>/dev/null | \
+        awk '{
+            type = $8
+            if (type == "PreToolUse") pre++
+            else if (type == "PostToolUse") post++
+            else other++
+            total++
+        }
+        END {
+            printf "%d|%d|%d|%d", total, pre, post, other
+        }')
+
+    local total=$(echo "$stats" | cut -d'|' -f1)
+    local pre=$(echo "$stats" | cut -d'|' -f2)
+    local post=$(echo "$stats" | cut -d'|' -f3)
+    local other=$(echo "$stats" | cut -d'|' -f4)
+
+    if [ "$total" -gt 0 ]; then
+        # 简洁格式: 🪝 pre ↑ post ↓ other
+        local result="${C_WHITE}🪝${C_RESET} ${pre} ${C_CYAN}↑${C_RESET} ${post} ${C_CYAN}↓${C_RESET} ${other}"
+        echo "$result" > "$cache_file"
+        echo "$result"
+    fi
+}
+
 # 获取用户系统状态
 get_system_status() {
     if [ ! -f "$STATUS_FILE" ]; then
@@ -276,6 +323,7 @@ QUOTA_INFO=$(get_glm_quota)
 SESSION_TIME=$(get_session_duration)
 CODE_CHANGES=$(get_code_changes)
 SYSTEM_STATUS=$(get_system_status)
+HOOK_STATS=$(get_hook_stats)
 
 # 构建输出
 OUTPUT="[${MODEL}]"
@@ -296,6 +344,11 @@ fi
 # 系统状态（任务、用户、技能）
 if [ -n "$SYSTEM_STATUS" ]; then
     OUTPUT="$OUTPUT | $SYSTEM_STATUS"
+fi
+
+# Hook 统计
+if [ -n "$HOOK_STATS" ]; then
+    OUTPUT="$OUTPUT | $HOOK_STATS"
 fi
 
 printf '%b\n' "$OUTPUT"

@@ -81,7 +81,7 @@ description: 分析 info/ 目录下的用户文件，生成结构化用户画像
 |------|------|------|
 | `.md` | 个人自述、文档、对话记录 | 详见 [文件格式说明](references/) |
 | `.json` | 结构化配置 | 详见 [文件格式说明](references/) |
-| `.pdf` | 简历、文档 | 详见 [文件格式说明](references/) |
+| `.pdf` | 简历、文档 | 使用 `scripts/extract_pdf.py` 提取 |
 | `.txt` | 笔记、随笔 | 详见 [文件格式说明](references/) |
 
 ### 对话记录分析
@@ -162,12 +162,20 @@ conversation_analysis:
    - 提取专业领域和关注重点
    - 识别使用工具和技术栈
    - 分析工作模式和沟通风格
-4. 按类型提取其他文件信息，详见 [提取规则](references/extraction-rules.md)
-5. 合并多源信息（对话记录 + 结构化文件）
-6. 提取项目经验并生成可执行化方案
-7. 生成结构化 JSON
-8. **用户确认**：展示画像摘要，等待用户确认
-9. 保存到 `.info/usr.json`
+4. **PDF 文件处理**：
+   - 检测 `.pdf` 文件
+   - 使用 Python 脚本提取文本内容：
+     ```bash
+     python3 .claude/skills/user-profile/scripts/extract_pdf.py "文件路径.pdf"
+     ```
+   - 解析返回的 JSON（包含 text、pages、metadata）
+   - 按简历类/文档类/表格类识别并提取信息
+5. 按类型提取其他文件信息，详见 [提取规则](references/extraction-rules.md)
+6. 合并多源信息（对话记录 + PDF + 其他文件）
+7. 提取项目经验并生成可执行化方案
+8. 生成结构化 JSON
+9. **用户确认**：展示画像摘要，等待用户确认
+10. 保存到 `.info/usr.json`
 
 ### 对话记录分析示例
 

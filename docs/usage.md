@@ -51,15 +51,17 @@
 
 ### 第一步：建立用户画像
 
-在 `info/` 目录添加个人信息文件：
+**随意把任何资料丢进 `info/` 目录即可**
 
-```
-info/
-├── bio.md              # 个人简介
-├── skills.md           # 技术栈
-├── preferences.json    # 偏好配置
-└── goals.md            # 目标与痛点
-```
+支持的格式：`.md`、`.json`、`.pdf`、`.txt`
+
+你可以放：
+- 个人笔记、随手记录
+- AI 对话导出（Continue、Cursor、Claude 等）
+- 简历、项目文档
+- 任何你觉得可能让 AI 更懂你的资料
+
+系统会自动识别内容类型并提取信息。
 
 运行：
 ```
@@ -119,11 +121,10 @@ info/
 ├── usr.json                 # 用户画像
 └── tasks.json               # 任务索引
 
-info/                        # 用户输入
-├── bio.md
-├── skills.md
-├── preferences.json
-└── goals.md
+info/                        # 用户输入（随意丢资料）
+├── note.md                 # 你的随手记录
+├── 我的简历.pdf
+└── examples/               # 可选参考模板（非必需）
 
 results/                     # 任务结果
 ├── k01/                     # 任务 k01 的结果
@@ -223,14 +224,16 @@ results/                     # 任务结果
 
 ## 文件格式支持
 
-`info/` 目录支持：
+`info/` 目录支持任何格式的文件，系统会自动识别内容类型：
 
 | 格式 | 用途 | 示例 |
 |------|------|------|
-| `.md` | 个人自述、文档 | bio.md, goals.md |
+| `.md` | 个人自述、文档、对话记录 | note.md, Continue会话.md |
 | `.json` | 结构化配置 | preferences.json |
-| `.pdf` | 简历、文档 | resume.pdf |
+| `.pdf` | 简历、文档 | 我的简历.pdf |
 | `.txt` | 笔记、随笔 | notes.txt |
+
+**无需按固定文件名组织** - 随意丢，系统自动分析。
 
 ## 任务状态
 
