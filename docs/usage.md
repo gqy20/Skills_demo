@@ -1,26 +1,20 @@
 # Skills Demo 使用指南
 
-基于 Claude Code Skills 的个人 AI 辅助开发系统。
+本文档提供 Skills Demo 的详细使用说明、命令参考和工作流示例。
 
-## 系统概述
+## 前置条件
 
-```
-用户信息 (info/) → 用户画像 (.info/usr.json)
-                                  ↓
-/commander start [任务] → 任务拆解 → 子技能生成 (k01_init, k01_config, ...)
-                                  ↓
-                        逐步执行 → 结果记录 (results/k01/)
-```
+> 首次使用请先阅读 [README.md](../README.md#快速开始) 完成环境配置。
 
 **核心概念**: 一个任务 = 多个子技能
 
 ```
 任务 k01 (搭建 Next.js 博客)
-    ├─ k01_init_project     # 子技能 1
-    ├─ k01_config_mdx        # 子技能 2
-    ├─ k01_create_layout     # 子技能 3
-    ├─ k01_article_list      # 子技能 4
-    └─ k01_article_detail    # 子技能 5
+    ├─ k01_init_project     # 子技能 1: 初始化项目
+    ├─ k01_config_mdx        # 子技能 2: 配置 MDX
+    ├─ k01_create_layout     # 子技能 3: 创建布局
+    ├─ k01_article_list      # 子技能 4: 文章列表页
+    └─ k01_article_detail    # 子技能 5: 文章详情页
 ```
 
 ## 核心命令
@@ -47,62 +41,54 @@
 
 ## 使用流程
 
-> 💡 **首次使用？** 请先查看 [README.md](../README.md#快速开始) 完成环境配置。
+### 1. 建立用户画像
 
-### 第一步：建立用户画像
+将任意资料文件放入 `info/` 目录，系统会自动分析。
 
-**随意把任何资料丢进 `info/` 目录即可**
+**支持的格式**: `.md`、`.json`、`.pdf`、`.txt`
 
-支持的格式：`.md`、`.json`、`.pdf`、`.txt`
-
-你可以放：
-- 个人笔记、随手记录
-- AI 对话导出（Continue、Cursor、Claude 等）
-- 简历、项目文档
-- 任何你觉得可能让 AI 更懂你的资料
-
-系统会自动识别内容类型并提取信息。
-
-运行：
+**运行命令**:
 ```
 /user-profile
 ```
 
-生成 `.info/usr.json` 用户画像。
+生成 `.info/usr.json` 用户画像文件。
 
-### 第二步：启动任务
+### 2. 启动任务
 
 ```
 /commander start 搭建 Next.js 博客
 ```
 
-指挥官会：
-1. 检查用户画像
-2. 拆解任务为步骤
+指挥官会自动：
+1. 检查用户画像是否存在
+2. 将任务拆解为可执行步骤
 3. 展示计划并等待确认
-4. 生成子技能
+4. 生成对应的子技能
 5. 创建 `results/k01/` 目录
 
-### 第三步：执行步骤
+### 3. 执行步骤
 
+**方式一**: 逐个执行子技能
 ```
-/k01_init_project    # 执行第一步
-/k01_config_mdx       # 执行第二步
-...
-```
-
-或使用：
-```
-/commander continue k01       # 自动执行下一步
+/k01_init_project
+/k01_config_mdx
+/k01_create_layout
 ```
 
-### 第四步：查看结果
+**方式二**: 使用指挥官自动继续
+```
+/commander continue k01    # 自动执行下一步
+```
+
+### 4. 查看结果
 
 ```
-/commander results k01        # 查看任务结果
+/commander results k01     # 查看任务结果
+/commander progress k01    # 查看任务进度
 ```
 
-结果保存在 `results/k01/`：
+结果保存在 `results/k01/` 目录：
 - `README.md` - 任务总览
 - `plan.md` - 任务计划
 - `execution.md` - 执行记录
@@ -110,30 +96,7 @@
 
 ## 目录结构
 
-```
-.claude/skills/              # 技能目录
-├── user-profile/            # 画像生成
-├── commander/               # 指挥官（主入口）
-├── skill-generator/         # 技能生成器
-└── k01_init_project/        # 生成的子技能
-
-.info/                       # 数据目录
-├── usr.json                 # 用户画像
-└── tasks.json               # 任务索引
-
-info/                        # 用户输入（随意丢资料）
-├── note.md                 # 你的随手记录
-├── 我的简历.pdf
-└── examples/               # 可选参考模板（非必需）
-
-results/                     # 任务结果
-├── k01/                     # 任务 k01 的结果
-│   ├── README.md
-│   ├── plan.md
-│   ├── execution.md
-│   └── artifacts/
-└── archived/                # 归档的任务
-```
+详细目录结构请参考 [README.md](../README.md#目录结构)。
 
 ## 子技能命名规范
 
@@ -197,7 +160,7 @@ results/                     # 任务结果
 
 ## 完整示例
 
-```
+```bash
 # 1. 准备用户信息
 # 在 info/ 目录添加 bio.md, skills.md 等
 
@@ -224,7 +187,7 @@ results/                     # 任务结果
 
 ## 文件格式支持
 
-`info/` 目录支持任何格式的文件，系统会自动识别内容类型：
+`info/` 目录支持以下格式，系统会自动识别内容类型：
 
 | 格式 | 用途 | 示例 |
 |------|------|------|
@@ -233,7 +196,7 @@ results/                     # 任务结果
 | `.pdf` | 简历、文档 | 我的简历.pdf |
 | `.txt` | 笔记、随笔 | notes.txt |
 
-**无需按固定文件名组织** - 随意丢，系统自动分析。
+**无需按固定文件名组织** - 随意丢文件，系统自动分析。
 
 ## 任务状态
 
@@ -242,11 +205,3 @@ results/                     # 任务结果
 | `active` | 进行中 |
 | `completed` | 已完成 |
 | `archived` | 已归档 |
-
-## 设计理念
-
-- **任务驱动**: 以任务为中心，拆解为可执行的子技能
-- **简单优先**: 核心流程清晰，不引入过多抽象
-- **增量迭代**: 每个子技能完成一步，逐步推进
-- **以人为本**: 围绕用户画像定制 AI 行为
-- **过程可见**: 所有执行记录保存在 results/ 目录
