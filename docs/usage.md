@@ -162,7 +162,7 @@
 
 ```bash
 # 1. 准备用户信息
-# 在 info/ 目录添加 bio.md, skills.md 等
+# 将任意资料丢入 info/ 目录（支持 .md, .json, .pdf, .txt）
 
 # 2. 生成用户画像
 /user-profile

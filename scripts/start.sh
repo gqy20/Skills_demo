@@ -57,9 +57,11 @@ echo -e "${GREEN}✓${NC} 清理完成"
 # 5. 初始化 tasks.json
 echo ""
 echo -e "${BLUE}[5/5]${NC} 初始化配置..."
-if [ -f ".info/tasks.json.template" ]; then
-    cp .info/tasks.json.template .info/tasks.json
+if [ ! -f ".info/tasks.json" ]; then
+    echo '{"next_id": 1, "tasks": {}, "user_skills": {}, "archived_u_skills": []}' > .info/tasks.json
     echo -e "${GREEN}✓${NC} 已创建 tasks.json"
+else
+    echo -e "${GREEN}✓${NC} tasks.json 已存在"
 fi
 
 # 完成

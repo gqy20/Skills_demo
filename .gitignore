@@ -3,9 +3,8 @@
 !.info/info.md
 !.info/usr.json.template
 
-# info/ - User personal input (ignore all, keep README.md as guide)
+# info/ - User personal input (ignore all)
 info/*
-!info/README.md
 
 # Results - Task execution files (keep README.md)
 results/*
