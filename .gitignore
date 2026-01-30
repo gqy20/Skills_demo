@@ -1,12 +1,14 @@
-# .info/ - Runtime generated files (all ignored)
-.info/
+# .info/ - Runtime generated files (ignore all, keep system files)
+.info/*
+!.info/info.md
+!.info/usr.json.template
 
 # info/ - User personal input (ignore all, keep README.md as guide)
 info/*
 !info/README.md
 
 # Results - Task execution files (keep README.md)
-results/*/
+results/*
 !results/README.md
 results/*/artifacts/
 
