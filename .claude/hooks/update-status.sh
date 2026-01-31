@@ -70,7 +70,8 @@ fi
 if [ -f "$PROFILE_FILE" ]; then
     USER_NAME=$(json_read "$PROFILE_FILE" '.basic_info.name // ""')
     USER_ROLE=$(json_read "$PROFILE_FILE" '.basic_info.role // ""')
-    SKILLS_COUNT=$(json_read "$PROFILE_FILE" '.user_skills | length // 0')
+    # skills_count 从 tasks.json.user_skills 读取（u_ 技能存储在这里）
+    SKILLS_COUNT=$(json_read "$TASKS_FILE" '.user_skills | length // 0')
 
     STATUS=$(echo "$STATUS" | jq --arg name "$USER_NAME" --arg role "$USER_ROLE" \
         --argjson skills "$SKILLS_COUNT" \
