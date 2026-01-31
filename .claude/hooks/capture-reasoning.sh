@@ -477,7 +477,9 @@ $STEP_TABLE
 
 ## 推理详情
 
+\`\`\`
 $REASONING_CONTENT
+\`\`\`
 
 ---
 
