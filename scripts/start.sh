@@ -37,13 +37,30 @@ else
     echo -e "${GREEN}✓${NC} 安装完成"
 fi
 
-# 3. 清理示例技能
+# 3. 清理技能文件
 echo ""
-echo -e "${BLUE}[3/5]${NC} 清理示例技能..."
-if ls .claude/skills/k[0-9]* 2>/dev/null; then
-    rm -rf .claude/skills/k[0-9]*
-    echo -e "${GREEN}✓${NC} 已删除示例技能"
-else
+echo -e "${BLUE}[3/5]${NC} 清理技能文件..."
+
+# 删除所有 k_ 开头的技能（包括 k1, k2, k_* 等）
+if ls .claude/skills/k* 2>/dev/null; then
+    rm -rf .claude/skills/k*
+    echo -e "${GREEN}✓${NC} 已删除 k_* 技能"
+fi
+
+# 删除所有 u_ 开头的技能
+if ls .claude/skills/u_* 2>/dev/null; then
+    rm -rf .claude/skills/u_*
+    echo -e "${GREEN}✓${NC} 已删除 u_* 技能"
+fi
+
+# 删除所有 p_ 开头的技能
+if ls .claude/skills/p_* 2>/dev/null; then
+    rm -rf .claude/skills/p_*
+    echo -e "${GREEN}✓${NC} 已删除 p_* 技能"
+fi
+
+# 如果没有任何技能被清理，显示无需清理
+if ! ls .claude/skills/k* .claude/skills/u_* .claude/skills/p_* 2>/dev/null | grep -q .; then
     echo -e "${GREEN}✓${NC} 无需清理"
 fi
 
