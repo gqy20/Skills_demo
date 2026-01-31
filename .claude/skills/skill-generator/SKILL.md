@@ -82,9 +82,13 @@ Skill("skill-generator", "--mode=experience")
 3. 分析任务所需的核心能力
    - 识别关键技术点（框架、语言、工具）
    - 匹配用户已有的 u_ 技能
+   - 匹配已有的 p_ 技能（验证技能）
    - 找出能力空白
 4. **用户确认**：展示技能分析结果，等待用户确认
-5. 生成 2-3 个填补能力空白的 k_ 技能
+5. 复用或生成技能：
+   - 优先复用 p_ 技能（已验证）
+   - 其次复用 u_ 技能（用户经验）
+   - 最后生成新的 k_ 技能
 6. 创建 `results/k01/` 目录和文件
 7. 更新 `.info/tasks.json`
 
@@ -136,10 +140,13 @@ Skill("skill-generator", "--mode=experience")
 
 ```
 .claude/skills/
-├── u_next_mdx/SKILL.md       # 用户经验技能（最多5个）
+├── p_next_mdx/SKILL.md          # 验证技能（从 k_ 升级，永久）
+├── p_docker_deploy/SKILL.md     # 验证技能
+├── p_research_open_source/SKILL.md  # 验证技能
+├── u_next_mdx/SKILL.md          # 用户经验技能（最多5个）
 ├── u_docker_deploy/SKILL.md
 ├── u_fastapi_crud/SKILL.md
-├── k01_mdx_integration/SKILL.md  # 任务技能（2-3个）
+├── k01_mdx_integration/SKILL.md  # 任务技能（2-3个，临时）
 ├── k01_dynamic_routing/SKILL.md
 └── k02_auth_system/SKILL.md
 
@@ -149,6 +156,22 @@ results/k01/
 ├── execution.md     # 执行记录
 ├── notes.md         # 笔记
 └── artifacts/       # 生成的文件
+```
+
+### 技能复用优先级
+
+```
+新任务分析
+    ↓
+检查 p_ 技能（验证技能）
+    ↓
+找到匹配 → 复用（增加 usage_count）
+    ↓
+未找到 → 检查 u_ 技能（用户经验）
+    ↓
+找到匹配 → 复用（增加 usage_count）
+    ↓
+未找到 → 生成新的 k_ 技能
 ```
 
 ## u_ 前缀技能的内容结构

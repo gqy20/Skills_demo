@@ -39,6 +39,8 @@ if [[ "$SKILL_NAME" =~ ^u_[a-z_]+$ ]]; then
     SKILL_TYPE="user"
 elif [[ "$SKILL_NAME" =~ ^k[0-9]+_[a-z_]+$ ]]; then
     SKILL_TYPE="task"
+elif [[ "$SKILL_NAME" =~ ^p_[a-z_]+$ ]]; then
+    SKILL_TYPE="proven"
 else
     SKILL_TYPE="builtin"
 fi
@@ -69,10 +71,29 @@ case "$TOOL_NAME" in
                     "$TASKS_FILE" > "$TEMP_FILE" 2>/dev/null && mv "$TEMP_FILE" "$TASKS_FILE"
                 echo -e "${GREEN}📝 已关联任务技能${NC}: $SKILL_NAME -> $TASK_ID"
             fi
+        elif [ "$SKILL_TYPE" = "proven" ]; then
+            # p_ 技能，添加到 proven_skills（如果不存在）
+            TEMP_FILE=$(mktemp)
+            # 检查 proven_skills 是否存在，不存在则创建
+            if jq -e '.proven_skills' "$TASKS_FILE" >/dev/null 2>&1; then
+                # 已存在，检查该技能是否已注册
+                if ! jq -e ".proven_skills[\"$SKILL_NAME\"]" "$TASKS_FILE" >/dev/null 2>&1; then
+                    jq --arg sid "$SKILL_NAME" --arg time "$TIMESTAMP" \
+                        '.proven_skills[$sid] = {"source": "manual", "derived_at": $time, "usage_count": 0, "related_tasks": [], "success_rate": 1.0}' \
+                        "$TASKS_FILE" > "$TEMP_FILE" 2>/dev/null && mv "$TEMP_FILE" "$TASKS_FILE"
+                    echo -e "${GREEN}📝 已注册验证技能${NC}: $SKILL_NAME"
+                fi
+            else
+                # 创建 proven_skills 对象
+                jq --arg sid "$SKILL_NAME" --arg time "$TIMESTAMP" \
+                    '.proven_skills = {} | .proven_skills[$sid] = {"source": "manual", "derived_at": $time, "usage_count": 0, "related_tasks": [], "success_rate": 1.0}' \
+                    "$TASKS_FILE" > "$TEMP_FILE" 2>/dev/null && mv "$TEMP_FILE" "$TASKS_FILE"
+                echo -e "${GREEN}📝 已注册验证技能${NC}: $SKILL_NAME"
+            fi
         fi
         ;;
     "Edit")
-        if [ "$SKILL_TYPE" = "user" ] || [ "$SKILL_TYPE" = "task" ]; then
+        if [ "$SKILL_TYPE" = "user" ] || [ "$SKILL_TYPE" = "task" ] || [ "$SKILL_TYPE" = "proven" ]; then
             # 更新修改时间
             echo -e "${BLUE}🔄 已更新技能${NC}: $SKILL_NAME"
         fi

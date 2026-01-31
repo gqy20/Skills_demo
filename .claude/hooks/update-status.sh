@@ -50,6 +50,10 @@ if [ -f "$TASKS_FILE" ]; then
     STATUS=$(echo "$STATUS" | jq --argjson total "$TOTAL_TASKS" --argjson active "$ACTIVE_COUNT" \
         --argjson completed "$COMPLETED_COUNT" \
         '.total_tasks = $total | .active_tasks = $active | .completed_tasks = $completed')
+
+    # 统计 p_ 技能数量（验证技能）
+    PROVEN_COUNT=$(jq -r 'if .proven_skills then (.proven_skills | length) else 0 end' "$TASKS_FILE" 2>/dev/null || echo "0")
+    STATUS=$(echo "$STATUS" | jq --argjson proven "$PROVEN_COUNT" '.proven_skills_count = $proven')
 fi
 
 # 2. 读取用户画像信息
