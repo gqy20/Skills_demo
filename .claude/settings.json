@@ -47,6 +47,11 @@
           },
           {
             "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/fix-reasoning.sh",
+            "timeout": 15
+          },
+          {
+            "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/update-status.sh",
             "timeout": 5
           }

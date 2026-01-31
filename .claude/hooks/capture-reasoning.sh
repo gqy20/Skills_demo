@@ -82,19 +82,48 @@ if [ -f "$TASKS_FILE" ]; then
     fi
 fi
 
-# ==================== 读取推理内容 ====================
+# ==================== 读取推理内容（改进版）====================
 
-if [ -f "$FILE_PATH" ]; then
-    # 尝试提取 <reasoning> 标签内的部分
-    REASONING_CONTENT=$(sed -n '/<reasoning>/,/<\/reasoning>/p' "$FILE_PATH" 2>/dev/null || echo "")
+# 新增：从日志恢复推理内容的函数
+recover_reasoning_from_log() {
+    local task_id="$1"
+    local log_file="$REASONING_TASK_LOG"
 
-    # 如果没有找到，使用空内容
-    if [ -z "$REASONING_CONTENT" ]; then
-        REASONING_CONTENT=""
+    if [ ! -f "$log_file" ]; then
+        echo ""
+        return
     fi
-else
+
+    # 获取该任务最后一个非空的 reasoning 内容（使用 -r 输出原始字符串）
+    local last_content=$(jq -s -r \
+        "[.[] | select(.task == \"$task_id\" and (.content // \"\" | length) > 0)] | \
+         .[-1].content // \"\"" \
+        "$log_file" 2>/dev/null)
+
+    echo "$last_content"
+}
+
+# 优先级：NEW_CONTENT > 当前文件 > 日志恢复
+REASONING_CONTENT=""
+
+# 1. 如果工具提供了新内容，优先使用
+if [ -n "$NEW_CONTENT" ]; then
     REASONING_CONTENT="$NEW_CONTENT"
+# 2. 否则尝试从当前文件提取 <reasoning> 标签
+elif [ -f "$FILE_PATH" ]; then
+    local extracted=$(sed -n '/<reasoning>/,/<\/reasoning>/p' "$FILE_PATH" 2>/dev/null || echo "")
+    if [ -n "$extracted" ]; then
+        REASONING_CONTENT="$extracted"
+    fi
 fi
+
+# 3. 如果以上都没有，从日志恢复最后的内容
+if [ -z "$REASONING_CONTENT" ]; then
+    REASONING_CONTENT=$(recover_reasoning_from_log "$TASK_ID")
+fi
+
+# 4. 如果仍然为空，使用空字符串
+REASONING_CONTENT="${REASONING_CONTENT:-}"
 
 # 追加推理事件到日志
 EVENT_JSON=$(jq -n \
