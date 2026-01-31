@@ -59,9 +59,20 @@ if [ -f "$TASKS_FILE" ]; then
     TASK_TYPE=$(json_read "$TASKS_FILE" ".tasks[\"$TASK_ID\"].type // \"general\"" 2>/dev/null || echo "general")
     CURRENT_STEP=$(json_read "$TASKS_FILE" ".tasks[\"$TASK_ID\"].current_step // 0" 2>/dev/null || echo "0")
 
-    # 读取步骤数组
-    STEPS_JSON=$(json_read "$TASKS_FILE" ".tasks[\"$TASK_ID\"].steps // []" 2>/dev/null || echo "[]")
-    TOTAL_STEPS=$(echo "$STEPS_JSON" | jq 'length' 2>/dev/null || echo "0")
+    # 读取步骤数组（带重试机制，确保读取到最新数据）
+    MAX_RETRIES=3
+    RETRY_COUNT=0
+    TOTAL_STEPS=0
+
+    while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$TOTAL_STEPS" -eq 0 ]; do
+        STEPS_JSON=$(json_read "$TASKS_FILE" ".tasks[\"$TASK_ID\"].steps // []" 2>/dev/null || echo "[]")
+        TOTAL_STEPS=$(echo "$STEPS_JSON" | jq 'length' 2>/dev/null || echo "0")
+
+        if [ "$TOTAL_STEPS" -eq 0 ] && [ $RETRY_COUNT -lt $((MAX_RETRIES - 1)) ]; then
+            sleep 0.1
+        fi
+        RETRY_COUNT=$((RETRY_COUNT + 1))
+    done
 
     # 将步骤转换为 bash 数组
     if [ "$TOTAL_STEPS" -gt 0 ]; then
