@@ -1,6 +1,5 @@
-# .info/ - Runtime generated files (ignore all, keep system files)
+# .info/ - Runtime generated files (ignore all)
 .info/*
-!.info/info.md
 
 # info/ - User personal input (ignore all)
 info/*
