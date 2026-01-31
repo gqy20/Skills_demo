@@ -1,4 +1,7 @@
 {
-    "claudeCode.allowDangerouslySkipPermissions": true,
-    "accessibility.signals.terminalBell": "on"
+  "claudeCode.allowDangerouslySkipPermissions": true,
+  "accessibility.signals.terminalBell": {
+    "sound": "on",
+    "announcement": "auto"
+  }
 }
