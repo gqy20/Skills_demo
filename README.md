@@ -2,6 +2,87 @@
 
 基于 Claude Code Skills 的个人 AI 辅助开发系统。
 
+## 系统架构
+
+```mermaid
+flowchart TB
+    subgraph Input["📁 输入层"]
+        INFO["info/<br/>用户资料"]
+        TEMPLATES[".templates/<br/>模板文件"]
+    end
+
+    subgraph Core["⚙️ 核心层"]
+        UP["/user-profile<br/>用户画像"]
+        CMD["/commander<br/>任务管理"]
+        SG["skill-generator<br/>技能生成"]
+    end
+
+    subgraph Data["💾 数据层"]
+        USR[".info/usr.json<br/>用户画像"]
+        TASKS[".info/tasks.json<br/>任务索引"]
+        STATUS[".info/.status.json<br/>运行状态"]
+    end
+
+    subgraph Skills["🔧 技能层"]
+        BUILTIN["内置技能<br/>user-profile<br/>commander<br/>skill-generator"]
+        USKILL["u_ 技能<br/>用户经验"]
+        PSKILL["p_ 技能<br/>验证技能"]
+        KSKILL["k_ 技能<br/>任务子技能"]
+    end
+
+    subgraph Hooks["🪝 Hooks 系统"]
+        SS["session-start<br/>会话检查"]
+        UT["update-status<br/>状态更新"]
+        TS["track-skills<br/>变更追踪"]
+        ID["intent-detect<br/>意图路由"]
+    end
+
+    subgraph Output["📤 输出层"]
+        RESULTS["results/<br/>任务结果"]
+        STATUSLINE["状态栏<br/>实时显示"]
+    end
+
+    %% 数据流
+    INFO -->|读取| UP
+    UP -->|生成| USR
+    USR -->|定制| CMD
+    CMD -->|调用| SG
+    SG -->|创建| KSKILL
+    KSKILL -->|升级| PSKILL
+    PSKILL -->|复用| KSKILL
+
+    %% Hooks 触发
+    CMD -.->|SessionStart| SS
+    CMD -.->|UserPrompt| ID
+    CMD -.->|ToolUse| UT
+    SG -.->|Edit| TS
+
+    %% 状态更新
+    UT --> STATUS
+    TS --> TASKS
+    SS --> STATUS
+
+    %% 输出
+    KSKILL --> RESULTS
+    STATUS --> STATUSLINE
+    USR --> STATUS
+
+    %% 样式
+    classDef inputStyle fill:#e1f5fe,stroke:#01579b
+    classDef coreStyle fill:#f3e5f5,stroke:#4a148c
+    classDef dataStyle fill:#fff3e0,stroke:#e65100
+    classDef skillStyle fill:#e8f5e9,stroke:#1b5e20
+    classDef hookStyle fill:#fce4ec,stroke:#880e4f
+    classDef outputStyle fill:#f1f8e9,stroke:#33691e
+
+    class INFO,TEMPLATES inputStyle
+    class UP,CMD,SG coreStyle
+    class USR,TASKS,STATUS dataStyle
+    class BUILTIN,USKILL,PSKILL,KSKILL skillStyle
+    class SS,UT,TS,ID hookStyle
+    class RESULTS,STATUSLINE outputStyle
+```
+
 ## 核心思路
 
 ```
@@ -90,16 +171,24 @@
 │   └── k01_init_project/ # 生成的子技能
 ├── hooks/            # Hooks 脚本
 │   ├── session-start.sh      # 会话启动检查
-│   ├── track-skills-change.sh # 技能变更追踪
+│   ├── intent-detect.sh      # 意图路由
 │   ├── update-status.sh      # 状态更新
-│   └── count-skills-usage.sh # 技能使用统计
+│   ├── track-skills-change.sh # 技能变更追踪
+│   ├── promote-to-proven.sh  # 技能升级
+│   └── lib/
+│       └── common.sh         # 共享函数库
 ├── statusline.sh      # 自定义状态栏
 └── settings.json      # Claude Code 配置
 
+.templates/           # 模板文件
+    ├── usr.json.template    # 用户画像模板
+    └── info.md              # 意图路由规则模板
+
 .info/                # 数据目录
-    ├── usr.json        # 用户画像
+    ├── usr.json        # 用户画像（生成）
     ├── tasks.json      # 任务索引
-    └── .status.json    # 运行时状态
+    ├── .status.json    # 运行时状态
+    └── info.md         # 意图路由规则（生成）
 
 info/                 # 用户输入（个人信息）
 

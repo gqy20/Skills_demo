@@ -109,6 +109,25 @@
 | 修复 | `k[任务]_fix_[问题]` | k01_fix_routing |
 | 测试 | `k[任务]_test_[模块]` | k01_test_api |
 
+## 技能类型
+
+| 类型 | 前缀 | 说明 | 数量限制 | 存储位置 |
+|:-----|:-----|:-----|:---------|:---------|
+| **内置技能** | 无 | user-profile, commander, skill-generator | 固定 | `.claude/skills/` |
+| **任务技能** | `k_` | 任务拆解生成的子技能 | 无限制 | `.claude/skills/` |
+| **用户技能** | `u_` | 从用户经验提取的技能 | ≤ 5 | `tasks.json.user_skills` |
+| **验证技能** | `p_` | 经验证可复用的技能（k_ 升级） | ≤ 10 | `tasks.json.proven_skills` |
+
+### 技能升级流程
+
+```
+k_ 技能（任务子技能）
+    ↓ 验证通过
+p_ 技能（验证技能）→ 可复用到新任务
+    ↓ 高频使用
+考虑纳入 u_ 技能（用户经验）
+```
+
 ## tasks.json 结构
 
 ```json
@@ -130,7 +149,25 @@
       "current_step": 0,
       "created_at": "2026-01-27T16:00:00Z"
     }
-  }
+  },
+  "user_skills": {
+    "u_react_hooks": {
+      "name": "u_react_hooks",
+      "level": "proficient",
+      "created_at": "2026-01-27T16:00:00Z",
+      "usage_count": 0
+    }
+  },
+  "proven_skills": {
+    "p_nextjs_blog": {
+      "name": "p_nextjs_blog",
+      "source_task": "k01",
+      "created_at": "2026-01-27T18:00:00Z",
+      "usage_count": 3,
+      "related_tasks": ["k02", "k03"]
+    }
+  },
+  "archived_u_skills": []
 }
 ```
 
