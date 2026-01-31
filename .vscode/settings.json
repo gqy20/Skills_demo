@@ -1,0 +1,4 @@
+{
+    "claudeCode.allowDangerouslySkipPermissions": true,
+    "accessibility.signals.terminalBell": "on"
+}
