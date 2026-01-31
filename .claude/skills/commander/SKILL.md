@@ -74,10 +74,32 @@ results/k01/
 ├── plan.md         # 任务计划
 ├── execution.md    # 执行记录
 ├── notes.md        # 笔记
+├── .reasoning.md   # 推理日志（实时维护）
 └── artifacts/      # 生成的文件
 ```
 
 详见 [目录管理](references/directory-management.md)
+
+## 推理日志
+
+commander 在执行任务时会输出推理块，记录"用了什么方法"和"得到了什么结论"：
+
+```markdown
+<reasoning>
+🎯 目标：[当前步骤的目标]
+🔍 方法：[使用了什么方法/工具]
+💡 发现：[得到了什么发现/结论]
+✅ 决策：[做出了什么决策及原因]
+</reasoning>
+```
+
+推理块会通过 Hook 系统自动捕获：
+- 写入 `results/k01/.reasoning.md`（任务级）
+- 同时合并到 `.info/.reasoning.md`（全局，活跃任务）
+
+**查看推理日志**：
+- `cat .info/.reasoning.md` - 查看全局活跃任务推理
+- `cat results/k01/.reasoning.md` - 查看特定任务推理
 
 ## 任务状态
 
