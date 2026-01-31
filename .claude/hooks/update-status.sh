@@ -71,21 +71,22 @@ if [ -f "$PROFILE_FILE" ]; then
     USER_NAME=$(json_read "$PROFILE_FILE" '.basic_info.name // ""')
     USER_ROLE=$(json_read "$PROFILE_FILE" '.basic_info.role // ""')
 
-    # skills_count 统计实际存在 SKILL.md 的技能数量
-    # 包括：内置技能 + u_ 技能 + p_ 技能 + k_ 技能
-    if [ -d "$SKILLS_DIR" ]; then
-        # 统计所有包含 SKILL.md 的目录
-        SKILLS_COUNT=$(find "$SKILLS_DIR" -mindepth 2 -maxdepth 2 -name "SKILL.md" -exec dirname {} \; 2>/dev/null | wc -l)
-    else
-        SKILLS_COUNT=0
-    fi
-
     STATUS=$(echo "$STATUS" | jq --arg name "$USER_NAME" --arg role "$USER_ROLE" \
-        --argjson skills "$SKILLS_COUNT" \
-        '.user_name = $name | .user_role = $role | .skills_count = $skills')
+        '.user_name = $name | .user_role = $role')
 fi
 
-# 3. 检查画像新鲜度
+# 3. 统计技能数量（独立于用户画像）
+# 包括：内置技能 + u_ 技能 + p_ 技能 + k_ 技能
+if [ -d "$SKILLS_DIR" ]; then
+    # 统计所有包含 SKILL.md 的目录
+    SKILLS_COUNT=$(find "$SKILLS_DIR" -mindepth 2 -maxdepth 2 -name "SKILL.md" -exec dirname {} \; 2>/dev/null | wc -l)
+else
+    SKILLS_COUNT=0
+fi
+
+STATUS=$(echo "$STATUS" | jq --argjson skills "$SKILLS_COUNT" '.skills_count = $skills')
+
+# 4. 检查画像新鲜度
 PROFILE_FRESH="true"
 if [ -f "$PROFILE_FILE" ] && [ -d "$INFO_DIR" ]; then
     # 获取 info/ 目录最新文件（排除 results/ 子目录）
@@ -104,7 +105,7 @@ fi
 
 STATUS=$(echo "$STATUS" | jq --arg fresh "$PROFILE_FRESH" '.profile_fresh = ($fresh == "true")')
 
-# 4. 添加时间戳
+# 5. 添加时间戳
 TIMESTAMP=$(get_timestamp)
 STATUS=$(echo "$STATUS" | jq --arg ts "$TIMESTAMP" '.updated_at = $ts')
 
