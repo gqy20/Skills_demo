@@ -1,6 +1,6 @@
 # Skills Demo
 
-基于 Claude Code Skills 的个人 AI 辅助开发系统。
+基于 Claude Code Skills 的自适应 AI 助手。
 
 ## 系统架构
 
@@ -42,7 +42,7 @@ flowchart TB
 
     subgraph Output["📤 输出层"]
         RESULTS["results/<br/>任务结果"]
-        REASON_FILES["results/k01/.reasoning.md<br/>推理日志"]
+        REASON_FILES["results/*/.reasoning.md<br/>推理日志"]
         STATUSLINE["状态栏<br/>实时显示"]
     end
 
@@ -52,6 +52,8 @@ flowchart TB
     USR -->|定制| CMD
     CMD -->|调用| SG
     SG -->|创建| KSKILL
+    UP -.->|可选| SG
+    SG -.->|可选| USKILL
     KSKILL -->|升级| PSKILL
     PSKILL -->|复用| KSKILL
 
@@ -71,6 +73,8 @@ flowchart TB
 
     %% 输出
     KSKILL --> RESULTS
+    USKILL --> RESULTS
+    PSKILL --> RESULTS
     CR --> REASON_FILES
     STATUS --> STATUSLINE
     USR --> STATUS
@@ -138,7 +142,7 @@ cat results/k01/.reasoning.md
 脚本会自动完成：
 1. 检查并安装 Claude Code
 2. 检查并安装 uv（Python 包管理器）
-3. 清理示例技能
+3. 清理技能文件（k_*, u_*, p_*）
 4. 清理旧数据
 5. 初始化配置文件
 
