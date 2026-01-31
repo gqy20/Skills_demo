@@ -617,16 +617,24 @@ generate_timeline() {
     local date_only=$(date '+%Y-%m-%d')
     local current_time=$(date '+%H:%M')
 
+    # 当前更新
+    echo "    $date_only : $current_time 当前更新"
+
     # 读取该任务的最近事件（最多5条）
-    if [ -f "$REASONING_TASK_LOG" ]; then
-        grep "\"task\": \"${TASK_ID}\"" "$REASONING_TASK_LOG" | tail -3 | \
-            jq -r '.timestamp_readable' 2>/dev/null | \
+    # 使用绝对路径确保能找到日志文件
+    local log_file="${CLAUDE_PROJECT_DIR:-$PROJECT_DIR}/.info/.reasoning.log.jsonl"
+    if [ -f "$log_file" ]; then
+        # 使用 jq -s 将整个文件读为数组，然后过滤
+        # 注意：使用单引号内的 jq 表达式，避免 shell 转义问题
+        local filter="[.[] | select(.task == \"${TASK_ID}\" and (.content | type) == \"string\" and (.content | length) > 0)] | .[-5:] | reverse | .[].timestamp_readable"
+        jq -s "$filter" "$log_file" 2>/dev/null | \
             while read -r line; do
                 if [ -n "$line" ]; then
-                    # 提取日期时间
-                    local event_date=$(echo "$line" | cut -d' ' -f1)
-                    local event_time=$(echo "$line" | cut -d' ' -f2)
-                    echo "    $event_date : $event_time 历史更新"
+                    # 提取日期时间（去掉引号）
+                    local clean_line=$(echo "$line" | tr -d '"')
+                    local event_date=$(echo "$clean_line" | cut -d' ' -f1)
+                    local event_time=$(echo "$clean_line" | cut -d' ' -f2)
+                    echo "    $event_date : $event_time 任务更新"
                 fi
             done
     fi
