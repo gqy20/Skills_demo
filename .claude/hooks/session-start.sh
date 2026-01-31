@@ -3,17 +3,15 @@
 
 set -e
 
-PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
-STATUS_FILE="$PROJECT_DIR/.info/.status.json"
-PROFILE_FILE="$PROJECT_DIR/.info/usr.json"
-UPDATE_HOOK="$PROJECT_DIR/.claude/hooks/update-status.sh"
+# 加载共享库
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib/common.sh"
 
-# 颜色输出
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+# 初始化
+init_colors
 
 # 首先更新状态（调用 update-status.sh 执行检查逻辑）
+UPDATE_HOOK="$SCRIPT_DIR/update-status.sh"
 if [ -f "$UPDATE_HOOK" ]; then
     bash "$UPDATE_HOOK" >/dev/null 2>&1 || true
 fi
@@ -28,8 +26,8 @@ fi
 # 从状态文件读取画像新鲜度信息
 if [ -f "$STATUS_FILE" ]; then
     # 检查 jq 是否安装
-    if command -v jq >/dev/null 2>&1; then
-        PROFILE_FRESH=$(jq -r '.profile_fresh // "true"' "$STATUS_FILE" 2>/dev/null)
+    if check_jq; then
+        PROFILE_FRESH=$(json_read "$STATUS_FILE" '.profile_fresh // "true"')
 
         if [ "$PROFILE_FRESH" = "false" ]; then
             echo -e "${YELLOW}⚠️  用户画像可能过期${NC}"
@@ -37,18 +35,18 @@ if [ -f "$STATUS_FILE" ]; then
         fi
 
         # 读取并显示用户信息
-        NAME=$(jq -r '.user_name // ""' "$STATUS_FILE" 2>/dev/null)
-        ROLE=$(jq -r '.user_role // ""' "$STATUS_FILE" 2>/dev/null)
-        SKILLS_COUNT=$(jq -r '.skills_count // 0' "$STATUS_FILE" 2>/dev/null)
+        NAME=$(json_read "$STATUS_FILE" '.user_name // ""')
+        ROLE=$(json_read "$STATUS_FILE" '.user_role // ""')
+        SKILLS_COUNT=$(json_read "$STATUS_FILE" '.skills_count // "0"')
 
         if [ -n "$NAME" ]; then
             echo -e "${GREEN}✅ 用户画像已加载${NC}: $NAME ($ROLE)"
             echo "   当前掌握 $SKILLS_COUNT 个用户技能"
         else
             # 回退到直接读取 profile 文件
-            NAME=$(jq -r '.basic_info.name // "未设置"' "$PROFILE_FILE" 2>/dev/null)
-            ROLE=$(jq -r '.basic_info.role // "未设置"' "$PROFILE_FILE" 2>/dev/null)
-            SKILLS_COUNT=$(jq -r '.user_skills | length' "$PROFILE_FILE" 2>/dev/null || echo "0")
+            NAME=$(json_read "$PROFILE_FILE" '.basic_info.name // "未设置"')
+            ROLE=$(json_read "$PROFILE_FILE" '.basic_info.role // "未设置"')
+            SKILLS_COUNT=$(json_read "$PROFILE_FILE" '.user_skills | length // "0"')
 
             echo -e "${GREEN}✅ 用户画像已加载${NC}: $NAME ($ROLE)"
             echo "   当前掌握 $SKILLS_COUNT 个用户技能"
@@ -59,10 +57,10 @@ if [ -f "$STATUS_FILE" ]; then
     fi
 else
     # 回退：直接读取 profile 文件
-    if command -v jq >/dev/null 2>&1; then
-        NAME=$(jq -r '.basic_info.name // "未设置"' "$PROFILE_FILE" 2>/dev/null)
-        ROLE=$(jq -r '.basic_info.role // "未设置"' "$PROFILE_FILE" 2>/dev/null)
-        SKILLS_COUNT=$(jq -r '.user_skills | length' "$PROFILE_FILE" 2>/dev/null || echo "0")
+    if check_jq; then
+        NAME=$(json_read "$PROFILE_FILE" '.basic_info.name // "未设置"')
+        ROLE=$(json_read "$PROFILE_FILE" '.basic_info.role // "未设置"')
+        SKILLS_COUNT=$(json_read "$PROFILE_FILE" '.user_skills | length // "0"')
 
         echo -e "${GREEN}✅ 用户画像已加载${NC}: $NAME ($ROLE)"
         echo "   当前掌握 $SKILLS_COUNT 个用户技能"

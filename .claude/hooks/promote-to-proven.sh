@@ -4,16 +4,13 @@
 
 set -e
 
-PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
-TASKS_FILE="$PROJECT_DIR/.info/tasks.json"
-SKILLS_DIR="$PROJECT_DIR/.claude/skills"
-ARCHIVE_DIR="$PROJECT_DIR/.claude/skills/.archived"
+# 加载共享库
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib/common.sh"
 
-# 颜色输出
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
+# 初始化
+init_colors
+check_jq || { echo -e "${YELLOW}⚠️  需要安装 jq: brew install jq 或 apt install jq${NC}" && exit 1; }
 
 # 检查参数
 if [ -z "$1" ] || [ -z "$2" ]; then
@@ -24,7 +21,7 @@ fi
 K_SKILL="$1"
 P_SKILL="$2"
 DESCRIPTION="${3:-从 $K_SKILL 升级的验证技能}"
-TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+TIMESTAMP=$(get_timestamp)
 
 # 验证 k_ 技能存在
 K_SKILL_DIR="$SKILLS_DIR/$K_SKILL"
@@ -39,31 +36,15 @@ if [[ ! "$P_SKILL" =~ ^p_[a-z_]+$ ]]; then
     exit 1
 fi
 
-# 检查 p_ 技能数量上限（10个）
-PROVEN_COUNT=$(jq -r 'if .proven_skills then (.proven_skills | length) else 0 end' "$TASKS_FILE" 2>/dev/null || echo "0")
-MAX_PROVEN=10
-
-if [ "$PROVEN_COUNT" -ge "$MAX_PROVEN" ]; then
-    echo -e "${YELLOW}⚠️  p_ 技能已达上限 ($MAX_PROVEN 个)${NC}"
-    echo -e "${BLUE}当前 p_ 技能数${NC}: $PROVEN_COUNT"
-    echo ""
-    echo "请先归档低频技能："
-    echo "  查看技能: jq '.proven_skills' $TASKS_FILE"
-    echo "  归档技能: 删除 tasks.json 中的对应条目"
-    exit 1
-fi
+# 检查 p_ 技能数量上限
+P_COUNT=$(get_skill_count "proven")
+check_skill_limit "proven" "$P_COUNT" || exit 1
 
 # 检查 p_ 技能是否已存在
 P_SKILL_DIR="$SKILLS_DIR/$P_SKILL"
 if [ -d "$P_SKILL_DIR" ]; then
     echo -e "${YELLOW}⚠️  p_ 技能已存在: $P_SKILL${NC}"
     echo "如需更新，请先删除现有技能"
-    exit 1
-fi
-
-# 检查 jq 是否安装
-if ! command -v jq >/dev/null 2>&1; then
-    echo -e "${YELLOW}⚠️  需要安装 jq: brew install jq 或 apt install jq${NC}"
     exit 1
 fi
 
@@ -123,32 +104,30 @@ EOF
 fi
 
 # 3. 更新 tasks.json
-TEMP_FILE=$(mktemp)
-
 # 检查 proven_skills 是否存在
-if jq -e '.proven_skills' "$TASKS_FILE" >/dev/null 2>&1; then
+if json_read "$TASKS_FILE" '.proven_skills' >/dev/null 2>&1; then
     # 已存在，添加新技能
-    jq --arg pskill "$P_SKILL" --arg kskill "$K_SKILL" --arg time "$TIMESTAMP" \
+    atomic_json_update "$TASKS_FILE" \
+        --arg pskill "$P_SKILL" --arg kskill "$K_SKILL" --arg time "$TIMESTAMP" \
         '.proven_skills[$pskill] = {
             "source": $kskill,
             "derived_at": $time,
             "usage_count": 0,
             "related_tasks": (if ($kskill | startswith("k")) then [($kskill | split("_")[0])] else [] end),
             "success_rate": 1.0
-        }' "$TASKS_FILE" > "$TEMP_FILE"
+        }'
 else
     # 不存在，创建 proven_skills 对象
-    jq --arg pskill "$P_SKILL" --arg kskill "$K_SKILL" --arg time "$TIMESTAMP" \
+    atomic_json_update "$TASKS_FILE" \
+        --arg pskill "$P_SKILL" --arg kskill "$K_SKILL" --arg time "$TIMESTAMP" \
         '.proven_skills = {} | .proven_skills[$pskill] = {
             "source": $kskill,
             "derived_at": $time,
             "usage_count": 0,
             "related_tasks": (if ($kskill | startswith("k")) then [($kskill | split("_")[0])] else [] end),
             "success_rate": 1.0
-        }' "$TASKS_FILE" > "$TEMP_FILE"
+        }'
 fi
-
-mv "$TEMP_FILE" "$TASKS_FILE"
 
 # 4. 可选：归档原始 k_ 技能
 ARCHIVED_K_DIR="$ARCHIVE_DIR/$K_SKILL"
@@ -156,10 +135,7 @@ mkdir -p "$ARCHIVE_DIR"
 mv "$K_SKILL_DIR" "$ARCHIVED_K_DIR" 2>/dev/null || true
 
 # 5. 记录变更日志
-CHANGELOG="$PROJECT_DIR/.info/skills_changelog.jsonl"
-cat >> "$CHANGELOG" <<EOF
-{"timestamp": "$TIMESTAMP", "tool": "Promote", "skill_type": "proven", "skill_name": "$P_SKILL", "source": "$K_SKILL", "path": "$P_SKILL_DIR/SKILL.md"}
-EOF
+log_changelog "Promote" "proven" "$P_SKILL" "$P_SKILL_DIR/SKILL.md"
 
 # 输出结果
 echo -e "${GREEN}✅ 技能升级完成${NC}"

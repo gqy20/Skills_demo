@@ -4,22 +4,13 @@
 
 set -e
 
-PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
-STATUS_FILE="$PROJECT_DIR/.info/.status.json"
-TASKS_FILE="$PROJECT_DIR/.info/tasks.json"
-PROFILE_FILE="$PROJECT_DIR/.info/usr.json"
-INFO_DIR="$PROJECT_DIR/info"
+# 加载共享库
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib/common.sh"
 
-# 颜色输出（用于调试）
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-# 检查 jq 是否安装
-if ! command -v jq >/dev/null 2>&1; then
-    echo "⚠️  需要安装 jq: brew install jq 或 apt install jq"
-    exit 0
-fi
+# 初始化
+init_colors
+check_jq || exit 0
 
 # 初始化状态对象
 STATUS='{}'
@@ -27,15 +18,13 @@ STATUS='{}'
 # 1. 读取任务信息
 if [ -f "$TASKS_FILE" ]; then
     # 查找活跃任务
-    ACTIVE_TASK=$(jq -r '.tasks | to_entries | map(select(.value.status == "active")) | .[0].key // ""' "$TASKS_FILE" 2>/dev/null)
+    ACTIVE_TASK=$(json_read "$TASKS_FILE" '.tasks | to_entries | map(select(.value.status == "active")) | .[0].key // ""')
 
     if [ -n "$ACTIVE_TASK" ]; then
-        TASK_NAME=$(jq -r ".tasks[\"$ACTIVE_TASK\"].name // \"无\"" "$TASKS_FILE" 2>/dev/null)
-        STEPS=$(jq -r ".tasks[\"$ACTIVE_TASK\"].steps // []" "$TASKS_FILE" 2>/dev/null)
+        TASK_NAME=$(json_read "$TASKS_FILE" ".tasks[\"$ACTIVE_TASK\"].name // \"无\"")
+        STEPS=$(json_read "$TASKS_FILE" ".tasks[\"$ACTIVE_TASK\"].steps // []")
         STEP_COUNT=$(echo "$STEPS" | jq 'length' 2>/dev/null || echo "0")
-
-        # 计算完成步骤数（读取 current_step 字段）
-        COMPLETED=$(jq -r ".tasks[\"$ACTIVE_TASK\"].current_step // 0" "$TASKS_FILE" 2>/dev/null)
+        COMPLETED=$(json_read "$TASKS_FILE" ".tasks[\"$ACTIVE_TASK\"].current_step // 0")
 
         STATUS=$(echo "$STATUS" | jq --arg id "$ACTIVE_TASK" --arg name "$TASK_NAME" \
             --argjson total "$STEP_COUNT" --argjson completed "$COMPLETED" \
@@ -43,24 +32,24 @@ if [ -f "$TASKS_FILE" ]; then
     fi
 
     # 统计任务数量
-    TOTAL_TASKS=$(jq -r '.tasks | length' "$TASKS_FILE" 2>/dev/null || echo "0")
-    ACTIVE_COUNT=$(jq -r '[.tasks[] | select(.status == "active")] | length' "$TASKS_FILE" 2>/dev/null || echo "0")
-    COMPLETED_COUNT=$(jq -r '[.tasks[] | select(.status == "completed")] | length' "$TASKS_FILE" 2>/dev/null || echo "0")
+    TOTAL_TASKS=$(json_read "$TASKS_FILE" '.tasks | length' || echo "0")
+    ACTIVE_COUNT=$(json_read "$TASKS_FILE" '[.tasks[] | select(.status == "active")] | length' || echo "0")
+    COMPLETED_COUNT=$(json_read "$TASKS_FILE" '[.tasks[] | select(.status == "completed")] | length' || echo "0")
 
     STATUS=$(echo "$STATUS" | jq --argjson total "$TOTAL_TASKS" --argjson active "$ACTIVE_COUNT" \
         --argjson completed "$COMPLETED_COUNT" \
         '.total_tasks = $total | .active_tasks = $active | .completed_tasks = $completed')
 
     # 统计 p_ 技能数量（验证技能）
-    PROVEN_COUNT=$(jq -r 'if .proven_skills then (.proven_skills | length) else 0 end' "$TASKS_FILE" 2>/dev/null || echo "0")
+    PROVEN_COUNT=$(get_skill_count "proven")
     STATUS=$(echo "$STATUS" | jq --argjson proven "$PROVEN_COUNT" '.proven_skills_count = $proven')
 fi
 
 # 2. 读取用户画像信息
 if [ -f "$PROFILE_FILE" ]; then
-    USER_NAME=$(jq -r '.basic_info.name // ""' "$PROFILE_FILE" 2>/dev/null)
-    USER_ROLE=$(jq -r '.basic_info.role // ""' "$PROFILE_FILE" 2>/dev/null)
-    SKILLS_COUNT=$(jq -r '.user_skills | length // 0' "$PROFILE_FILE" 2>/dev/null)
+    USER_NAME=$(json_read "$PROFILE_FILE" '.basic_info.name // ""')
+    USER_ROLE=$(json_read "$PROFILE_FILE" '.basic_info.role // ""')
+    SKILLS_COUNT=$(json_read "$PROFILE_FILE" '.user_skills | length // 0')
 
     STATUS=$(echo "$STATUS" | jq --arg name "$USER_NAME" --arg role "$USER_ROLE" \
         --argjson skills "$SKILLS_COUNT" \
@@ -75,14 +64,8 @@ if [ -f "$PROFILE_FILE" ] && [ -d "$INFO_DIR" ]; then
         -not -path "*/results/*" 2>/dev/null | xargs ls -t 2>/dev/null | head -1)
 
     if [ -n "$LATEST_INFO" ]; then
-        # 获取文件修改时间
-        if stat -f %m "$LATEST_INFO" >/dev/null 2>&1; then
-            INFO_MTIME=$(stat -f %m "$LATEST_INFO")
-            PROFILE_MTIME=$(stat -f %m "$PROFILE_FILE")
-        else
-            INFO_MTIME=$(stat -c %Y "$LATEST_INFO" 2>/dev/null)
-            PROFILE_MTIME=$(stat -c %Y "$PROFILE_FILE" 2>/dev/null)
-        fi
+        INFO_MTIME=$(get_file_mtime "$LATEST_INFO")
+        PROFILE_MTIME=$(get_file_mtime "$PROFILE_FILE")
 
         if [ -n "$INFO_MTIME" ] && [ -n "$PROFILE_MTIME" ] && [ "$INFO_MTIME" -gt "$PROFILE_MTIME" ]; then
             PROFILE_FRESH="false"
@@ -93,7 +76,8 @@ fi
 STATUS=$(echo "$STATUS" | jq --arg fresh "$PROFILE_FRESH" '.profile_fresh = ($fresh == "true")')
 
 # 4. 添加时间戳
-STATUS=$(echo "$STATUS" | jq --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '.updated_at = $ts')
+TIMESTAMP=$(get_timestamp)
+STATUS=$(echo "$STATUS" | jq --arg ts "$TIMESTAMP" '.updated_at = $ts')
 
 # 写入状态文件
 echo "$STATUS" | jq '.' > "$STATUS_FILE"
