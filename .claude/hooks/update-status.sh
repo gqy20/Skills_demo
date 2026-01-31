@@ -34,8 +34,8 @@ if [ -f "$TASKS_FILE" ]; then
         STEPS=$(jq -r ".tasks[\"$ACTIVE_TASK\"].steps // []" "$TASKS_FILE" 2>/dev/null)
         STEP_COUNT=$(echo "$STEPS" | jq 'length' 2>/dev/null || echo "0")
 
-        # 计算完成步骤数（假设完成标识在 tasks.json 中有 completed_steps 字段）
-        COMPLETED=$(jq -r ".tasks[\"$ACTIVE_TASK\"].completed_steps // 0" "$TASKS_FILE" 2>/dev/null)
+        # 计算完成步骤数（读取 current_step 字段）
+        COMPLETED=$(jq -r ".tasks[\"$ACTIVE_TASK\"].current_step // 0" "$TASKS_FILE" 2>/dev/null)
 
         STATUS=$(echo "$STATUS" | jq --arg id "$ACTIVE_TASK" --arg name "$TASK_NAME" \
             --argjson total "$STEP_COUNT" --argjson completed "$COMPLETED" \
