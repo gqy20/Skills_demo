@@ -21,6 +21,8 @@ flowchart TB
         USR[".info/usr.json<br/>用户画像"]
         TASKS[".info/tasks.json<br/>任务索引"]
         STATUS[".info/.status.json<br/>运行状态"]
+        REASON[".info/.reasoning.md<br/>推理日志索引"]
+        META[".info/.reasoning.meta.json<br/>推理元数据"]
     end
 
     subgraph Skills["🔧 技能层"]
@@ -35,10 +37,12 @@ flowchart TB
         UT["update-status<br/>状态更新"]
         TS["track-skills<br/>变更追踪"]
         ID["intent-detect<br/>意图路由"]
+        CR["capture-reasoning<br/>推理日志"]
     end
 
     subgraph Output["📤 输出层"]
         RESULTS["results/<br/>任务结果"]
+        REASON_FILES["results/k01/.reasoning.md<br/>推理日志"]
         STATUSLINE["状态栏<br/>实时显示"]
     end
 
@@ -55,15 +59,19 @@ flowchart TB
     CMD -.->|SessionStart| SS
     CMD -.->|UserPrompt| ID
     CMD -.->|ToolUse| UT
+    CMD -.->|ToolUse| CR
     SG -.->|Edit| TS
 
     %% 状态更新
     UT --> STATUS
     TS --> TASKS
     SS --> STATUS
+    CR --> REASON
+    CR --> META
 
     %% 输出
     KSKILL --> RESULTS
+    CR --> REASON_FILES
     STATUS --> STATUSLINE
     USR --> STATUS
 
@@ -77,10 +85,10 @@ flowchart TB
 
     class INFO,TEMPLATES inputStyle
     class UP,CMD,SG coreStyle
-    class USR,TASKS,STATUS dataStyle
+    class USR,TASKS,STATUS,REASON,META dataStyle
     class BUILTIN,USKILL,PSKILL,KSKILL skillStyle
-    class SS,UT,TS,ID hookStyle
-    class RESULTS,STATUSLINE outputStyle
+    class SS,UT,TS,ID,CR hookStyle
+    class RESULTS,REASON_FILES,STATUSLINE outputStyle
 ```
 
 ## 核心思路
@@ -91,10 +99,33 @@ flowchart TB
 
 ### 工作流程
 
+```
+建立画像 → 启动任务 → 两次确认 → 生成技能 → 逐步执行 → 查看推理日志
+```
+
 1. **建立画像** - 在 `info/` 目录添加个人信息，运行 `/user-profile`
 2. **启动任务** - 使用 `/commander start [任务描述]` 创建新任务
+   - 第一次确认：确认任务分析结果（类型、技术栈、参考技能）
+   - 第二次确认：确认技能生成计划
 3. **执行步骤** - 逐个使用生成的子技能完成每一步
-4. **查看结果** - 在 `results/k01/` 查看执行过程和产出文件
+4. **查看推理日志** - 在 `results/k01/.reasoning.md` 查看执行过程和方法论
+
+### 推理日志系统
+
+新推出的推理日志系统自动记录每个任务的执行过程：
+
+- **Mermaid 流程图**：可视化任务进度和方法标签
+- **方法论详情表**：展示每个步骤使用的方法和工具
+- **执行时间线**：记录关键事件和时间戳
+- **推理块捕获**：保存 `<reasoning>` 块中的思考过程
+
+```bash
+# 查看全局推理索引
+cat .info/.reasoning.md
+
+# 查看特定任务的推理日志
+cat results/k01/.reasoning.md
+```
 
 ### 快速开始
 
@@ -170,13 +201,14 @@ flowchart TB
 │   ├── skill-generator/ # 技能生成器
 │   └── k01_init_project/ # 生成的子技能
 ├── hooks/            # Hooks 脚本
-│   ├── session-start.sh      # 会话启动检查
-│   ├── intent-detect.sh      # 意图路由
-│   ├── update-status.sh      # 状态更新
-│   ├── track-skills-change.sh # 技能变更追踪
-│   ├── promote-to-proven.sh  # 技能升级
+│   ├── session-start.sh        # 会话启动检查
+│   ├── intent-detect.sh        # 意图路由
+│   ├── update-status.sh        # 状态更新
+│   ├── track-skills-change.sh  # 技能变更追踪
+│   ├── capture-reasoning.sh    # 推理日志捕获 ⭐
+│   ├── promote-to-proven.sh    # 技能升级
 │   └── lib/
-│       └── common.sh         # 共享函数库
+│       └── common.sh           # 共享函数库
 ├── statusline.sh      # 自定义状态栏
 └── settings.json      # Claude Code 配置
 
@@ -185,28 +217,39 @@ flowchart TB
     └── info.md              # 意图路由规则模板
 
 .info/                # 数据目录
-    ├── usr.json        # 用户画像（生成）
-    ├── tasks.json      # 任务索引
-    ├── .status.json    # 运行时状态
-    └── info.md         # 意图路由规则（生成）
+    ├── usr.json             # 用户画像（生成）
+    ├── tasks.json           # 任务索引
+    ├── .status.json         # 运行时状态
+    ├── .reasoning.md        # 推理日志全局索引 ⭐
+    ├── .reasoning.meta.json # 推理元数据 ⭐
+    ├── .reasoning.log.jsonl # 推理事件日志 ⭐
+    └── info.md              # 意图路由规则（生成）
 
 info/                 # 用户输入（个人信息）
 
 results/              # 任务结果（执行过程文件）
-    └── k01/           # 任务 k01 的结果
+    └── k01/               # 任务 k01 的结果
+        ├── .reasoning.md   # 任务级推理日志 ⭐
+        ├── README.md       # 任务总览
+        ├── plan.md         # 任务计划
+        └── execution.md    # 执行记录
 
 .mcp.json            # MCP 服务器配置
 ```
+
+⭐ 新增功能
 
 ## 核心命令
 
 | 命令 | 说明 |
 |------|------|
 | `/user-profile` | 生成用户画像 |
-| `/commander start [任务]` | 启动新任务 |
+| `/commander start [任务]` | 启动新任务（两次确认流程） |
 | `/commander status` | 全局状态 |
 | `/commander progress k01` | 任务进度 |
 | `/k01_init_project` | 执行子技能 |
+| `cat .info/.reasoning.md` | 查看推理日志全局索引 |
+| `cat results/k01/.reasoning.md` | 查看任务推理日志 |
 
 > 💡 完整命令参考请查看 [使用指南](docs/usage.md#核心命令)
 
@@ -214,4 +257,6 @@ results/              # 任务结果（执行过程文件）
 
 - **以人为本** - 基于用户画像定制 AI 行为
 - **任务驱动** - 将大任务拆解为可执行的子技能
-- **过程可见** - 所有执行记录保存在 results/ 目录
+- **过程可见** - 推理日志记录 AI 的思考过程和方法论
+- **两次确认** - 分析结果确认 + 技能计划确认，确保准确性
+- **并发安全** - 每个任务独立的推理日志，支持多任务并行
