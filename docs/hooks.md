@@ -76,12 +76,12 @@ Hooks 在 `.claude/settings.json` 中配置：
 | `log_changelog()` | 记录变更到 changelog |
 
 **技能类型识别**:
-| 模式 | 类型 | 示例 |
-|------|------|------|
-| `^u_[a-z_]+$` | user | `u_react_hooks` |
-| `^k[0-9]+_[a-z_]+$` | task | `k01_init_project` |
-| `^p_[a-z_]+$` | proven | `p_mdx_setup` |
-| 其他 | builtin | `user-profile` |
+| 模式 | 类型 | 示例 | 说明 |
+|------|------|------|------|
+| `^u_[a-z][a-z0-9_]*$` | user | `u_react_hooks` | 用户技能（名称可自定义） |
+| `^k[0-9]+(_[a-z][a-z0-9_]*)?$` | task | `k01_init_project` | 任务技能（支持纯任务 ID） |
+| `^p_[a-z][a-z0-9_]*$` | proven | `p_mdx_setup` | 验证技能（名称可自定义） |
+| 其他 | builtin | `user-profile` | 内置技能 |
 
 ---
 

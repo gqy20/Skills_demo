@@ -245,7 +245,7 @@ commander → k01_init_project → 完成 → commander → k01_config_mdx → .
 | `.info/usr.json` | user-profile | 由 user-profile 生成和维护 |
 | `.info/tasks.json` | commander | 由 commander 维护任务状态 |
 | `.claude/skills/k[0-9]_*/` | skill-generator | 由 skill-generator 创建 |
-| `results/k[0-9]*/` | commander | 由 commander 创建和管理 |
+| `results/*/` | commander | 任务执行结果目录（支持 k_, u_, p_ 技能） |
 | `.claude/skills/user-profile/` | 系统 | 核心 skill，不生成 |
 | `.claude/skills/commander/` | 系统 | 核心 skill，不生成 |
 | `.claude/skills/skill-generator/` | 系统 | 核心 skill，不生成 |

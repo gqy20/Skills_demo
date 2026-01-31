@@ -284,8 +284,13 @@ main() {
     local fixed_count=0
     local checked_count=0
 
-    # 遍历 results 目录下的所有任务
-    for task_dir in "$RESULTS_DIR"/k*/; do
+    # 遍历 results 目录下的所有任务（k_, u_, p_ 技能）
+    for task_dir in "$RESULTS_DIR"/*/; do
+        # 跳过非技能目录（如 .git 等）
+        local dirname=$(basename "$task_dir")
+        if [[ ! "$dirname" =~ ^[a-z]+[0-9]*$ ]]; then
+            continue
+        fi
         if [ -d "$task_dir" ]; then
             local task_id=$(basename "$task_dir")
             local reasoning_file="$task_dir/.reasoning.md"

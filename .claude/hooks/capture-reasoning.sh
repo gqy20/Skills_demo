@@ -24,8 +24,8 @@ TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""' 2>/dev/null)
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""' 2>/dev/null)
 NEW_CONTENT=$(echo "$INPUT" | jq -r '.tool_input.content // ""' 2>/dev/null)
 
-# 只处理 results/k*/.reasoning.md 文件
-if [[ ! "$FILE_PATH" =~ results/k[0-9]+/\.reasoning\.md$ ]]; then
+# 只处理 results/*/.reasoning.md 文件（支持 k_, u_, p_ 技能）
+if [[ ! "$FILE_PATH" =~ results/[a-z]+[0-9]*/\.reasoning\.md$ ]]; then
     exit 0
 fi
 
@@ -33,8 +33,8 @@ fi
 mkdir -p "$(dirname "$REASONING_GLOBAL")"
 mkdir -p "$(dirname "$REASONING_META")"
 
-# 提取任务 ID（从文件路径中提取 k01, k02 等）
-TASK_ID=$(echo "$FILE_PATH" | grep -oE 'k[0-9]+' | head -1 || echo "")
+# 提取任务 ID（从 results/k01/ 等目录名提取）
+TASK_ID=$(basename "$(dirname "$FILE_PATH")")
 
 if [ -z "$TASK_ID" ]; then
     exit 0

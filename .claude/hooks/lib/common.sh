@@ -100,11 +100,11 @@ json_read() {
 get_skill_type() {
     local skill_name="$1"
 
-    if [[ "$skill_name" =~ ^u_[a-z_]+$ ]]; then
+    if [[ "$skill_name" =~ ^u_[a-z][a-z0-9_]*$ ]]; then
         echo "user"
-    elif [[ "$skill_name" =~ ^k[0-9]+_[a-z_]+$ ]]; then
+    elif [[ "$skill_name" =~ ^k[0-9]+(_[a-z][a-z0-9_]*)?$ ]]; then
         echo "task"
-    elif [[ "$skill_name" =~ ^p_[a-z_]+$ ]]; then
+    elif [[ "$skill_name" =~ ^p_[a-z][a-z0-9_]*$ ]]; then
         echo "proven"
     else
         echo "builtin"
