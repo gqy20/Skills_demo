@@ -174,6 +174,96 @@ results/k01/
 未找到 → 生成新的 k_ 技能
 ```
 
+### p_ 技能复用实现（重要）
+
+当生成任务技能时，**必须检查**是否有可复用的 p_ 技能：
+
+#### 1. 检查逻辑
+
+```bash
+# 加载共享库
+source ".claude/hooks/lib/common.sh"
+
+# 查找可复用的 p_ 技能
+P_SKILL=$(find_reusable_p_skill "$任务描述")
+
+if [ -n "$P_SKILL" ]; then
+    # 复用现有 p_ 技能
+    TASK_ID="k02"
+
+    # 记录复用事件并增加 usage_count
+    log_skill_event "skill_reused" "$P_SKILL" \
+        '"task": "'"$TASK_ID"'"' \
+        '"context": "'"$任务描述"'"'
+
+    echo "♻️  复用验证技能: $P_SKILL"
+
+    # 获取当前复用次数
+    REUSE_COUNT=$(json_read "$TASKS_FILE" ".proven_skills[\"$P_SKILL\"].usage_count // 0")
+    echo "   该技能已被复用 $REUSE_COUNT 次"
+
+    # 任务使用复用的技能，不创建新的 k_ 技能
+    TASKS="$P_SKILL"
+else
+    # 生成新的 k_ 技能
+    echo "生成新的 k_ 技能..."
+fi
+```
+
+#### 2. 匹配规则
+
+| 任务描述关键词 | 匹配的 p_ 技能 |
+|---------------|--------------|
+| 调研、研究、开源项目 | `p_research_open_source` |
+| 文章、撰写、技术博客 | `p_article_techar` |
+| 部署、Docker、容器化 | `p_docker_deploy` |
+| Next.js、MDX、博客 | `p_next_mdx` |
+
+#### 3. 复用后操作
+
+```bash
+# 更新 tasks.json
+# 1. 增加 usage_count
+# 2. 添加到 related_tasks
+# 3. 更新 last_used_at
+# 4. 记录事件到 .skills_events.jsonl
+```
+
+#### 4. 显示格式
+
+任务分析完成后，向用户展示：
+
+```
+┌─────────────────────────────────────────┐
+│ 技能分析完成                             │
+├─────────────────────────────────────────┤
+│ ✅ p_research_open_source (复用)         │
+│    该技能已被验证，已在 3 个任务中使用   │
+│    复用后 usage_count: 4                 │
+│                                         │
+│ ❌ k02_write_report (新增)               │
+│    无可复用技能，需要创建                │
+└─────────────────────────────────────────┘
+```
+
+### 技能复用与生成的决策树
+
+```
+                    任务分析
+                       │
+         ┌─────────────┴─────────────┐
+         │                           │
+    检查 p_ 技能                检查 u_ 技能
+         │                           │
+    ┌────┴────┐               ┌────┴────┐
+    │         │               │         │
+ 找到匹配   未找到          找到匹配   未找到
+    │         │               │         │
+    ↓         ↓               ↓         ↓
+ 复用 p_   检查 u_        复用 u_   创建 k_
+ (计数+1)   (递归)          (引用)    (新技能)
+```
+
 ## u_ 前缀技能的内容结构
 
 ```markdown

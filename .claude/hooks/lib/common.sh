@@ -221,6 +221,163 @@ EOF
 }
 
 # =============================================================================
+# 技能使用统计
+# =============================================================================
+
+# 增加 p_ 技能的使用次数
+# 用法: increment_p_skill_usage <p_skill_name> [related_task]
+increment_p_skill_usage() {
+    local skill_name="$1"
+    local related_task="${2:-}"
+
+    # 只处理 p_ 技能
+    if [ "$(get_skill_type "$skill_name")" != "proven" ]; then
+        return 0
+    fi
+
+    project_dir_init
+
+    # 检查技能是否存在
+    if ! json_read "$TASKS_FILE" ".proven_skills[\"$skill_name\"]" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    # 构建 jq 更新表达式
+    local jq_expr=".proven_skills[\"$skill_name\"].usage_count += 1"
+
+    # 如果指定了关联任务，添加到 related_tasks
+    if [ -n "$related_task" ]; then
+        jq_expr="$jq_expr | .proven_skills[\"$skill_name\"].related_tasks += [\"$related_task\"] | .proven_skills[\"$skill_name\"].related_tasks |= unique"
+    fi
+
+    # 更新最后使用时间
+    jq_expr="$jq_expr | .proven_skills[\"$skill_name\"].last_used_at = \"$(get_timestamp)\""
+
+    atomic_json_update "$TASKS_FILE" "$jq_expr"
+}
+
+# 记录技能被调用（用于统计使用次数）
+# 用法: log_skill_usage <skill_name> <context>
+log_skill_usage() {
+    local skill_name="$1"
+    local context="${2:-general}"
+    local timestamp=$(get_timestamp)
+    local usage_file="$PROJECT_DIR/.info/skills_usage.jsonl"
+
+    project_dir_init
+
+    # 记录使用日志
+    echo "{\"timestamp\": \"$timestamp\", \"skill\": \"$skill_name\", \"context\": \"$context\"}" >> "$usage_file"
+
+    # 如果是 p_ 技能，自动增加 usage_count
+    increment_p_skill_usage "$skill_name" "$context"
+}
+
+# =============================================================================
+# 技能事件日志
+# =============================================================================
+
+# 记录技能事件（统一的技能事件日志）
+# 用法: log_skill_event <event_type> <skill_name> [key1 value1 ...]
+# 事件类型: skill_created, skill_promoted, skill_reused, skill_edited, skill_archived
+log_skill_event() {
+    local event_type="$1"
+    local skill_name="$2"
+    shift 2
+    local timestamp=$(get_timestamp)
+    local event_file="$PROJECT_DIR/.info/skills_events.jsonl"
+
+    project_dir_init
+
+    # 构建 JSON 基础结构
+    local json="{\"timestamp\": \"$timestamp\", \"event\": \"$event_type\", \"skill\": \"$skill_name\""
+
+    # 添加额外数据
+    while [ $# -gt 0 ]; do
+        local key="$1"
+        local value="$2"
+        shift 2
+        json="$json, \"$key\": $value"
+    done
+
+    json="$json}"
+
+    # 写入事件日志
+    echo "$json" >> "$event_file"
+
+    # 特殊事件处理
+    case "$event_type" in
+        skill_reused)
+            # 技能复用时，增加 usage_count
+            local related_task=""
+            for ((i=1; i<=$#; i++)); do
+                if [ "${!i}" == '"task"' ]; then
+                    related_task="${!((i+1))}"
+                    break
+                fi
+            done
+            increment_p_skill_usage "$skill_name" "$related_task"
+            ;;
+        skill_edited)
+            # 技能编辑时，也增加 usage_count（表示被使用）
+            increment_p_skill_usage "$skill_name"
+            ;;
+    esac
+}
+
+# 检查 p_ 技能是否可以被任务复用
+# 用法: find_reusable_p_skill <task_description>
+# 输出: 匹配的 p_ 技能名称或空
+find_reusable_p_skill() {
+    local task_desc="$1"
+
+    project_dir_init
+
+    # 获取所有 p_ 技能
+    local p_skills=$(jq -r '.proven_skills | keys[]' "$TASKS_FILE" 2>/dev/null || echo "")
+
+    # 简单匹配逻辑（可以扩展为更复杂的相似度计算）
+    for p_skill in $p_skills; do
+        # 检查技能名称中的关键词
+        local skill_keywords=$(echo "$p_skill" | sed 's/p_//' | sed 's/_/ /g')
+
+        # 如果任务描述包含技能关键词，返回该技能
+        if echo "$task_desc" | grep -qi "$skill_keywords"; then
+            echo "$p_skill"
+            return 0
+        fi
+    done
+
+    echo ""
+}
+
+# 获取最热门的 p_ 技能
+# 用法: get_top_p_skill [limit]
+# 输出: "skill_name:count" 格式
+get_top_p_skill() {
+    local limit="${1:-1}"
+
+    project_dir_init
+
+    jq -r ".proven_skills | to_entries | sort_by(.value.usage_count // 0) | reverse | .[0:$limit] |
+           .[] | \"\(.key): \(.value.usage_count // 0)\"" "$TASKS_FILE" 2>/dev/null || echo ""
+}
+
+# 获取技能复用统计
+# 用法: get_reuse_stats
+# 输出: JSON 格式的复用统计
+get_reuse_stats() {
+    project_dir_init
+
+    jq '{
+        total_reuses: ([.proven_skills[].usage_count // 0] | add),
+        top_skill: (.proven_skills | to_entries | max_by(.value.usage_count // 0) | .key),
+        top_count: (.proven_skills | to_entries | max_by(.value.usage_count // 0) | .value.usage_count // 0),
+        active_skills: ([.proven_skills[] | select(.usage_count // 0 > 0)] | length)
+    }' "$TASKS_FILE" 2>/dev/null || echo '{"total_reuses": 0, "top_skill": "", "top_count": 0, "active_skills": 0}'
+}
+
+# =============================================================================
 # 导出函数
 # =============================================================================
 
@@ -237,3 +394,5 @@ export -f project_dir_init init_colors check_jq
 export -f atomic_json_update json_read
 export -f get_skill_type get_skill_count check_skill_limit
 export -f get_timestamp get_file_mtime log_changelog
+export -f increment_p_skill_usage log_skill_usage
+export -f log_skill_event find_reusable_p_skill get_top_p_skill get_reuse_stats

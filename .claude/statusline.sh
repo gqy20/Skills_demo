@@ -251,12 +251,14 @@ get_system_status() {
     local user_name=$(jq -r '.user_name // ""' "$STATUS_FILE" 2>/dev/null)
     local profile_fresh=$(jq -r '.profile_fresh // true' "$STATUS_FILE" 2>/dev/null)
     local skills_count=$(jq -r '.skills_count // 0' "$STATUS_FILE" 2>/dev/null)
+    local proven_count=$(jq -r '.proven_skills_count // 0' "$STATUS_FILE" 2>/dev/null)
 
-    # 获取技能使用次数（通过解析会话文件）
-    local skills_usage=0
-    local usage_script="$PROJECT_DIR/.claude/hooks/count-skills-usage.sh"
-    if [ -f "$usage_script" ]; then
-        skills_usage=$("$usage_script" 2>/dev/null) || skills_usage=0
+    # 获取技能复用统计
+    local top_skill=""
+    local top_count=0
+    if [ -f "$TASKS_FILE" ]; then
+        top_skill=$(jq -r '.proven_skills | to_entries | max_by(.value.usage_count // 0) | .key // ""' "$TASKS_FILE" 2>/dev/null)
+        top_count=$(jq -r '.proven_skills | to_entries | max_by(.value.usage_count // 0) | .value.usage_count // 0' "$TASKS_FILE" 2>/dev/null)
     fi
 
     local result=""
@@ -298,16 +300,25 @@ get_system_status() {
         fi
     fi
 
-    # 技能统计（显示数量和使用次数）
+    # 技能统计（显示技能数量和复用次数）
     if [ "$has_content" = true ]; then
-        if [ "$skills_usage" -gt 0 ]; then
-            result="${result} | ${C_CYAN}🔧${C_RESET} ${skills_count}技能(${skills_usage}次)"
+        if [ "$top_count" -gt 0 ]; then
+            # 显示热门技能复用次数
+            local skill_short=$(echo "$top_skill" | sed 's/^p_//' | sed 's/_/ /g')
+            result="${result} | ${C_CYAN}🔧${C_RESET} ${skills_count}技能 | ${C_GREEN}♻️${C_RESET} ${skill_short}: ${top_count}次"
+        elif [ "$proven_count" -gt 0 ]; then
+            # 有 p_ 技能但暂无复用
+            result="${result} | ${C_CYAN}🔧${C_RESET} ${skills_count}技能 | ${C_GREEN}♻️${C_RESET} ${proven_count}验证"
         else
+            # 只有用户技能
             result="${result} | ${C_CYAN}🔧${C_RESET} ${skills_count}技能"
         fi
     else
-        if [ "$skills_usage" -gt 0 ]; then
-            result="${C_CYAN}🔧${C_RESET} ${skills_count}技能(${skills_usage}次)"
+        if [ "$top_count" -gt 0 ]; then
+            local skill_short=$(echo "$top_skill" | sed 's/^p_//' | sed 's/_/ /g')
+            result="${C_CYAN}🔧${C_RESET} ${skills_count}技能 | ${C_GREEN}♻️${C_RESET} ${skill_short}: ${top_count}次"
+        elif [ "$proven_count" -gt 0 ]; then
+            result="${C_CYAN}🔧${C_RESET} ${skills_count}技能 | ${C_GREEN}♻️${C_RESET} ${proven_count}验证"
         else
             result="${C_CYAN}🔧${C_RESET} ${skills_count}技能"
         fi

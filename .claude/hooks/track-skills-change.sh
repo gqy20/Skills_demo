@@ -82,7 +82,11 @@ case "$TOOL_NAME" in
         fi
         ;;
     "Edit")
-        if [ "$SKILL_TYPE" = "user" ] || [ "$SKILL_TYPE" = "task" ] || [ "$SKILL_TYPE" = "proven" ]; then
+        if [ "$SKILL_TYPE" = "proven" ]; then
+            # p_ 技能被编辑，增加使用次数
+            increment_p_skill_usage "$SKILL_NAME"
+            echo -e "${BLUE}🔄 已更新技能${NC}: $SKILL_NAME (usage_count +1)"
+        elif [ "$SKILL_TYPE" = "user" ] || [ "$SKILL_TYPE" = "task" ]; then
             echo -e "${BLUE}🔄 已更新技能${NC}: $SKILL_NAME"
         fi
         ;;

@@ -43,6 +43,27 @@ if [ -f "$TASKS_FILE" ]; then
     # 统计 p_ 技能数量（验证技能）
     PROVEN_COUNT=$(get_skill_count "proven")
     STATUS=$(echo "$STATUS" | jq --argjson proven "$PROVEN_COUNT" '.proven_skills_count = $proven')
+
+    # 统计复用次数和热门技能
+    if [ -f "$TASKS_FILE" ]; then
+        # 检查是否有 p_ 技能
+        HAS_PROVEN=$(jq -r '.proven_skills != null and (.proven_skills | length > 0)' "$TASKS_FILE" 2>/dev/null)
+
+        if [ "$HAS_PROVEN" = "true" ]; then
+            # 获取复用次数最多的技能
+            TOP_SKILL=$(jq -r '.proven_skills | to_entries | sort_by(.value.usage_count // -100) | reverse | .[0].key // ""' "$TASKS_FILE" 2>/dev/null)
+            TOP_COUNT=$(jq -r '.proven_skills | to_entries | sort_by(.value.usage_count // -100) | reverse | .[0].value.usage_count // 0' "$TASKS_FILE" 2>/dev/null)
+            TOTAL_REUSES=$(jq -r '[.proven_skills[].usage_count // 0] | add // 0' "$TASKS_FILE" 2>/dev/null || echo "0")
+            ACTIVE_PROVEN=$(jq -r '[.proven_skills[] | select(.usage_count // 0 > 0)] | length // 0' "$TASKS_FILE" 2>/dev/null || echo "0")
+
+            STATUS=$(echo "$STATUS" | jq --arg top "$TOP_SKILL" --argjson topc "$TOP_COUNT" \
+                --argjson total "$TOTAL_REUSES" --argjson active "$ACTIVE_PROVEN" \
+                '.top_reused_skill = $top | .top_reuse_count = $topc | .total_reuses = $total | .active_proven_skills = $active')
+        else
+            # 没有 p_ 技能时设置默认值
+            STATUS=$(echo "$STATUS" | jq '.top_reused_skill = "" | .top_reuse_count = 0 | .total_reuses = 0 | .active_proven_skills = 0')
+        fi
+    fi
 fi
 
 # 2. 读取用户画像信息
