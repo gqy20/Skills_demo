@@ -55,33 +55,36 @@
 
 ## 技能使用统计
 
-状态栏通过解析会话历史文件来统计技能使用次数：
+状态栏从 `.info/.status.json` 读取技能统计数据。
 
 ### 数据来源
 
-1. **项目会话文件**：`~/.claude/projects/-workspaces-Skills-demo/<sessionId>.jsonl`
-2. **全局历史文件**：`~/.claude/history.jsonl`
+- **状态文件**：`.info/.status.json`
+- **更新方式**：由 `update-status.sh` Hook 自动维护
 
-### 统计方法
+### 统计内容
 
-- 从会话文件中提取 `type == "tool_use"` 且 `name` 以 `/` 开头的记录
-- 统计结果缓存在 `.info/skills_usage_cache.json`（5 分钟有效期）
+| 字段 | 说明 |
+|------|------|
+| `skills_count` | 总技能数（内置 + u_ + p_ + k_） |
+| `proven_skills_count` | p_ 技能数量 |
+| `total_reuses` | p_ 技能复用总次数 |
+| `top_reused_skill` | 复用次数最多的技能 |
+| `top_reuse_count` | 最高复用次数 |
+| `active_proven_skills` | 有使用记录的 p_ 技能数 |
 
-### 缓存文件结构
+### 状态文件示例
 
 ```json
 {
-  "/init": 2,
-  "/mcp": 3,
-  "/skills": 1,
-  "total_usage": 9
+  "skills_count": 9,
+  "proven_skills_count": 2,
+  "total_reuses": 12,
+  "top_reused_skill": "p_mdx_setup",
+  "top_reuse_count": 5,
+  "active_proven_skills": 2
 }
 ```
-
-### 实现脚本
-
-- **统计脚本**：`.claude/hooks/count-skills-usage.sh`
-- **缓存位置**：`.info/skills_usage_cache.json`
 
 ## GLM 配额获取
 
@@ -93,7 +96,7 @@
 ## 实现文件
 
 - **主脚本**：`.claude/statusline.sh`
-- **统计脚本**：`.claude/hooks/count-skills-usage.sh`
+- **共享库**：`.claude/hooks/lib/common.sh`（技能统计函数）
 - **状态更新 Hook**：`.claude/hooks/update-status.sh`
 - **配置**：`.claude/settings.json`
 

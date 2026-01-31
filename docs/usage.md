@@ -242,3 +242,45 @@ p_ 技能（验证技能）→ 可复用到新任务
 | `active` | 进行中 |
 | `completed` | 已完成 |
 | `archived` | 已归档 |
+
+---
+
+## 辅助功能
+
+### 任务完成通知
+
+系统在会话结束时自动提供视觉和声音提示：
+
+**自动触发**（Stop Hook）：
+- 终端标题更新为 "✓ Claude 响应完成"
+- 醒目的视觉提示框（闪烁边框）
+- 可选的声音播放
+
+**声音依赖**（可选）：
+| 工具 | 安装命令 |
+|------|----------|
+| `aplay` | `apt install alsa-utils` |
+| `beep` | `apt install beep` |
+
+### 浏览器通知（可选）
+
+在 Codespace 等环境中，可启动浏览器通知服务器：
+
+```bash
+# 启动通知服务器
+bash .claude/hooks/start-notify-server.sh
+
+# 访问地址: http://localhost:8888/notify
+```
+
+**Codespace 使用步骤**：
+1. 启动服务器后，点击 "Ports" 标签
+2. 找到端口 8888 并点击 "Forward"
+3. 打开浏览器访问转发后的地址
+4. 点击 "启用浏览器通知" 按钮授权
+
+通知页面会实时显示 Claude 完成响应的状态，并支持浏览器原生通知。
+
+---
+
+详细配置请参考 [Hooks 系统](hooks.md) 和 [状态栏配置](statusline.md)。
