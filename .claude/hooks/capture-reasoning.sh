@@ -397,16 +397,21 @@ generate_progress_bar() {
 generate_timeline() {
     echo '```mermaid'
     echo 'timeline'
-    echo "    title ${TASK_NAME} 执行历史"
-    echo "    $TIMESTAMP : 当前更新"
+    # 使用简单的英文 title 避免解析问题
+    echo "    title Execution Timeline"
+    # 使用简化的日期格式 (YYYY-MM-DD)
+    local date_only=$(date '+%Y-%m-%d')
+    echo "    $date_only : Current Update"
 
-    # 读取该任务的最近事件（最多5条）
+    # 读取该任务的最近事件（最多3条，简化描述）
     if [ -f "$REASONING_TASK_LOG" ]; then
-        grep "\"task\": \"${TASK_ID}\"" "$REASONING_TASK_LOG" | tail -5 | \
-            jq -r '.timestamp_readable + " : " + (.content | split("\n") |.[0])' 2>/dev/null | \
+        grep "\"task\": \"${TASK_ID}\"" "$REASONING_TASK_LOG" | tail -3 | \
+            jq -r '.timestamp_readable' 2>/dev/null | \
             while read -r line; do
-                if [ -n "$line" ] && [[ "$line" != *"当前更新"* ]]; then
-                    echo "                  $line"
+                if [ -n "$line" ]; then
+                    # 提取日期部分
+                    local event_date=$(echo "$line" | cut -d' ' -f1)
+                    echo "    $event_date : Previous Update"
                 fi
             done
     fi
