@@ -9,6 +9,11 @@ results/*
 !results/README.md
 results/*/artifacts/
 
+# Skills - Generated task/user/proven skills (keep builtin/)
+.claude/skills/k[0-9]*/
+.claude/skills/u_*/
+.claude/skills/p_*/
+
 # IDE
 .idea/
 *.swp
