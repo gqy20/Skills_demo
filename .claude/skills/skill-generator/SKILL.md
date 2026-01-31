@@ -75,26 +75,35 @@ Skill("skill-generator", "--mode=experience")
 
 ### 任务模式 (k_ 前缀) - 技能分析
 
-**原则**：每个任务只生成 **2-3 个核心技能**
+**原则**：每个任务生成 **2-3 个 k_ 技能**作为步骤
+
+```
+任务步骤列表 = k_ 技能（2-3 个）
+
+k_ 技能生成时参考：
+├── p_ 技能（验证技能）→ 优先参考其内容
+├── u_ 技能（用户经验）→ 其次参考其内容
+└── 能力空白 → 创建新内容
+```
 
 1. 读取用户画像 `.info/usr.json`
 2. 分配任务编号（k01, k02, ...）
 3. 分析任务所需的核心能力
    - 识别关键技术点（框架、语言、工具）
-   - 匹配用户已有的 u_ 技能
-   - 匹配已有的 p_ 技能（验证技能）
-   - 找出能力空白
+   - 检查可参考的 p_ 技能（验证技能）
+   - 检查可参考的 u_ 技能（用户经验）
+   - 确定需要创建的能力空白
 4. **用户确认**：展示技能分析结果，等待用户确认
-5. 复用或生成技能：
-   - 优先复用 p_ 技能（已验证）
-   - 其次复用 u_ 技能（用户经验）
-   - 最后生成新的 k_ 技能
+5. 生成 k_ 技能：
+   - 优先参考 p_ 技能内容生成
+   - 其次参考 u_ 技能内容生成
+   - 最后创建全新内容
 6. 创建 `results/k01/` 目录和文件
 7. 更新 `.info/tasks.json`
 
 **数量控制**：
-- 技能少于 2 个：任务太简单，直接执行
-- 技能多于 3 个：任务太复杂，建议拆分或合并
+- k_ 技能少于 2 个：任务太简单，直接执行
+- k_ 技能多于 3 个：任务太复杂，建议拆分或合并
 
 ### 经验模式 (u_ 前缀) - 经验提取
 
@@ -125,30 +134,37 @@ Skill("skill-generator", "--mode=experience")
 | 初始化 | `k[任务]_init_[项目]` | k01_init_project |
 | 配置 | `k[任务]_config_[功能]` | k01_config_mdx |
 | 创建 | `k[任务]_create_[组件]` | k01_create_layout |
-| 实现 | `k[任务]_[功能]` | k01_article_list |
+| 实现 | `k[任务]_implement_[功能]` | k01_implement_auth |
+| 添加 | `k[任务]_add_[功能]` | k01_add_search |
+| 删除 | `k[任务]_remove_[功能]` | k01_remove_deps |
+| 更新 | `k[任务]_update_[内容]` | k01_update_deps |
 | 修复 | `k[任务]_fix_[问题]` | k01_fix_routing |
+| 测试 | `k[任务]_test_[模块]` | k01_test_api |
+| 重构 | `k[任务]_refactor_[模块]` | k01_refactor_auth |
 
 ### 经验模式 (u_ 前缀)
 
-| 类型 | 模式 | 示例 |
-|------|------|------|
-| 项目经验 | `u_[项目]` | u_blog_mdx |
-| 技术栈经验 | `u_[技术]` | u_react_hooks |
-| 工具经验 | `u_[工具]` | u_docker_compose |
+| 类型 | 模式 | 说明 | 示例 |
+|------|------|------|------|
+| 技术栈经验 | `u_[tech]_[feature]` | 优先：核心技术+特性 | u_react_hooks, u_next_auth |
+| 项目经验 | `u_[project]_[purpose]` | 备选：知名项目+用途 | u_blog_mdx, u_fastapi_crud |
+| 工具经验 | `u_[tool]_[usage]` | 备选：工具+使用场景 | u_docker_deploy, u_git_workflow |
+
+**命名优先级**：技术栈 > 项目 > 工具
 
 ## 输出结构
 
 ```
 .claude/skills/
-├── p_next_mdx/SKILL.md          # 验证技能（从 k_ 升级，永久）
-├── p_docker_deploy/SKILL.md     # 验证技能
-├── p_research_open_source/SKILL.md  # 验证技能
-├── u_next_mdx/SKILL.md          # 用户经验技能（最多5个）
-├── u_docker_deploy/SKILL.md
-├── u_fastapi_crud/SKILL.md
-├── k01_mdx_integration/SKILL.md  # 任务技能（2-3个，临时）
-├── k01_dynamic_routing/SKILL.md
-└── k02_auth_system/SKILL.md
+├── p_nextjs_mdx/SKILL.md          # 验证技能池（参考来源，≤10个）
+├── p_docker_deploy/SKILL.md       # 验证技能池
+├── p_research_open_source/SKILL.md # 验证技能池
+├── u_react_hooks/SKILL.md         # 用户经验池（参考来源，≤5个）
+├── u_docker_deploy/SKILL.md       # 用户经验池
+├── u_fastapi_crud/SKILL.md        # 用户经验池
+├── k01_init_project/SKILL.md      # 任务技能（实际执行，2-3个/任务）
+├── k01_config_mdx/SKILL.md        # 任务技能
+└── k02_design_schema/SKILL.md     # 任务技能
 
 results/k01/
 ├── README.md        # 任务总览
@@ -158,21 +174,27 @@ results/k01/
 └── artifacts/       # 生成的文件
 ```
 
-### 技能复用优先级
+### 技能生成参考策略
 
 ```
 新任务分析
     ↓
-检查 p_ 技能（验证技能）
+收集能力需求
     ↓
-找到匹配 → 复用（增加 usage_count）
+检查 p_ 技能池（最多10个）
     ↓
-未找到 → 检查 u_ 技能（用户经验）
+找到匹配 → 参考内容生成 k_（记录来源）
     ↓
-找到匹配 → 复用（增加 usage_count）
+未找到 → 检查 u_ 技能池（最多5个）
     ↓
-未找到 → 生成新的 k_ 技能
+找到匹配 → 参考内容生成 k_（记录来源）
+    ↓
+未找到 → 创建全新内容生成 k_
+    ↓
+汇总：生成 2-3 个 k_ 技能
 ```
+
+> **注意**：步骤列表只包含 k_ 技能（2-3个），p_ 和 u_ 是生成 k_ 时的参考来源
 
 ### p_ 技能复用实现（重要）
 
@@ -210,14 +232,16 @@ else
 fi
 ```
 
-#### 2. 匹配规则
+#### 2. 匹配规则（示例）
 
-| 任务描述关键词 | 匹配的 p_ 技能 |
-|---------------|--------------|
+| 任务描述关键词 | 可能匹配的 p_ 技能 |
+|---------------|------------------|
 | 调研、研究、开源项目 | `p_research_open_source` |
-| 文章、撰写、技术博客 | `p_article_techar` |
+| 文章、撰写、技术博客 | `p_article_techwriter` |
 | 部署、Docker、容器化 | `p_docker_deploy` |
-| Next.js、MDX、博客 | `p_next_mdx` |
+| Next.js、MDX、博客 | `p_nextjs_mdx` |
+
+> **注意**：以上为示例，实际匹配需根据 p_ 技能库动态判断
 
 #### 3. 复用后操作
 
@@ -246,23 +270,36 @@ fi
 └─────────────────────────────────────────┘
 ```
 
-### 技能复用与生成的决策树
+### 技能生成决策树
 
 ```
                     任务分析
                        │
-         ┌─────────────┴─────────────┐
-         │                           │
-    检查 p_ 技能                检查 u_ 技能
-         │                           │
-    ┌────┴────┐               ┌────┴────┐
-    │         │               │         │
- 找到匹配   未找到          找到匹配   未找到
-    │         │               │         │
-    ↓         ↓               ↓         ↓
- 复用 p_   检查 u_        复用 u_   创建 k_
- (计数+1)   (递归)          (引用)    (新技能)
+                收集能力需求（2-3个）
+                       │
+         ┌─────────────┼─────────────┐
+         │             │             │
+    检查 p_ 技能   检查 u_ 技能   确定空白
+    (技能池≤10)   (技能池≤5)
+         │             │             │
+    ┌────┴────┐   ┌────┴────┐      │
+    │         │   │         │      │
+ 找到参考   未找到 找到参考  未找到  ↓
+    │         │   │         │    创建新内容
+    ↓         │   ↓         │    ↓
+参考生成    │  参考生成   │    └─────────┐
+    │         │   │         │              │
+    └─────────┴───┴─────────┴──────────────┘
+                       │
+                生成 k_ 技能（2-3个）
+                       │
+                  用户确认
 ```
+
+**关键点**：
+- 步骤列表只包含 k_ 技能
+- p_ 和 u_ 是生成 k_ 时的参考来源
+- 数量限制：k_ 技能 2-3 个/任务
 
 ## u_ 前缀技能的内容结构
 
@@ -315,7 +352,7 @@ npx create-next-app@latest blog --typescript --tailwind --app
       "name": "任务名称",
       "type": "web",
       "status": "active",
-      "skills": ["k01_mdx_integration", "k01_dynamic_routing"],
+      "steps": ["k01_mdx_integration", "k01_dynamic_routing"],
       "current_step": 0,
       "created_at": "2026-01-27T16:00:00Z"
     }
@@ -329,15 +366,18 @@ npx create-next-app@latest blog --typescript --tailwind --app
       "usage_count": 3
     }
   },
+  "proven_skills": {},
   "archived_u_skills": ["u_old_react_classic"]
 }
 ```
 
 **字段说明**：
-- `tasks.k01.skills`: 2-3 个核心技能 ID（复用 u_ 或新生成 k_）
-- `user_skills`: 最多 5 个活跃的用户经验技能
+- `tasks.k01.steps`: 任务步骤列表（只包含 k_ 技能，2-3 个）
+- `tasks.k01.current_step`: 当前进度索引
+- `user_skills`: 用户经验技能池（供生成 k_ 时参考），最多 5 个
+- `proven_skills`: 验证技能池（供生成 k_ 时参考），最多 10 个
 - `archived_u_skills`: 已归档的低频 u_ 技能列表
-- `usage_count`: u_ 技能被引用次数，用于归档决策
+- `usage_count`: 技能被参考/复用次数，用于归档决策
 
 ## 基于画像的定制
 
@@ -359,22 +399,28 @@ npx create-next-app@latest blog --typescript --tailwind --app
 | k_ 技能少于 2 个 | 任务过于简单，可直接执行 |
 | k_ 技能多于 3 个 | 任务过于复杂，建议拆分或合并技能 |
 | u_ 技能超过 5 个 | 归档低频经验，保留最常用的 5 个 |
+| p_ 技能超过 10 个 | 归档低频技能，保留最常用的 10 个 |
 | 用户取消生成 | 恢复 tasks.json 的 next_id |
 
 ## 用户确认流程
 
-### k_ 技能确认
+### 步骤列表确认
 
 技能分析完成后，使用 AskUserQuestion 展示方案：
 
 ```
 任务"搭建 Next.js 博客"的技能分析完成：
 
-识别到 3 个核心技能：
+将生成 3 个 k_ 技能：
 ┌─────────────────────────────────────────┐
-│ ✅ u_next_mdx        (复用)             │
-│ ❌ k01_ssg_deployment (新增)            │
-│ ❌ k01_content_cms    (新增)            │
+│ ✅ k01_init_project                      │
+│    参考: p_nextjs_mdx (验证技能)         │
+│                                         │
+│ ✅ k02_config_auth                       │
+│    参考: u_react_hooks (用户经验)        │
+│                                         │
+│ ✅ k03_ssg_deployment                    │
+│    全新内容创建                          │
 └─────────────────────────────────────────┘
 
 是否接受此方案？
@@ -385,10 +431,10 @@ npx create-next-app@latest blog --typescript --tailwind --app
 
 ### 任务复杂度异常确认
 
-当识别到超过 3 个核心技能时：
+当识别到需要超过 3 个 k_ 技能时：
 
 ```
-任务分析完成，但识别到 5 个核心技能。
+任务分析完成，但识别到需要 5 个 k_ 技能。
 
 超过 3 个上限，请选择处理方式：
 
