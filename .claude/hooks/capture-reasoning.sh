@@ -133,11 +133,11 @@ validate_mermaid_syntax() {
         warnings=$((warnings + 1))
     fi
 
-    # 4. 检查样式定义格式
+    # 4. 检查样式定义格式（支持 S1, S1_1, S1_LABEL 格式）
     local style_lines=$(echo "$mermaid_code" | grep -c '^    style ' || echo "0")
     if [ "$style_lines" -gt 0 ]; then
-        # 检查样式行是否有正确的格式
-        local invalid_styles=$(echo "$mermaid_code" | grep '^    style ' | grep -vE 'style S[0-9]+ fill:')
+        # 检查样式行是否有正确的格式（支持一级、二级节点和标签节点）
+        local invalid_styles=$(echo "$mermaid_code" | grep '^    style ' | grep -vE 'style S[0-9]+(_[0-9]+|_LABEL)? fill:')
         if [ -n "$invalid_styles" ]; then
             echo -e "${YELLOW}⚠ Mermaid 警告: 样式定义格式可能有问题${NC}" >&2
             warnings=$((warnings + 1))
@@ -248,7 +248,7 @@ infer_step_info() {
     echo "${emoji}|${method}|${tool}"
 }
 
-# ==================== 生成 Mermaid 流程图（增强版） ====================
+# ==================== 生成 Mermaid 流程图（增强版，支持二级子任务） ====================
 
 generate_mermaid_flowchart() {
     local current=$1
@@ -260,66 +260,199 @@ generate_mermaid_flowchart() {
     echo '```mermaid'
     echo 'flowchart LR'
 
-    # 生成节点和连接
-    for i in "${!steps[@]}"; do
-        local step_name="${steps[$i]}"
-        local step_num=$((i + 1))
-        local node_id="S${step_num}"
+    # 检查是否有子任务结构（从 tasks.json 读取）
+    local has_subtasks=false
+    local step_subtasks=()
 
-        # 清理步骤名称
-        local display_name=$(sanitize_step_name "$step_name" "$TASK_ID")
+    if [ -f "$TASKS_FILE" ]; then
+        # 尝试读取子任务数据
+        for i in "${!steps[@]}"; do
+            local step_name="${steps[$i]}"
+            local subtask_data=$(json_read "$TASKS_FILE" ".tasks[\"$TASK_ID\"].step_details[\"$step_name\"].subtasks // []" 2>/dev/null || echo "[]")
+            local subtask_count=$(echo "$subtask_data" | jq 'length' 2>/dev/null || echo "0")
 
-        # 获取步骤信息（推断）
-        local step_info=$(infer_step_info "$step_name")
-        local step_emoji=$(echo "$step_info" | cut -d'|' -f1)
-        local step_method=$(echo "$step_info" | cut -d'|' -f2)
-
-        # 只有当前步骤才使用推理块中的具体方法信息
-        if [ $i -eq $current ] && [ -n "$reasoning_content" ]; then
-            local extracted=$(extract_method_from_reasoning "$reasoning_content")
-            local extracted_method=$(echo "$extracted" | cut -d'|' -f1)
-            local extracted_tool=$(echo "$extracted" | cut -d'|' -f2)
-
-            if [ -n "$extracted_method" ]; then
-                step_method="$extracted_method"
+            if [ "$subtask_count" -gt 0 ]; then
+                has_subtasks=true
+                step_subtasks[$i]="$subtask_data"
+            else
+                step_subtasks[$i]="[]"
             fi
-            # 工具信息不在图表中显示，太长了
-        fi
-
-        # 生成节点定义（增强版，包含方法标签）
-        # 限制方法标签长度，避免节点过大
-        local method_label="$step_method"
-        if [ ${#method_label} -gt 12 ]; then
-            method_label="${method_label:0:12}..."
-        fi
-
-        echo "    ${node_id}[\"${step_emoji} 步骤${step_num}: ${display_name}<br/><small>[${method_label}]</small>\"]"
-
-        # 生成连接（除最后一步）
-        if [ $i -lt $((${total} - 1)) ]; then
-            local next_node="S$((step_num + 1))"
-            echo "    ${node_id} --> ${next_node}"
-        fi
-    done
-
-    echo ""
-
-    # 样式：已完成步骤（绿色）
-    if [ $current -gt 0 ]; then
-        for i in $(seq 0 $((current - 1))); do
-            echo "    style S$((i + 1)) fill:#90EE90,stroke:#333,stroke-width:2px"
         done
     fi
 
-    # 样式：当前步骤（黄色）
-    if [ $current -ge 0 ] && [ $current -lt $total ]; then
-        echo "    style S$((current + 1)) fill:#FFD700,stroke:#333,stroke-width:3px"
+    # 根据是否有子任务选择不同的生成逻辑
+    if [ "$has_subtasks" = true ]; then
+        # ========== 带子任务的嵌套结构 ==========
+        for i in "${!steps[@]}"; do
+            local step_name="${steps[$i]}"
+            local step_num=$((i + 1))
+            local node_id="S${step_num}"
+            local subtasks_data="${step_subtasks[$i]}"
+            local subtask_count=$(echo "$subtasks_data" | jq 'length' 2>/dev/null || echo "0")
+
+            # 清理步骤名称
+            local display_name=$(sanitize_step_name "$step_name" "$TASK_ID")
+
+            # 获取步骤信息
+            local step_info=$(infer_step_info "$step_name")
+            local step_emoji=$(echo "$step_info" | cut -d'|' -f1)
+            local step_method=$(echo "$step_info" | cut -d'|' -f2)
+
+            # 如果是当前步骤，使用推理块中的方法
+            if [ $i -eq $current ] && [ -n "$reasoning_content" ]; then
+                local extracted=$(extract_method_from_reasoning "$reasoning_content")
+                local extracted_method=$(echo "$extracted" | cut -d'|' -f1)
+                if [ -n "$extracted_method" ]; then
+                    step_method="$extracted_method"
+                fi
+            fi
+
+            # 限制方法标签长度
+            local method_label="$step_method"
+            if [ ${#method_label} -gt 10 ]; then
+                method_label="${method_label:0:10}..."
+            fi
+
+            # 如果有子任务，使用 subgraph（外部标签避免覆盖）
+            if [ "$subtask_count" -gt 0 ]; then
+                # 创建外部标签节点（不会被覆盖）
+                echo "    ${node_id}_LABEL[\"${step_emoji} ${display_name}<br/><small>【${method_label}】</small>\"]"
+
+                # 创建空标题的 subgraph
+                echo "    subgraph ${node_id}"
+                echo "        direction TB"
+
+                # 生成子任务节点
+                local prev_subnode=""
+                for j in $(seq 0 $((subtask_count - 1))); do
+                    local subtask_name=$(echo "$subtasks_data" | jq -r ".[$j].name // \"子任务$((j+1))\"" 2>/dev/null)
+                    local subtask_status=$(echo "$subtasks_data" | jq -r ".[$j].status // \"pending\"" 2>/dev/null)
+                    local subnode_id="${node_id}_$((j + 1))"
+
+                    echo "        ${subnode_id}[\"${subtask_name}\"]"
+
+                    # 连接子任务
+                    if [ -n "$prev_subnode" ]; then
+                        echo "        ${prev_subnode} --> ${subnode_id}"
+                    fi
+
+                    prev_subnode="$subnode_id"
+                done
+
+                echo "    end"
+
+                # 虚线连接标签到第一个子任务
+                local first_subnode="${node_id}_1"
+                echo "    ${node_id}_LABEL -.-> ${first_subnode}"
+            else
+                # 没有子任务，使用普通节点
+                echo "    ${node_id}[\"${step_emoji} 步骤${step_num}: ${display_name}<br/><small>[${method_label}]</small>\"]"
+            fi
+
+            # 生成步骤间连接（除最后一步）
+            if [ $i -lt $((${total} - 1)) ]; then
+                local next_node="S$((step_num + 1))"
+                # 对于有子任务的步骤，连接从标签节点发出
+                if [ "$subtask_count" -gt 0 ]; then
+                    echo "    ${node_id}_LABEL --> ${next_node}_LABEL"
+                else
+                    echo "    ${node_id} --> ${next_node}"
+                fi
+            fi
+        done
+    else
+        # ========== 原有的线性结构 ==========
+        for i in "${!steps[@]}"; do
+            local step_name="${steps[$i]}"
+            local step_num=$((i + 1))
+            local node_id="S${step_num}"
+
+            # 清理步骤名称
+            local display_name=$(sanitize_step_name "$step_name" "$TASK_ID")
+
+            # 获取步骤信息（推断）
+            local step_info=$(infer_step_info "$step_name")
+            local step_emoji=$(echo "$step_info" | cut -d'|' -f1)
+            local step_method=$(echo "$step_info" | cut -d'|' -f2)
+
+            # 只有当前步骤才使用推理块中的具体方法信息
+            if [ $i -eq $current ] && [ -n "$reasoning_content" ]; then
+                local extracted=$(extract_method_from_reasoning "$reasoning_content")
+                local extracted_method=$(echo "$extracted" | cut -d'|' -f1)
+                if [ -n "$extracted_method" ]; then
+                    step_method="$extracted_method"
+                fi
+            fi
+
+            # 生成节点定义（增强版，包含方法标签）
+            local method_label="$step_method"
+            if [ ${#method_label} -gt 12 ]; then
+                method_label="${method_label:0:12}..."
+            fi
+
+            echo "    ${node_id}[\"${step_emoji} 步骤${step_num}: ${display_name}<br/><small>[${method_label}]</small>\"]"
+
+            # 生成连接（除最后一步）
+            if [ $i -lt $((${total} - 1)) ]; then
+                local next_node="S$((step_num + 1))"
+                echo "    ${node_id} --> ${next_node}"
+            fi
+        done
     fi
 
-    # 样式：待执行步骤（灰色）
+    echo ""
+
+    # ========== 样式定义 ==========
+    # 已完成步骤（绿色）
+    if [ $current -gt 0 ]; then
+        for i in $(seq 0 $((current - 1))); do
+            local step_num=$((i + 1))
+            local subtasks_data="${step_subtasks[$i]}"
+            local subtask_count=$(echo "$subtasks_data" | jq 'length' 2>/dev/null || echo "0")
+
+            if [ "$subtask_count" -gt 0 ] && [ "$has_subtasks" = true ]; then
+                # 有子任务时，给标签节点和所有子任务节点添加样式
+                echo "    style S${step_num}_LABEL fill:#90EE90,stroke:#333,stroke-width:2px"
+                for j in $(seq 1 $subtask_count); do
+                    echo "    style S${step_num}_${j} fill:#e8f5e8,stroke:#333,stroke-width:1px"
+                done
+            else
+                echo "    style S${step_num} fill:#90EE90,stroke:#333,stroke-width:2px"
+            fi
+        done
+    fi
+
+    # 当前步骤（黄色）
+    if [ $current -ge 0 ] && [ $current -lt $total ]; then
+        local step_num=$((current + 1))
+        local subtasks_data="${step_subtasks[$current]}"
+        local subtask_count=$(echo "$subtasks_data" | jq 'length' 2>/dev/null || echo "0")
+
+        if [ "$subtask_count" -gt 0 ] && [ "$has_subtasks" = true ]; then
+            echo "    style S${step_num}_LABEL fill:#FFD700,stroke:#333,stroke-width:3px"
+            for j in $(seq 1 $subtask_count); do
+                echo "    style S${step_num}_${j} fill:#fff4cc,stroke:#333,stroke-width:2px"
+            done
+        else
+            echo "    style S${step_num} fill:#FFD700,stroke:#333,stroke-width:3px"
+        fi
+    fi
+
+    # 待执行步骤（灰色）
     if [ $((current + 2)) -le $total ]; then
-        for i in $(seq $((current + 2)) $total); do
-            echo "    style S${i} fill:#f0f0f0,stroke:#999,stroke-width:1px"
+        for i in $(seq $((current + 1)) $((total - 1))); do
+            local step_num=$((i + 1))
+            local subtasks_data="${step_subtasks[$i]}"
+            local subtask_count=$(echo "$subtasks_data" | jq 'length' 2>/dev/null || echo "0")
+
+            if [ "$subtask_count" -gt 0 ] && [ "$has_subtasks" = true ]; then
+                echo "    style S${step_num}_LABEL fill:#f0f0f0,stroke:#999,stroke-width:2px"
+                for j in $(seq 1 $subtask_count); do
+                    echo "    style S${step_num}_${j} fill:#fafafa,stroke:#999,stroke-width:1px"
+                done
+            else
+                echo "    style S${step_num} fill:#f0f0f0,stroke:#999,stroke-width:1px"
+            fi
         done
     fi
 
