@@ -613,21 +613,11 @@ ${findings_formatted:-> 无详细发现}
 generate_timeline() {
     echo '```mermaid'
     echo 'timeline'
-    echo '    title 项目执行时间线'
     # 使用简化的日期格式 (YYYY-MM-DD)
     local date_only=$(date '+%Y-%m-%d')
     local current_time=$(date '+%H:%M')
 
-    # 当前更新 - 时间作为事件描述的一部分
-    echo "    $date_only : $current_time 当前更新"
-
-    # 模拟历史事件（用于展示效果）
-    echo "    $date_only : 09:00 任务创建"
-    echo "    $date_only : 10:30 生成技能方案"
-    echo "    $date_only : 11:15 技能验证完成"
-    echo "    $date_only : 14:20 开始执行调研"
-
-    # 读取该任务的最近事件（如果有）
+    # 读取该任务的最近事件（最多5条）
     if [ -f "$REASONING_TASK_LOG" ]; then
         grep "\"task\": \"${TASK_ID}\"" "$REASONING_TASK_LOG" | tail -3 | \
             jq -r '.timestamp_readable' 2>/dev/null | \
