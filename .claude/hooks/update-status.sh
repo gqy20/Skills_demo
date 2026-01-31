@@ -70,8 +70,15 @@ fi
 if [ -f "$PROFILE_FILE" ]; then
     USER_NAME=$(json_read "$PROFILE_FILE" '.basic_info.name // ""')
     USER_ROLE=$(json_read "$PROFILE_FILE" '.basic_info.role // ""')
-    # skills_count 从 tasks.json.user_skills 读取（u_ 技能存储在这里）
-    SKILLS_COUNT=$(json_read "$TASKS_FILE" '.user_skills | length // 0')
+
+    # skills_count 统计实际存在 SKILL.md 的技能数量
+    # 包括：内置技能 + u_ 技能 + p_ 技能 + k_ 技能
+    if [ -d "$SKILLS_DIR" ]; then
+        # 统计所有包含 SKILL.md 的目录
+        SKILLS_COUNT=$(find "$SKILLS_DIR" -mindepth 2 -maxdepth 2 -name "SKILL.md" -exec dirname {} \; 2>/dev/null | wc -l)
+    else
+        SKILLS_COUNT=0
+    fi
 
     STATUS=$(echo "$STATUS" | jq --arg name "$USER_NAME" --arg role "$USER_ROLE" \
         --argjson skills "$SKILLS_COUNT" \
