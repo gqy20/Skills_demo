@@ -132,6 +132,7 @@ k_ 技能生成时参考：
    - 优先参考 p_ 技能内容生成
    - 其次参考 u_ 技能内容生成
    - 最后创建全新内容
+   - **重要**：在每个 k_ 技能末尾添加"完成后续处理"章节，包含 AskUserQuestion
 6. 创建 `results/k01/` 目录和文件
 7. 更新 `.info/tasks.json`
 
@@ -284,6 +285,7 @@ u_ 技能池检查:
 | **完整性** | 包含从开始到结束的完整流程 |
 | **用户导向** | 根据用户画像定制内容和风格 |
 | **参考溯源** | 标注参考的 p_/u_ 技能来源 |
+| **自动继续** | k_ 技能末尾必须包含"完成后续处理"章节，询问是否执行下一步 |
 
 ### 质量检查
 
@@ -298,6 +300,9 @@ u_ 技能池检查:
 □ 标注参考来源
 □ 符合命名规范
 □ 格式正确
+□ k_ 技能包含"完成后续处理"章节
+□ k_ 技能 YAML 包含 task_id, step_index, total_steps, next_skill
+□ k_ 技能使用 AskUserQuestion 询问是否继续
 ```
 
 详见 [技能结构清单](references/skill-structure.md)。
@@ -401,6 +406,97 @@ u_ 技能池检查:
 - 步骤列表只包含 k_ 技能
 - p_ 和 u_ 是生成 k_ 时的参考来源
 - 数量限制：k_ 技能 2-3 个/任务
+
+## k_ 前缀技能的内容结构
+
+```markdown
+---
+name: k01_init_project
+description: k01 任务：初始化 Next.js 项目。这是任务"搭建 Next.js 博客"的第 1/3 步骤。包含：创建项目、配置 TypeScript、安装 Tailwind CSS。
+task_id: k01
+step_index: 0
+total_steps: 3
+next_skill: k01_config_mdx
+---
+
+# k01_init_project
+
+任务 k01 的第 1 步：初始化 Next.js 项目。
+
+## 阶段目标
+
+创建 Next.js 项目基础结构，完成开发环境配置。
+
+## 执行流程
+
+### 1. 创建项目
+```bash
+npx create-next-app@latest blog --typescript --tailwind --app
+```
+
+### 2. 验证安装
+```bash
+cd blog && npm run dev
+```
+
+## 预期输出
+
+- 项目目录：`blog/`
+- 开发服务器运行在：http://localhost:3000
+- TypeScript 配置：`tsconfig.json`
+- Tailwind 配置：`tailwind.config.ts`
+
+## 完成标准
+
+- [ ] 项目创建成功
+- [ ] 开发服务器可正常启动
+- [ ] 首页显示正常
+
+## 完成后续处理
+
+✅ **阶段完成！**
+
+当前进度：1/3
+- ✓ k01_init_project (本步骤)
+- ⏭ k01_config_mdx (下一步)
+- ⏳ k01_create_layout (待执行)
+
+**使用 AskUserQuestion 询问用户：**
+
+```
+阶段 1/3 已完成：初始化 Next.js 项目
+
+下一步是：k02_config_mdx (配置 MDX)
+- 安装 @next/mdx 和相关依赖
+- 配置 MDX 解析器和组件
+- 设置 frontmatter 支持
+
+请选择：
+- 继续执行下一步 (k02_config_mdx)
+- 查看任务详情 (/commander progress k01)
+- 暂停，稍后手动继续 (/commander continue k01)
+```
+
+**实现方式：**
+使用 `AskUserQuestion` 工具，参数：
+```json
+{
+  "questions": [{
+    "question": "阶段 1/3 已完成。是否继续执行下一步：k02_config_mdx (配置 MDX)？",
+    "header": "继续任务",
+    "options": [
+      {"label": "继续下一步", "description": "执行 k02_config_mdx：配置 MDX 解析器和组件"},
+      {"label": "查看进度", "description": "显示任务详细进度和执行记录"},
+      {"label": "暂停", "description": "稍后使用 /commander continue k01 继续执行"}
+    ],
+    "multiSelect": false
+  }]
+}
+```
+
+## 参考来源
+- p_nextjs_mdx (验证技能)
+```
 
 ## u_ 前缀技能的内容结构
 
