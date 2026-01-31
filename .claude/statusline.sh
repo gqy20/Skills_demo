@@ -257,8 +257,13 @@ get_system_status() {
     local top_skill=""
     local top_count=0
     if [ -f "$TASKS_FILE" ]; then
-        top_skill=$(jq -r '.proven_skills | to_entries | max_by(.value.usage_count // 0) | .key // ""' "$TASKS_FILE" 2>/dev/null)
-        top_count=$(jq -r '.proven_skills | to_entries | max_by(.value.usage_count // 0) | .value.usage_count // 0' "$TASKS_FILE" 2>/dev/null)
+        # 检查是否有 p_ 技能
+        local has_proven=$(jq -r '.proven_skills != null and (.proven_skills | length > 0)' "$TASKS_FILE" 2>/dev/null)
+        if [ "$has_proven" = "true" ]; then
+            # 使用兼容的 sort_by + reverse 语法
+            top_skill=$(jq -r '.proven_skills | to_entries | sort_by(.value.usage_count // -100) | reverse | .[0].key // ""' "$TASKS_FILE" 2>/dev/null)
+            top_count=$(jq -r '.proven_skills | to_entries | sort_by(.value.usage_count // -100) | reverse | .[0].value.usage_count // 0' "$TASKS_FILE" 2>/dev/null)
+        fi
     fi
 
     local result=""
