@@ -26,11 +26,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/response-complete.sh",
-            "timeout": 3
-          },
-          {
-            "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/intent-detect.sh",
             "timeout": 10
           },
@@ -88,6 +83,11 @@
     "Stop": [
       {
         "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/response-complete.sh",
+            "timeout": 3
+          },
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/task-complete.sh",

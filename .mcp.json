@@ -42,7 +42,10 @@
     "article-mcp": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["article-mcp"],
+      "args": [
+        "article-mcp==0.1.8",
+        "server"
+      ],
       "env": {}
     }
   }
