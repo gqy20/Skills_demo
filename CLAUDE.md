@@ -65,9 +65,10 @@ Task k01 (搭建 Next.js 博客)
     ├── skill-generator/    # Meta-skill: task → sub-skills
     └── k[0-9]*_*/          # Generated sub-skills (e.g., k01_init_project/)
 
+.templates/                 # Template files (info.md, usr.json.template)
+
 .info/
 ├── usr.json                # Generated user profile
-├── usr.json.template       # Profile schema template
 ├── tasks.json              # Task index with steps list + user_skills
 ├── .status.json            # Runtime status for statusline
 └── skills_changelog.jsonl  # Skills change log

@@ -50,19 +50,16 @@ fi
 # 4. 清理旧数据
 echo ""
 echo -e "${BLUE}[4/5]${NC} 清理旧数据..."
-rm -f .info/usr.json .info/tasks.json
-rm -rf results
+rm -rf .info results
 echo -e "${GREEN}✓${NC} 清理完成"
 
-# 5. 初始化 tasks.json
+# 5. 初始化配置
 echo ""
 echo -e "${BLUE}[5/5]${NC} 初始化配置..."
-if [ ! -f ".info/tasks.json" ]; then
-    echo '{"next_id": 1, "tasks": {}, "user_skills": {}, "archived_u_skills": []}' > .info/tasks.json
-    echo -e "${GREEN}✓${NC} 已创建 tasks.json"
-else
-    echo -e "${GREEN}✓${NC} tasks.json 已存在"
-fi
+mkdir -p .info
+cp .templates/info.md .info/
+echo '{"next_id": 1, "tasks": {}, "user_skills": {}, "proven_skills": {}, "archived_u_skills": []}' > .info/tasks.json
+echo -e "${GREEN}✓${NC} 已创建 tasks.json 并复制 info.md"
 
 # 完成
 echo ""

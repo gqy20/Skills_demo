@@ -1,7 +1,6 @@
 # .info/ - Runtime generated files (ignore all, keep system files)
 .info/*
 !.info/info.md
-!.info/usr.json.template
 
 # info/ - User personal input (ignore all)
 info/*
