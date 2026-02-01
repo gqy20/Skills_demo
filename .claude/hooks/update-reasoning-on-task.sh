@@ -54,6 +54,13 @@ if [ -z "$TASK_ID" ]; then
     exit 0
 fi
 
+# 只处理 k[0-9]+ 模式的项目任务 ID（如 k01, k02）
+# 忽略 TaskCreate/TaskUpdate 的内部任务 ID（如 1, 2）
+# 忽略技能名称（如 k02_research_claudecode）
+if [[ ! "$TASK_ID" =~ ^k[0-9]+$ ]]; then
+    exit 0
+fi
+
 # 获取当前时间戳
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 TIMESTAMP_ISO=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
