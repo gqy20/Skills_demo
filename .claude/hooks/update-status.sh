@@ -17,8 +17,14 @@ STATUS='{}'
 
 # 1. 读取任务信息
 if [ -f "$TASKS_FILE" ]; then
-    # 查找活跃任务
-    ACTIVE_TASK=$(json_read "$TASKS_FILE" '.tasks | to_entries | map(select(.value.status == "active")) | .[0].key // ""')
+    # 查找活跃任务（选择最新创建的）
+    # 获取所有 active 任务和创建时间，在 bash 中找到最新的
+    ACTIVE_TASKS=$(jq -r '.tasks | to_entries[] | select(.value.status == "active") | .key + "@" + .value.created_at' "$TASKS_FILE" 2>/dev/null)
+    if [ -n "$ACTIVE_TASKS" ]; then
+        ACTIVE_TASK=$(echo "$ACTIVE_TASKS" | sort -t'@' -k2 -r | head -1 | cut -d'@' -f1)
+    else
+        ACTIVE_TASK=$(jq -r '.tasks | to_entries[] | select(.value.status == "active") | .[0].key // ""' "$TASKS_FILE" 2>/dev/null)
+    fi
 
     if [ -n "$ACTIVE_TASK" ]; then
         TASK_NAME=$(json_read "$TASKS_FILE" ".tasks[\"$ACTIVE_TASK\"].name // \"无\"")
