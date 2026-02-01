@@ -264,10 +264,28 @@ results/              # 任务结果（执行过程文件）
         ├── plan.md         # 任务计划
         └── execution.md    # 执行记录
 
+assets/               # 多媒体资源
+    └── videos/           # 测试/演示视频
+        └── test-cli-usage.mp4
+
 .mcp.json            # MCP 服务器配置
 ```
 
 ⭐ 新增功能
+
+## 资源文件
+
+| 类型 | 路径 | 说明 |
+|:-----|:-----|:-----|
+| 测试视频 | [assets/videos/test-cli-usage.mp4](assets/videos/test-cli-usage.mp4) | CLI 使用演示 |
+
+### 文件命名规范
+
+| 类型 | 格式 | 示例 |
+|:-----|:-----|:-----|
+| 测试视频 | `test-<描述>.mp4` | `test-cli-usage.mp4` |
+| 演示视频 | `demo-<功能>.mp4` | `demo-skill-upgrade.mp4` |
+| 教程视频 | `tutorial-<主题>-<part>.mp4` | `tutorial-hooks-01.mp4` |
 
 ## 核心命令
 
