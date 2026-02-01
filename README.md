@@ -4,7 +4,7 @@
 
 ## 📹 演示视频
 
-![CLI 使用演示](https://raw.githubusercontent.com/gqy20/Skills_demo/main/assets/videos/test-cli-usage.gif)
+[![CLI 使用演示](https://raw.githubusercontent.com/gqy20/Skills_demo/main/assets/videos/thumbnail.png)](https://raw.githubusercontent.com/gqy20/Skills_demo/main/assets/videos/test-cli-usage.mp4)
 
 ## 系统架构
 
