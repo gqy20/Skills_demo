@@ -578,6 +578,21 @@ cd blog && npm run dev
 }
 ```
 
+**进度更新（重要）**：
+在技能执行完成前，必须调用 `TaskUpdate` 更新任务进度：
+```
+# 完成当前步骤后，更新任务进度到下一步
+TaskUpdate(
+  taskId="k01",
+  subject="已完成 k01_init_project",
+  status="in_progress"
+)
+```
+这将自动：
+1. 更新 tasks.json 中的 current_step（从 0 → 1）
+2. 触发 update-status.sh 更新 statusline
+3. 触发 update-reasoning-on-task.sh 更新推理日志
+
 ## 参考来源
 - p_nextjs_mdx (验证技能)
 ```
