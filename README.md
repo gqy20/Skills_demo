@@ -2,6 +2,10 @@
 
 基于 Claude Code Skills 的自适应 AI 助手。
 
+## 📹 演示视频
+
+https://raw.githubusercontent.com/gqy20/Skills_demo/main/assets/videos/test-cli-usage.mp4
+
 ## 系统架构
 
 ```mermaid
@@ -218,66 +222,6 @@ cat .info/.reasoning.meta.json
 - [结果目录说明](docs/results.md) - results/ 目录结构详解
 - [状态栏配置](docs/statusline.md) - 自定义状态栏使用说明
 - [Hooks 系统](docs/hooks.md) - 自动化钩子详解
-
-## 目录结构
-
-```
-.claude/
-├── skills/           # 技能目录
-│   ├── user-profile/    # 画像生成
-│   ├── commander/       # 指挥官（主入口）
-│   ├── skill-generator/ # 技能生成器
-│   └── k01_init_project/ # 生成的子技能
-├── hooks/            # Hooks 脚本
-│   ├── session-start.sh          # 会话启动检查
-│   ├── intent-detect.sh          # 意图路由
-│   ├── update-status.sh          # 状态更新
-│   ├── track-skills-change.sh    # 技能变更追踪
-│   ├── update-reasoning-on-task.sh # 推理日志自动更新 ⭐
-│   ├── capture-reasoning.sh      # 推理日志捕获 ⭐
-│   ├── fix-reasoning.sh          # 推理日志修复 ⭐
-│   ├── promote-to-proven.sh      # 技能升级
-│   └── lib/
-│       └── common.sh             # 共享函数库
-├── statusline.sh      # 自定义状态栏
-└── settings.json      # Claude Code 配置
-
-.templates/           # 模板文件
-    ├── usr.json.template    # 用户画像模板
-    └── info.md              # 意图路由规则模板
-
-.info/                # 数据目录
-    ├── usr.json             # 用户画像（生成）
-    ├── tasks.json           # 任务索引
-    ├── .status.json         # 运行时状态
-    ├── .reasoning.md        # 推理日志全局索引 ⭐
-    ├── .reasoning.meta.json # 推理元数据 ⭐
-    ├── .reasoning.log.jsonl # 推理事件日志 ⭐
-    └── info.md              # 意图路由规则（生成）
-
-info/                 # 用户输入（个人信息）
-
-results/              # 任务结果（执行过程文件）
-    └── k01/               # 任务 k01 的结果
-        ├── .reasoning.md   # 任务级推理日志 ⭐
-        ├── README.md       # 任务总览
-        ├── plan.md         # 任务计划
-        └── execution.md    # 执行记录
-
-assets/               # 多媒体资源
-    └── videos/           # 测试/演示视频
-        └── test-cli-usage.mp4
-
-.mcp.json            # MCP 服务器配置
-```
-
-⭐ 新增功能
-
-## 资源文件
-
-| 类型 | 路径 | 说明 |
-|:-----|:-----|:-----|
-| 测试视频 | [assets/videos/test-cli-usage.mp4](assets/videos/test-cli-usage.mp4) | CLI 使用演示 |
 
 ### 文件命名规范
 
