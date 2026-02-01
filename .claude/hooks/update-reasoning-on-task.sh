@@ -338,9 +338,9 @@ TASK_CONTENT="${TASK_CONTENT}
 "
 
 for i in "${!STEPS_ARRAY[@]}"; do
-    local step_name="${STEPS_ARRAY[$i]}"
-    local step_num=$((i + 1))
-    local status=""
+    step_name="${STEPS_ARRAY[$i]}"
+    step_num=$((i + 1))
+    status=""
     if [ $i -lt $CURRENT_STEP ]; then
         status="✅ 完成"
     elif [ $i -eq $CURRENT_STEP ]; then

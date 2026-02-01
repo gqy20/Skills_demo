@@ -61,6 +61,16 @@ case "$TOOL_NAME" in
                     --arg tid "$TASK_ID" --arg sid "$SKILL_NAME" \
                     '.tasks[$tid].steps += [$sid] | .tasks[$tid].steps |= unique'
                 echo -e "${GREEN}📝 已关联任务技能${NC}: $SKILL_NAME -> $TASK_ID"
+
+                # 触发推理日志更新（当 k_ 技能被添加时）
+                if [ -x "$SCRIPT_DIR/update-reasoning-on-task.sh" ]; then
+                    # 构造模拟的 TaskUpdate 输入
+                    HOOK_INPUT=$(jq -n \
+                        --arg tn "TaskUpdate" \
+                        --arg ti "$TASK_ID" \
+                        '{tool_name: $tn, tool_input: {taskId: $ti}}')
+                    echo "$HOOK_INPUT" | "$SCRIPT_DIR/update-reasoning-on-task.sh" >/dev/null 2>&1 || true
+                fi
             fi
         elif [ "$SKILL_TYPE" = "proven" ]; then
             # p_ 技能，添加到 proven_skills（如果不存在）
