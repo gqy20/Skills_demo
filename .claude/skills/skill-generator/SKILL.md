@@ -446,10 +446,28 @@ u_ 技能池检查:
 **执行**：[具体操作步骤]
 ```
 
-**推理块会被自动捕获**：
-- 推理块会通过 Hook 系统自动捕获
-- 写入 `results/k01/.reasoning.md`（任务级）
+### 推理块自动捕获机制
+
+推理块会通过 Hook 系统自动捕获并维护：
+
+| Hook | 触发时机 | 作用 |
+|:-----|---------|-----|
+| `update-reasoning-on-task.sh` | TaskCreate/TaskUpdate | **任务操作时自动更新推理日志** |
+| `capture-reasoning.sh` | Write/Edit .reasoning.md | 捕获推理块内容 |
+| `fix-reasoning.sh` | SessionStart | 修复损坏的推理文件 |
+
+**重要**：
+- 推理块写入 `results/k01/.reasoning.md`（任务级）
 - 同时合并到 `.info/.reasoning.md`（全局，活跃任务）
+- **每次任务操作（TaskCreate/TaskUpdate）都会自动触发更新**
+
+### 必须输出推理块的时机
+
+在以下关键步骤**必须**输出推理块：
+
+1. **任务分析完成时** - 记录分析结果和参考技能
+2. **技能规划完成时** - 记录技能生成计划
+3. **技能生成完成时** - 记录生成过程和结果
 
 **示例**：
 ```markdown

@@ -37,7 +37,9 @@ flowchart TB
         UT["update-status<br/>状态更新"]
         TS["track-skills<br/>变更追踪"]
         ID["intent-detect<br/>意图路由"]
-        CR["capture-reasoning<br/>推理日志"]
+        UR["update-reasoning<br/>推理更新⭐"]
+        CR["capture-reasoning<br/>推理捕获"]
+        FR["fix-reasoning<br/>推理修复"]
     end
 
     subgraph Output["📤 输出层"]
@@ -60,22 +62,27 @@ flowchart TB
     %% Hooks 触发
     CMD -.->|SessionStart| SS
     CMD -.->|UserPrompt| ID
+    CMD -.->|TaskCreate/Update| UR
     CMD -.->|ToolUse| UT
-    CMD -.->|ToolUse| CR
+    CMD -.->|Write/Edit| CR
     SG -.->|Edit| TS
+    SS -.->|启动| FR
 
     %% 状态更新
     UT --> STATUS
     TS --> TASKS
     SS --> STATUS
+    UR --> REASON
+    UR --> META
     CR --> REASON
     CR --> META
+    FR --> REASON_FILES
 
     %% 输出
     KSKILL --> RESULTS
     USKILL --> RESULTS
     PSKILL --> RESULTS
-    CR --> REASON_FILES
+    UR --> REASON_FILES
     STATUS --> STATUSLINE
     USR --> STATUS
 
@@ -91,7 +98,7 @@ flowchart TB
     class UP,CMD,SG coreStyle
     class USR,TASKS,STATUS,REASON,META dataStyle
     class BUILTIN,USKILL,PSKILL,KSKILL skillStyle
-    class SS,UT,TS,ID,CR hookStyle
+    class SS,UT,TS,ID,UR,CR,FR hookStyle
     class RESULTS,REASON_FILES,STATUSLINE outputStyle
 ```
 
@@ -123,12 +130,29 @@ flowchart TB
 - **执行时间线**：记录关键事件和时间戳
 - **推理块捕获**：保存 `<reasoning>` 块中的思考过程
 
+#### 自动维护机制
+
+推理日志通过 Hooks 系统自动维护，无需手动操作：
+
+| Hook | 触发时机 | 作用 |
+|:-----|---------|-----|
+| `update-reasoning-on-task.sh` | TaskCreate/TaskUpdate | **任务操作时自动更新** |
+| `capture-reasoning.sh` | Write/Edit .reasoning.md | 捕获推理块内容 |
+| `fix-reasoning.sh` | SessionStart | 修复损坏的推理文件 |
+
+**核心特性**：每次任务操作（创建、更新）都会自动触发推理日志更新。
+
+#### 查看推理日志
+
 ```bash
-# 查看全局推理索引
+# 查看全局推理索引（活跃任务汇总）
 cat .info/.reasoning.md
 
 # 查看特定任务的推理日志
 cat results/k01/.reasoning.md
+
+# 查看推理元数据
+cat .info/.reasoning.meta.json
 ```
 
 ### 快速开始
@@ -205,14 +229,16 @@ cat results/k01/.reasoning.md
 │   ├── skill-generator/ # 技能生成器
 │   └── k01_init_project/ # 生成的子技能
 ├── hooks/            # Hooks 脚本
-│   ├── session-start.sh        # 会话启动检查
-│   ├── intent-detect.sh        # 意图路由
-│   ├── update-status.sh        # 状态更新
-│   ├── track-skills-change.sh  # 技能变更追踪
-│   ├── capture-reasoning.sh    # 推理日志捕获 ⭐
-│   ├── promote-to-proven.sh    # 技能升级
+│   ├── session-start.sh          # 会话启动检查
+│   ├── intent-detect.sh          # 意图路由
+│   ├── update-status.sh          # 状态更新
+│   ├── track-skills-change.sh    # 技能变更追踪
+│   ├── update-reasoning-on-task.sh # 推理日志自动更新 ⭐
+│   ├── capture-reasoning.sh      # 推理日志捕获 ⭐
+│   ├── fix-reasoning.sh          # 推理日志修复 ⭐
+│   ├── promote-to-proven.sh      # 技能升级
 │   └── lib/
-│       └── common.sh           # 共享函数库
+│       └── common.sh             # 共享函数库
 ├── statusline.sh      # 自定义状态栏
 └── settings.json      # Claude Code 配置
 
@@ -254,6 +280,20 @@ results/              # 任务结果（执行过程文件）
 | `/k01_init_project` | 执行子技能 |
 | `cat .info/.reasoning.md` | 查看推理日志全局索引 |
 | `cat results/k01/.reasoning.md` | 查看任务推理日志 |
+| `cat .info/.reasoning.meta.json` | 查看推理元数据 |
+
+### 推理日志快速查看
+
+```bash
+# 查看所有活跃任务的推理摘要
+cat .info/.reasoning.md
+
+# 查看特定任务的详细推理过程
+cat results/k01/.reasoning.md
+
+# 查看推理元数据（包含所有任务状态）
+cat .info/.reasoning.meta.json
+```
 
 > 💡 完整命令参考请查看 [使用指南](docs/usage.md#核心命令)
 
