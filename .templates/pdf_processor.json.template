@@ -1,0 +1,36 @@
+{
+  "template_name": "pdf_processor_summary",
+  "description": "PDF文献摘要生成模板",
+  "schema": {
+    "filename": "string - PDF文件名",
+    "title": "string - 论文完整标题",
+    "authors": ["string - 作者列表"],
+    "abstract": "string - 论文摘要原文",
+    "summary": "string - 中文通俗总结（200-300字）：研究什么问题、用了什么方法、主要发现、研究意义",
+    "key_findings": ["string - 3-5个关键发现，用中文"],
+    "keywords": ["string - 3-5个关键词，用中文"],
+    "metadata": {
+      "word_count": "number - 论文词数估算",
+      "char_count": "number - 论文字符数估算",
+      "figures": "number - 图片数量"
+    },
+    "generated_at": "string - ISO格式时间戳",
+    "model_used": "string - 使用的模型ID"
+  },
+  "output_example": {
+    "filename": "2025_10.1111-mec.70167.pdf",
+    "title": "Hybrid Origin of Alpaca...",
+    "authors": ["Zefu Wang", "Jialiang Li"],
+    "abstract": "论文摘要原文...",
+    "summary": "本研究对羊驼的进化起源进行了基因组学分析...",
+    "key_findings": [
+      "羊驼是已确认的同源杂交物种...",
+      "基因组分析显示羊驼继承了来自两个亲本的大量基因..."
+    ],
+    "keywords": ["羊驼", "同源杂交物种形成", "种群基因组学"],
+    "metadata": {"word_count": 6800, "char_count": 13600, "figures": 4},
+    "generated_at": "2026-02-06T12:00:00Z",
+    "model_used": "claude-sonnet-4-5-20250929"
+  },
+  "prompt_template": "分析这篇论文并输出 JSON：\n\n论文：{filename}\n内容：\n{content}\n\n要求：\n- summary: 中文通俗总结，200-300字，说明研究问题、方法、主要发现和意义\n- key_findings: 3-5个关键发现，用中文\n- keywords: 3-5个关键词，用中文\n\n只输出 JSON，不要其他文字。"
+}
