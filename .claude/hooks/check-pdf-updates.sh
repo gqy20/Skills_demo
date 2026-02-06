@@ -1,6 +1,6 @@
 #!/bin/bash
 # Hook: 检查 PDF 文件更新
-# 在每次用户输入前检查 articles/ 目录是否有新的 PDF 文件
+# 在每次用户输入前检查 01_articles/ 目录是否有新的 PDF 文件
 
 set -e
 
