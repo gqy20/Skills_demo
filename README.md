@@ -31,6 +31,7 @@ flowchart TB
 
     subgraph Skills["🔧 技能层"]
         BUILTIN["内置技能<br/>user-profile<br/>commander<br/>skill-generator"]
+        PDF["pdf_processor<br/>PDF文献处理"]
         USKILL["u_ 技能<br/>用户经验"]
         PSKILL["p_ 技能<br/>验证技能"]
         KSKILL["k_ 技能<br/>任务子技能"]
@@ -101,7 +102,7 @@ flowchart TB
     class INFO,TEMPLATES inputStyle
     class UP,CMD,SG coreStyle
     class USR,TASKS,STATUS,REASON,META dataStyle
-    class BUILTIN,USKILL,PSKILL,KSKILL skillStyle
+    class BUILTIN,PDF,USKILL,PSKILL,KSKILL skillStyle
     class SS,UT,TS,ID,UR,CR,FR hookStyle
     class RESULTS,REASON_FILES,STATUSLINE outputStyle
 ```
@@ -222,6 +223,7 @@ cat .info/.reasoning.meta.json
 - [结果目录说明](docs/results.md) - results/ 目录结构详解
 - [状态栏配置](docs/statusline.md) - 自定义状态栏使用说明
 - [Hooks 系统](docs/hooks.md) - 自动化钩子详解
+- [PDF 文献处理器](.claude/skills/pdf_processor/SKILL.md) - PDF 转 Markdown + AI 摘要
 
 ### 文件命名规范
 
@@ -258,6 +260,75 @@ cat .info/.reasoning.meta.json
 ```
 
 > 💡 完整命令参考请查看 [使用指南](docs/usage.md#核心命令)
+
+## 📚 PDF 文献处理
+
+内置 PDF 文献处理器，自动将 PDF 论文转换为 Markdown 并生成 AI 摘要。
+
+### 功能特性
+
+| 功能 | 说明 |
+|:-----|:-----|
+| **PDF 扫描** | 自动扫描 `01_articles/` 目录 |
+| **格式转换** | 使用 MinerU API 将 PDF 转为 Markdown |
+| **AI 摘要** | Claude Code 直接生成中文结构化摘要 |
+| **并行处理** | 支持多线程并发处理 |
+| **断点续传** | 已处理文件不会重复转换 |
+| **自动检测** | Hook 自动检测待处理文件 |
+
+### 使用方法
+
+```bash
+# 放入 PDF 文件到 01_articles/ 目录
+cp paper.pdf 01_articles/
+
+# 使用 Skill 处理
+/pdf-processor
+
+# 或直接运行脚本
+python .claude/skills/pdf_processor/scripts/processor.py
+```
+
+### 输出结构
+
+```
+01_articles/
+├── paper.pdf                    # 原始 PDF
+└── processed/
+    ├── md/
+    │   └── paper.md             # 转换后的 Markdown
+    ├── imgs/
+    │   └── paper/               # 提取的图片
+    └── summaries/
+        └── paper.json           # AI 生成的摘要
+```
+
+### 摘要 JSON 格式
+
+```json
+{
+  "filename": "paper.pdf",
+  "title": "论文完整标题",
+  "authors": ["作者1", "作者2"],
+  "abstract": "论文摘要原文",
+  "summary": "中文通俗总结（200-300字）",
+  "key_findings": ["发现1", "发现2"],
+  "keywords": ["关键词1", "关键词2"],
+  "metadata": {"journal": "Nature", "year": 2025},
+  "generated_at": "2026-02-06T12:00:00Z"
+}
+```
+
+### 配置
+
+在 `.env` 文件中配置：
+
+```bash
+# MinerU API Key（必需，用于 PDF 转 Markdown）
+MINERU_API_KEY=your_mineru_api_key
+```
+
+> 💡 MinerU API 申请地址：https://mineru.net/apiManage
 
 ## 设计理念
 
