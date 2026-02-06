@@ -15,9 +15,11 @@ DIM='\033[2m'      # 添加 DIM 颜色
 check_jq || exit 0
 
 # 配置
-PDF_DIR="${CLAUDE_PROJECT_DIR}/01_articles"
-STATUS_FILE="${CLAUDE_PROJECT_DIR}/.info/.pdf_status"
-ALERT_FILE="${CLAUDE_PROJECT_DIR}/.info/.pdf_alert"
+# 如果 CLAUDE_PROJECT_DIR 未设置，从脚本路径推导
+PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+PDF_DIR="$PROJECT_ROOT/01_articles"
+STATUS_FILE="$PROJECT_ROOT/.info/.pdf_status"
+ALERT_FILE="$PROJECT_ROOT/.info/.pdf_alert"
 
 # 确保 .info 目录存在
 mkdir -p "$(dirname "$STATUS_FILE")"
