@@ -1,7 +1,8 @@
 {
   "env": {
     "ANTHROPIC_MODEL": "glm-4.7",
-    "ANTHROPIC_SMALL_FAST_MODEL": "glm-4.7"
+    "ANTHROPIC_SMALL_FAST_MODEL": "glm-4.7",
+    "CLAUDE_PROJECT_DIR": "/workspaces/Skills_demo"
   },
   "permissions": {
     "allow": [

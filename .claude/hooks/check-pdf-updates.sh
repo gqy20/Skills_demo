@@ -1,6 +1,12 @@
 #!/bin/bash
 # Hook: 检查 PDF 文件更新
-# 在每次用户输入前检查 01_articles/ 目录是否有新的 PDF 文件
+# 在每次用户输入前检查 01_articles/ 目录是否有需要处理的 PDF 文件
+# 检查逻辑：PDF 存在 + 配套文件(MD/摘要)不存在 = 需要处理
+#
+# 自动处理配置：
+#   export PDF_AUTO_PROCESS=true   # 启用自动处理（检测到新文件后自动处理）
+#   export PDF_AUTO_SUMMARY=true   # 自动生成摘要（需要 Claude API）
+#   export PDF_BACKGROUND=true    # 后台处理（不阻塞用户输入）
 
 set -e
 
@@ -10,88 +16,144 @@ source "$SCRIPT_DIR/lib/common.sh"
 
 # 初始化
 init_colors
-CYAN='\033[0;36m'  # 添加 CYAN 颜色
-DIM='\033[2m'      # 添加 DIM 颜色
+CYAN='\033[0;36m'
+DIM='\033[2m'
 check_jq || exit 0
 
 # 配置
-# 如果 CLAUDE_PROJECT_DIR 未设置，从脚本路径推导
 PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 PDF_DIR="$PROJECT_ROOT/01_articles"
-STATUS_FILE="$PROJECT_ROOT/.info/.pdf_status"
+PROCESSED_DIR="$PROJECT_ROOT/01_articles/processed"
+MD_DIR="$PROCESSED_DIR/md"
+SUMMARY_DIR="$PROCESSED_DIR/summaries"
 ALERT_FILE="$PROJECT_ROOT/.info/.pdf_alert"
 
-# 确保 .info 目录存在
-mkdir -p "$(dirname "$STATUS_FILE")"
+# 自动处理配置
+# 优先读取环境变量，其次读取配置文件
+CONFIG_FILE="$PROJECT_ROOT/.info/.pdf_auto_config"
 
-# 1. 获取当前 PDF 文件列表和状态
-get_pdf_info() {
+if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+fi
+
+PDF_AUTO_PROCESS="${PDF_AUTO_PROCESS:-false}"
+PDF_BACKGROUND="${PDF_BACKGROUND:-true}"
+SCRIPT_DIR="$SCRIPT_DIR"
+
+# 1. 检查配套文件是否存在
+check_supporting_files() {
+    local pdf_name="$1"
+    local pdf_stem="${pdf_name%.pdf}"
+    local md_path="$MD_DIR/${pdf_stem}.md"
+    local summary_path="$SUMMARY_DIR/${pdf_stem}.json"
+
+    local has_md=false
+    local has_summary=false
+
+    if [ -f "$md_path" ] && [ -s "$md_path" ]; then
+        has_md=true
+    fi
+
+    if [ -f "$summary_path" ] && [ -s "$summary_path" ]; then
+        has_summary=true
+    fi
+
+    echo "$has_md|$has_summary"
+}
+
+# 2. 获取所有 PDF 文件
+get_all_pdfs() {
     if [ ! -d "$PDF_DIR" ]; then
         return
     fi
 
-    # 获取所有 PDF 文件及其修改时间
-    find "$PDF_DIR" -type f -name "*.pdf" -printf "%P|%T@\n" 2>/dev/null | sort
+    find "$PDF_DIR" -type f -name "*.pdf" | sort
 }
 
-# 2. 对比状态，检测变化
-check_pdf_changes() {
-    local new_pdfs=()
-    local modified_pdfs=()
-    local has_changes=false
+# 3. 检查是否有需要处理的 PDF
+check_pending_pdfs() {
+    local pending_pdfs=()
+    local has_pending=false
 
-    # 读取上次状态
-    declare -A last_state
-    if [ -f "$STATUS_FILE" ]; then
-        while IFS='|' read -r name mtime; do
-            last_state["$name"]="$mtime"
-        done < "$STATUS_FILE"
-    fi
+    while IFS= read -r pdf_path; do
+        local pdf_name="${pdf_path##*/}"
+        local support_info=$(check_supporting_files "$pdf_name")
+        local has_md="${support_info%%|*}"
+        local has_summary="${support_info##*|}"
 
-    # 检查当前状态
-    while IFS='|' read -r name mtime; do
-        if [ -z "${last_state[$name]}" ]; then
-            new_pdfs+=("$name")
-            has_changes=true
-        elif [ "${last_state[$name]}" != "$mtime" ]; then
-            modified_pdfs+=("$name")
-            has_changes=true
+        # 如果 MD 文件或摘要文件不存在，则需要处理
+        if [ "$has_md" = "false" ] || [ "$has_summary" = "false" ]; then
+            pending_pdfs+=("$pdf_name")
+            has_pending=true
         fi
-    done < <(get_pdf_info)
+    done < <(get_all_pdfs)
 
-    # 更新状态文件
-    get_pdf_info > "$STATUS_FILE"
-
-    # 返回结果
-    if [ "$has_changes" = true ]; then
-        echo "CHANGES_DETECTED"
-        if [ ${#new_pdfs[@]} -gt 0 ]; then
-            echo "NEW:${new_pdfs[@]}"
-        fi
-        if [ ${#modified_pdfs[@]} -gt 0 ]; then
-            echo "MODIFIED:${modified_pdfs[@]}"
-        fi
+    if [ "$has_pending" = true ]; then
+        echo "PENDING:${pending_pdfs[@]}"
     fi
 }
 
-# 3. 检查是否有正在处理的 PDF
-check_processing_status() {
-    if [ -f "$ALERT_FILE" ]; then
-        local alert_time=$(cat "$ALERT_FILE" 2>/dev/null || echo "0")
-        local current_time=$(date +%s)
-        local elapsed=$((current_time - alert_time))
-
-        # 5分钟内的提示才显示
-        if [ $elapsed -lt 300 ]; then
-            return 0  # 有正在处理的提示
-        fi
+# 4. 触发自动处理
+trigger_auto_process() {
+    if [ "$PDF_AUTO_PROCESS" != "true" ]; then
+        return
     fi
-    return 1
+
+    # 检查是否已经在运行
+    if [ -f "$PROJECT_ROOT/.info/.pdf_processing.lock" ]; then
+        local pid=$(cat "$PROJECT_ROOT/.info/.pdf_processing.lock" 2>/dev/null)
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            return  # 已在运行
+        fi
+        rm -f "$PROJECT_ROOT/.info/.pdf_processing.lock"
+    fi
+
+    # 记录开始时间，避免重复触发
+    local last_run_file="$PROJECT_ROOT/.info/.pdf_last_auto_run"
+    local now=$(date +%s)
+    local last_run=0
+
+    if [ -f "$last_run_file" ]; then
+        last_run=$(cat "$last_run_file")
+    fi
+
+    # 30秒内不重复触发
+    if [ $((now - last_run)) -lt 30 ]; then
+        return
+    fi
+
+    echo -e "${CYAN}📄 检测到待处理文件，自动启动处理...${NC}"
+
+    # 记录开始时间
+    echo "$now" > "$last_run_file"
+
+    if [ "$PDF_BACKGROUND" = "true" ]; then
+        # 后台处理
+        (
+            # 保存 PID
+            echo $$ > "$PROJECT_ROOT/.info/.pdf_processing.lock"
+
+            cd "$PROJECT_ROOT"
+            python "$SCRIPT_DIR/../pdf_processor/scripts/processor.py" 2>&1 | \
+                while IFS= read -r line; do
+                    echo -e "${DIM}[PDF Auto] $line${NC}"
+                done
+
+            # 清理锁文件
+            rm -f "$PROJECT_ROOT/.info/.pdf_processing.lock"
+        ) &
+        disown
+
+        echo -e "${DIM}  ✓ 处理已在后台启动${NC}"
+    else
+        # 同步处理（会阻塞用户输入）
+        python "$SCRIPT_DIR/../pdf_processor/scripts/processor.py"
+    fi
 }
 
-# 4. 显示 PDF 更新提示
+# 4. 显示 PDF 处理提示
 show_pdf_alert() {
-    local result=$(check_pdf_changes)
+    local result=$(check_pending_pdfs)
 
     if [ -z "$result" ]; then
         return
@@ -99,51 +161,47 @@ show_pdf_alert() {
 
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}📄 检测到 PDF 文件变化${NC}"
+    echo -e "${YELLOW}📄 检测到待处理的 PDF 文件${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
     local new_count=0
-    local modified_count=0
+    local summary_count=0
 
-    while IFS= read -r line; do
-        if [ "$line" = "CHANGES_DETECTED" ]; then
-            continue
+    # 解析结果
+    local pdf_list="${result#PENDING:}"
+
+    for pdf_name in $pdf_list; do
+        local support_info=$(check_supporting_files "$pdf_name")
+        local has_md="${support_info%%|*}"
+        local has_summary="${support_info##*|}"
+
+        if [ "$has_md" = "false" ] && [ "$has_summary" = "false" ]; then
+            # 全新文件
+            echo -e "  ${GREEN}+${NC} 新文件: $pdf_name (未处理)"
+            new_count=$((new_count + 1))
+        elif [ "$has_summary" = "false" ]; then
+            # 已转换 MD，待生成摘要
+            echo -e "  ${YELLOW}~${NC} 待摘要: $pdf_name"
+            summary_count=$((summary_count + 1))
         fi
-        if [[ "$line" == NEW:* ]]; then
-            local files="${line#NEW:}"
-            for file in $files; do
-                echo -e "  ${GREEN}+${NC} 新文件: $file"
-                ((new_count++))
-            done
-        elif [[ "$line" == MODIFIED:* ]]; then
-            local files="${line#MODIFIED:}"
-            for file in $files; do
-                echo -e "  ${YELLOW}~${NC} 修改: $file"
-                ((modified_count++))
-            done
-        fi
-    done <<< "$result"
+    done
 
     echo ""
-    echo -e "  ${DIM}提示: 使用 PDF 处理工具转换这些文件${NC}"
+    echo -e "  ${DIM}待处理: $new_count | 待摘要: $summary_count${NC}"
+    echo ""
+    echo -e "  ${DIM}提示: 使用 /pdf-processor 处理这些文件${NC}"
     echo ""
 
     # 记录提示时间
     date +%s > "$ALERT_FILE"
 }
 
-# 5. 显示处理状态提示
-show_processing_alert() {
-    if check_processing_status; then
-        echo -e "${DIM}  💡 有 PDF 文件正在处理或待处理${NC}"
-    fi
-}
-
 # 主逻辑
-# 只有当 PDF 目录存在时才执行
 if [ -d "$PDF_DIR" ]; then
-    # 显示变更提示
     show_pdf_alert
+
+    # 触发自动处理
+    trigger_auto_process
 fi
 
 exit 0
