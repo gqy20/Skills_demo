@@ -77,42 +77,44 @@ if [ "$llm_provider" != "skip" ]; then
     read -r llm_api_key
 
     if [ -n "$llm_api_key" ]; then
-        # 写入 .env 文件
-        if [ ! -f .env ]; then
-            touch .env
-        fi
-
-        # 检查是否已有 CLAUDE 配置
-        if grep -q "^CLAUDE_API_KEY=" .env 2>/dev/null; then
-            echo ""
-            echo -e "${YELLOW}检测到已存在 CLAUDE_API_KEY 配置${NC}"
-            echo -n "是否覆盖? [y/N]: "
-            read -r overwrite
-            if [[ ! "$overwrite" =~ ^[Yy]$ ]]; then
-                echo -e "${GREEN}✓${NC} 保留现有配置"
-            else
-                # 删除旧配置
-                sed -i '/^CLAUDE_API_KEY=/d' .env
-                sed -i '/^CLAUDE_BASE_URL=/d' .env
-                sed -i '/^CLAUDE_MODEL=/d' .env
-                sed -i '/^# Claude Code LLM 配置/,/^$/d' .env
-
-                # 添加新配置
-                echo "" >> .env
-                echo "# Claude Code LLM 配置" >> .env
-                echo "CLAUDE_API_KEY=\"$llm_api_key\"" >> .env
-                echo "CLAUDE_BASE_URL=$llm_base_url" >> .env
-                echo "CLAUDE_MODEL=$llm_model" >> .env
-                echo -e "${GREEN}✓${NC} Claude Code LLM 配置已保存"
-            fi
+        # 检测 shell 类型
+        if [ -n "$ZSH_VERSION" ] || [ -n "$ZSH_NAME" ]; then
+            shell_config="$HOME/.zshrc"
+            shell_name="zsh"
+        elif [ -n "$BASH_VERSION" ]; then
+            shell_config="$HOME/.bashrc"
+            shell_name="bash"
         else
-            echo "" >> .env
-            echo "# Claude Code LLM 配置" >> .env
-            echo "CLAUDE_API_KEY=\"$llm_api_key\"" >> .env
-            echo "CLAUDE_BASE_URL=$llm_base_url" >> .env
-            echo "CLAUDE_MODEL=$llm_model" >> .env
-            echo -e "${GREEN}✓${NC} Claude Code LLM 配置已保存"
+            # 默认使用 .bashrc
+            shell_config="$HOME/.bashrc"
+            shell_name="bash"
         fi
+
+        # 备份配置文件
+        if [ -f "$shell_config" ]; then
+            cp "$shell_config" "${shell_config}.backup.$(date +%Y%m%d%H%M%S)"
+        fi
+
+        # 删除旧的 CLAUDE 配置
+        sed -i.tmp '/^export CLAUDE_API_KEY=/d' "$shell_config" 2>/dev/null || true
+        sed -i.tmp '/^export CLAUDE_BASE_URL=/d' "$shell_config" 2>/dev/null || true
+        sed -i.tmp '/^export CLAUDE_MODEL=/d' "$shell_config" 2>/dev/null || true
+        rm -f "${shell_config}.tmp"
+
+        # 添加新配置
+        echo "" >> "$shell_config"
+        echo "# Claude Code LLM 配置 ($llm_name)" >> "$shell_config"
+        echo "export CLAUDE_API_KEY=\"$llm_api_key\"" >> "$shell_config"
+        echo "export CLAUDE_BASE_URL=\"$llm_base_url\"" >> "$shell_config"
+        echo "export CLAUDE_MODEL=\"$llm_model\"" >> "$shell_config"
+
+        echo ""
+        echo -e "${GREEN}✓${NC} Claude Code LLM 配置已写入 $shell_config"
+        echo ""
+        echo -e "${YELLOW}请执行以下命令使配置生效：${NC}"
+        echo "  source $shell_config"
+        echo ""
+        echo -e "${YELLOW}或者重启终端${NC}"
     else
         echo -e "${YELLOW}⚠️  API Key 未输入，跳过配置${NC}"
     fi
@@ -308,6 +310,5 @@ echo "  5. ${CYAN}启动任务${NC}          → 运行: ${YELLOW}/commander sta
 echo ""
 echo -e "${CYAN}💡 提示: 每次对话开始时会自动检测 01_articles/ 中的 PDF 变化${NC}"
 echo ""
-echo -e "${YELLOW}注意: Claude Code LLM 配置已保存到 .env，需手动配置到 ~/.claude/settings.json${NC}"
-echo "     或者在 Claude Code 中设置环境变量 CLAUDE_API_KEY, CLAUDE_BASE_URL, CLAUDE_MODEL"
+echo -e "${YELLOW}注意: 配置已写入 shell 配置文件，请执行 source 命令或重启终端${NC}"
 echo ""
