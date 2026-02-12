@@ -4,14 +4,13 @@
 
 - 用 TypeScript 接入 `@anthropic-ai/claude-agent-sdk`
 - 升级到最新 `0.2.x`
-- 采用会话式 client 方案（`unstable_v2_createSession`）而非 `query`
-- 提供流式接口 `POST /api/chat/stream` 给前端调用
+- 提供 SSE 流式接口 `POST /api/chat/sse` 给前端调用
+- 支持 `AskUserQuestion`/权限请求回传：前端通过 `POST /api/input` 响应
 
 ## 文件
 
 - `package.json`
 - `tsconfig.json`
-- `app/agent-client.ts`
 - `app/server.ts`
 - `app/index.html`
 - `app/main.js`
@@ -37,7 +36,10 @@ http://localhost:3000
 
 ## 说明
 
-- 当前为 NDJSON 流式：前端 `fetch` -> 后端逐行写事件 -> 前端实时渲染
+- 当前为 SSE (`text/event-stream`)：前端 `fetch` + SSE 解析器实时渲染
 - 仍保留 `POST /api/chat` 非流式接口，便于调试或回归测试
-- 后端维护会话实例，前端携带 `sessionId` 进行多轮对话
-- `POST /api/input` 当前返回 410（v2 session 路径暂不支持 `canUseTool` 拦截）
+- 多轮会话通过本地 `sessionId -> sdk session_id` 映射实现（`resume`）
+- 当 SDK 触发 `canUseTool`：
+  - `AskUserQuestion` 下发 `ask_user_question` SSE 事件
+  - 其他工具下发 `permission_request` SSE 事件
+  - 前端调用 `POST /api/input` 返回 `allow/deny`、可选 `updatedInput`、`alwaysAllow`
