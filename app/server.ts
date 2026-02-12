@@ -30,6 +30,8 @@ type PendingDecision =
 type PendingRequest = {
   toolName: string;
   input: Record<string, unknown>;
+  toolUseID?: string;
+  suggestions?: unknown[];
   resolve: (decision: PendingDecision) => void;
   timeout: NodeJS.Timeout;
 };
@@ -50,6 +52,7 @@ function writeNdjson(res: Response, payload: unknown): void {
 function createPendingRequest(
   toolName: string,
   input: Record<string, unknown>,
+  metadata?: { toolUseID?: string; suggestions?: unknown[] },
   timeoutMs = 5 * 60 * 1000
 ): { requestId: string; decisionPromise: Promise<PendingDecision> } {
   const requestId = randomUUID();
@@ -65,6 +68,8 @@ function createPendingRequest(
     pendingRequests.set(requestId, {
       toolName,
       input,
+      toolUseID: metadata?.toolUseID,
+      suggestions: metadata?.suggestions,
       resolve,
       timeout
     });
@@ -177,7 +182,7 @@ app.post("/api/chat/stream", async (req, res) => {
       options: {
         cwd: process.cwd(),
         settingSources: ["project"],
-        canUseTool: async (toolName, input) => {
+        canUseTool: async (toolName, input, options) => {
           if (closed) {
             return {
               behavior: "deny",
@@ -186,13 +191,18 @@ app.post("/api/chat/stream", async (req, res) => {
           }
 
           const inputObj = (input ?? {}) as Record<string, unknown>;
-          const { requestId, decisionPromise } = createPendingRequest(toolName, inputObj);
+          const { requestId, decisionPromise } = createPendingRequest(toolName, inputObj, {
+            toolUseID: options?.toolUseID,
+            suggestions: options?.suggestions
+          });
 
           writeNdjson(res, {
             type: toolName === "AskUserQuestion" ? "ask_user_question" : "permission_request",
             requestId,
             toolName,
-            input: inputObj
+            input: inputObj,
+            toolUseID: options?.toolUseID,
+            suggestions: options?.suggestions
           });
 
           const decision = await decisionPromise;
