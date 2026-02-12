@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Response } from "express";
 
@@ -22,6 +23,19 @@ type NormalizedEvent = {
   text: string;
 };
 
+type PendingDecision =
+  | { behavior: "allow"; updatedInput: Record<string, unknown> }
+  | { behavior: "deny"; message: string; interrupt?: boolean };
+
+type PendingRequest = {
+  toolName: string;
+  input: Record<string, unknown>;
+  resolve: (decision: PendingDecision) => void;
+  timeout: NodeJS.Timeout;
+};
+
+const pendingRequests = new Map<string, PendingRequest>();
+
 function normalizeEvent(event: unknown): NormalizedEvent {
   const raw = event as Record<string, unknown>;
   const type = typeof raw.type === "string" ? raw.type : "event";
@@ -31,6 +45,32 @@ function normalizeEvent(event: unknown): NormalizedEvent {
 
 function writeNdjson(res: Response, payload: unknown): void {
   res.write(`${JSON.stringify(payload)}\n`);
+}
+
+function createPendingRequest(
+  toolName: string,
+  input: Record<string, unknown>,
+  timeoutMs = 5 * 60 * 1000
+): { requestId: string; decisionPromise: Promise<PendingDecision> } {
+  const requestId = randomUUID();
+  const decisionPromise = new Promise<PendingDecision>((resolve) => {
+    const timeout = setTimeout(() => {
+      pendingRequests.delete(requestId);
+      resolve({
+        behavior: "deny",
+        message: "Timed out waiting for user input."
+      });
+    }, timeoutMs);
+
+    pendingRequests.set(requestId, {
+      toolName,
+      input,
+      resolve,
+      timeout
+    });
+  });
+
+  return { requestId, decisionPromise };
 }
 
 function extractText(value: unknown): string[] {
@@ -136,7 +176,28 @@ app.post("/api/chat/stream", async (req, res) => {
       prompt: message,
       options: {
         cwd: process.cwd(),
-        settingSources: ["project"]
+        settingSources: ["project"],
+        canUseTool: async (toolName, input) => {
+          if (closed) {
+            return {
+              behavior: "deny",
+              message: "Connection closed by client."
+            };
+          }
+
+          const inputObj = (input ?? {}) as Record<string, unknown>;
+          const { requestId, decisionPromise } = createPendingRequest(toolName, inputObj);
+
+          writeNdjson(res, {
+            type: toolName === "AskUserQuestion" ? "ask_user_question" : "permission_request",
+            requestId,
+            toolName,
+            input: inputObj
+          });
+
+          const decision = await decisionPromise;
+          return decision;
+        }
       }
     })) {
       if (closed) break;
@@ -154,6 +215,45 @@ app.post("/api/chat/stream", async (req, res) => {
       res.end();
     }
   }
+});
+
+app.post("/api/input", (req, res) => {
+  const requestId = typeof req.body?.requestId === "string" ? req.body.requestId : "";
+  const behavior = req.body?.behavior === "deny" ? "deny" : "allow";
+  const message = typeof req.body?.message === "string" ? req.body.message : "User denied this request.";
+  const updatedInput = req.body?.updatedInput;
+
+  if (!requestId) {
+    res.status(400).json({ error: "requestId is required" });
+    return;
+  }
+
+  const pending = pendingRequests.get(requestId);
+  if (!pending) {
+    res.status(404).json({ error: "request not found or already resolved" });
+    return;
+  }
+
+  clearTimeout(pending.timeout);
+  pendingRequests.delete(requestId);
+
+  if (behavior === "deny") {
+    pending.resolve({
+      behavior: "deny",
+      message
+    });
+  } else {
+    const finalInput =
+      updatedInput && typeof updatedInput === "object"
+        ? (updatedInput as Record<string, unknown>)
+        : pending.input;
+    pending.resolve({
+      behavior: "allow",
+      updatedInput: finalInput
+    });
+  }
+
+  res.json({ ok: true });
 });
 
 app.get("*", (_req, res) => {
