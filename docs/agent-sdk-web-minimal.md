@@ -11,6 +11,7 @@
   - `ANTHROPIC_BASE_URL`
   - `ANTHROPIC_AUTH_TOKEN`
 - 提供 MCP 快速开关按钮（临时禁用/启用）
+- 提供性能模式开关（用于快速验证流式首包速度）
 
 ## 文件
 
@@ -51,6 +52,10 @@ http://localhost:3000
 - 多轮会话通过本地 `sessionId -> sdk session_id` 映射实现（`resume`）
 - 设置存储于 `.info/agent-web-settings.json`，后端在每次 `query` 通过 `options.env` 注入生效
 - MCP 开关存储于同一配置文件，后端会在每次 query 启动时批量调用 `toggleMcpServer` 应用开关状态
+- 性能模式开启后：
+  - `settingSources = []`（不加载 project settings/hook）
+  - `thinking = disabled`
+  - 跳过 MCP 批量 toggle 步骤
 - 当 SDK 触发 `canUseTool`：
   - `AskUserQuestion` 下发 `ask_user_question` SSE 事件
   - 其他工具下发 `permission_request` SSE 事件

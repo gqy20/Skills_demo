@@ -8,16 +8,19 @@ const pendingEl = document.getElementById("pending");
 const openSettingsBtn = document.getElementById("open-settings");
 const closeSettingsBtn = document.getElementById("close-settings");
 const toggleMcpBtn = document.getElementById("toggle-mcp");
+const toggleSpeedBtn = document.getElementById("toggle-speed");
 const settingsModal = document.getElementById("settings-modal");
 const settingsForm = document.getElementById("settings-form");
 const settingModelInput = document.getElementById("setting-model");
 const settingBaseUrlInput = document.getElementById("setting-base-url");
 const settingAuthTokenInput = document.getElementById("setting-auth-token");
 const settingMcpEnabledInput = document.getElementById("setting-mcp-enabled");
+const settingSpeedEnabledInput = document.getElementById("setting-speed-enabled");
 const tokenPreviewEl = document.getElementById("token-preview");
 
 let currentSessionId = null;
 let currentMcpEnabled = true;
+let currentSpeedModeEnabled = false;
 const pendingQueue = [];
 let activePending = null;
 
@@ -36,6 +39,13 @@ function setMcpEnabled(enabled) {
   toggleMcpBtn.textContent = `MCP: ${currentMcpEnabled ? "ON" : "OFF"}`;
   toggleMcpBtn.classList.toggle("is-off", !currentMcpEnabled);
   settingMcpEnabledInput.checked = currentMcpEnabled;
+}
+
+function setSpeedModeEnabled(enabled) {
+  currentSpeedModeEnabled = Boolean(enabled);
+  toggleSpeedBtn.textContent = `Speed: ${currentSpeedModeEnabled ? "ON" : "OFF"}`;
+  toggleSpeedBtn.classList.toggle("is-off", !currentSpeedModeEnabled);
+  settingSpeedEnabledInput.checked = currentSpeedModeEnabled;
 }
 
 function escapeHtml(value) {
@@ -81,6 +91,7 @@ async function loadSettings() {
   settingBaseUrlInput.value = data.baseUrl || "";
   settingAuthTokenInput.value = "";
   setMcpEnabled(data.mcpEnabled !== false);
+  setSpeedModeEnabled(data.speedModeEnabled === true);
   tokenPreviewEl.textContent = data.hasToken
     ? `已配置 token: ${data.tokenPreview || "********"}`
     : "当前未配置 token";
@@ -92,6 +103,7 @@ async function saveSettings() {
     baseUrl: settingBaseUrlInput.value.trim(),
     authToken: settingAuthTokenInput.value.trim(),
     mcpEnabled: settingMcpEnabledInput.checked,
+    speedModeEnabled: settingSpeedEnabledInput.checked,
     keepExistingToken: true
   };
   const response = await fetch("/api/settings", {
@@ -104,6 +116,7 @@ async function saveSettings() {
   }
   const data = await response.json();
   setMcpEnabled(data.mcpEnabled !== false);
+  setSpeedModeEnabled(data.speedModeEnabled === true);
   tokenPreviewEl.textContent = data.hasToken
     ? `已配置 token: ${data.tokenPreview || "********"}`
     : "当前未配置 token";
@@ -297,6 +310,7 @@ toggleMcpBtn.addEventListener("click", async () => {
       baseUrl: settingBaseUrlInput.value.trim(),
       authToken: "",
       mcpEnabled: next,
+      speedModeEnabled: currentSpeedModeEnabled,
       keepExistingToken: true
     };
     const response = await fetch("/api/settings", {
@@ -311,6 +325,32 @@ toggleMcpBtn.addEventListener("click", async () => {
     setMcpEnabled(data.mcpEnabled !== false);
   } catch (error) {
     alert(`切换 MCP 失败: ${error instanceof Error ? error.message : String(error)}`);
+  }
+});
+
+toggleSpeedBtn.addEventListener("click", async () => {
+  const next = !currentSpeedModeEnabled;
+  try {
+    const payload = {
+      model: settingModelInput.value.trim(),
+      baseUrl: settingBaseUrlInput.value.trim(),
+      authToken: "",
+      mcpEnabled: currentMcpEnabled,
+      speedModeEnabled: next,
+      keepExistingToken: true
+    };
+    const response = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      throw new Error((await response.text()) || response.statusText);
+    }
+    const data = await response.json();
+    setSpeedModeEnabled(data.speedModeEnabled === true);
+  } catch (error) {
+    alert(`切换性能模式失败: ${error instanceof Error ? error.message : String(error)}`);
   }
 });
 

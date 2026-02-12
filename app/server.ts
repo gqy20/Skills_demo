@@ -44,13 +44,15 @@ type RuntimeSettings = {
   baseUrl: string;
   authToken: string;
   mcpEnabled: boolean;
+  speedModeEnabled: boolean;
 };
 
 const DEFAULT_SETTINGS: RuntimeSettings = {
   model: process.env.ANTHROPIC_MODEL || "glm-5",
   baseUrl: process.env.ANTHROPIC_BASE_URL || "https://open.bigmodel.cn/api/anthropic",
   authToken: process.env.ANTHROPIC_AUTH_TOKEN || "",
-  mcpEnabled: true
+  mcpEnabled: true,
+  speedModeEnabled: false
 };
 
 function extractText(value: unknown): string[] {
@@ -142,7 +144,9 @@ async function readSettings(): Promise<RuntimeSettings> {
       model: parsed.model || DEFAULT_SETTINGS.model,
       baseUrl: parsed.baseUrl || DEFAULT_SETTINGS.baseUrl,
       authToken: parsed.authToken || DEFAULT_SETTINGS.authToken,
-      mcpEnabled: typeof parsed.mcpEnabled === "boolean" ? parsed.mcpEnabled : DEFAULT_SETTINGS.mcpEnabled
+      mcpEnabled: typeof parsed.mcpEnabled === "boolean" ? parsed.mcpEnabled : DEFAULT_SETTINGS.mcpEnabled,
+      speedModeEnabled:
+        typeof parsed.speedModeEnabled === "boolean" ? parsed.speedModeEnabled : DEFAULT_SETTINGS.speedModeEnabled
     };
   } catch {
     return { ...DEFAULT_SETTINGS };
@@ -184,6 +188,31 @@ function buildQueryEnv(settings: RuntimeSettings): Record<string, string | undef
   };
 }
 
+function buildQueryOptions(
+  settings: RuntimeSettings,
+  sessionId: string,
+  sdkSessionId: string | undefined,
+  extra: Partial<Parameters<typeof query>[0]["options"]> = {}
+): NonNullable<Parameters<typeof query>[0]["options"]> {
+  const base: NonNullable<Parameters<typeof query>[0]["options"]> = {
+    cwd: process.cwd(),
+    env: buildQueryEnv(settings),
+    ...(sdkSessionId ? { resume: sdkSessionId } : { sessionId }),
+    ...extra
+  };
+
+  if (settings.speedModeEnabled) {
+    // Fast path: skip project settings/hooks to reduce first-token latency.
+    base.settingSources = [];
+    base.thinking = { type: "disabled" };
+    base.includePartialMessages = true;
+  } else {
+    base.settingSources = ["project"];
+  }
+
+  return base;
+}
+
 function maskToken(token: string): string {
   if (!token) return "";
   if (token.length <= 8) return "********";
@@ -200,6 +229,7 @@ app.get("/api/settings", async (_req, res) => {
     model: settings.model,
     baseUrl: settings.baseUrl,
     mcpEnabled: settings.mcpEnabled,
+    speedModeEnabled: settings.speedModeEnabled,
     hasToken: Boolean(settings.authToken),
     tokenPreview: maskToken(settings.authToken)
   });
@@ -211,13 +241,16 @@ app.post("/api/settings", async (req, res) => {
   const baseUrl = typeof req.body?.baseUrl === "string" ? req.body.baseUrl.trim() : current.baseUrl;
   const tokenInput = typeof req.body?.authToken === "string" ? req.body.authToken.trim() : "";
   const mcpEnabled = typeof req.body?.mcpEnabled === "boolean" ? req.body.mcpEnabled : current.mcpEnabled;
+  const speedModeEnabled =
+    typeof req.body?.speedModeEnabled === "boolean" ? req.body.speedModeEnabled : current.speedModeEnabled;
   const keepExistingToken = req.body?.keepExistingToken !== false;
 
   const next: RuntimeSettings = {
     model: model || current.model,
     baseUrl: baseUrl || current.baseUrl,
     authToken: tokenInput ? tokenInput : keepExistingToken ? current.authToken : "",
-    mcpEnabled
+    mcpEnabled,
+    speedModeEnabled
   };
 
   await writeSettings(next);
@@ -226,6 +259,7 @@ app.post("/api/settings", async (req, res) => {
     model: next.model,
     baseUrl: next.baseUrl,
     mcpEnabled: next.mcpEnabled,
+    speedModeEnabled: next.speedModeEnabled,
     hasToken: Boolean(next.authToken),
     tokenPreview: maskToken(next.authToken)
   });
@@ -246,14 +280,11 @@ app.post("/api/chat", async (req, res) => {
     const events: NormalizedEvent[] = [];
     const queryInstance = query({
       prompt: message,
-      options: {
-        cwd: process.cwd(),
-        settingSources: ["project"],
-        env: buildQueryEnv(settings),
-        ...(sdkSessionId ? { resume: sdkSessionId } : { sessionId })
-      }
+      options: buildQueryOptions(settings, sessionId, sdkSessionId)
     });
-    await applyMcpToggle(queryInstance, settings.mcpEnabled);
+    if (!settings.speedModeEnabled) {
+      await applyMcpToggle(queryInstance, settings.mcpEnabled);
+    }
     for await (const event of queryInstance) {
       const normalized = normalizeSdkEvent(event);
       events.push(normalized);
@@ -305,12 +336,8 @@ app.post("/api/chat/sse", async (req, res) => {
     const settings = await readSettings();
     const queryInstance = query({
       prompt: message,
-      options: {
-        cwd: process.cwd(),
-        settingSources: ["project"],
+      options: buildQueryOptions(settings, sessionId, sdkSessionId, {
         includePartialMessages: true,
-        env: buildQueryEnv(settings),
-        ...(sdkSessionId ? { resume: sdkSessionId } : { sessionId }),
         canUseTool: async (toolName, input, options) => {
           const inputObj = (input ?? {}) as Record<string, unknown>;
           const { requestId, decisionPromise } = createPendingRequest(sessionId, toolName, inputObj, options?.suggestions);
@@ -328,9 +355,11 @@ app.post("/api/chat/sse", async (req, res) => {
 
           return decisionPromise;
         }
-      }
+      })
     });
-    await applyMcpToggle(queryInstance, settings.mcpEnabled);
+    if (!settings.speedModeEnabled) {
+      await applyMcpToggle(queryInstance, settings.mcpEnabled);
+    }
     for await (const event of queryInstance) {
       if (closed) break;
       const normalized = normalizeSdkEvent(event);
