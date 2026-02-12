@@ -4,6 +4,7 @@ import cors from "cors";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
+import { promises as fs } from "node:fs";
 import { query, type SDKMessage, type PermissionResult } from "@anthropic-ai/claude-agent-sdk";
 import type { Response } from "express";
 
@@ -13,6 +14,8 @@ const host = process.env.HOST || "127.0.0.1";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const PROJECT_ROOT = path.resolve(__dirname, "..");
+const SETTINGS_FILE = path.join(PROJECT_ROOT, ".info", "agent-web-settings.json");
 
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
@@ -35,6 +38,18 @@ type PendingRequest = {
 
 const pendingRequests = new Map<string, PendingRequest>();
 const sessionMap = new Map<string, string>();
+
+type RuntimeSettings = {
+  model: string;
+  baseUrl: string;
+  authToken: string;
+};
+
+const DEFAULT_SETTINGS: RuntimeSettings = {
+  model: process.env.ANTHROPIC_MODEL || "glm-5",
+  baseUrl: process.env.ANTHROPIC_BASE_URL || "https://open.bigmodel.cn/api/anthropic",
+  authToken: process.env.ANTHROPIC_AUTH_TOKEN || ""
+};
 
 function extractText(value: unknown): string[] {
   if (typeof value === "string") {
@@ -77,6 +92,15 @@ function writeSse(res: Response, event: string, data: unknown): void {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
+function extractDeltaText(event: SDKMessage): string {
+  if (event.type !== "stream_event") return "";
+  const raw = event.event as Record<string, unknown>;
+  if (raw.type !== "content_block_delta") return "";
+  const delta = raw.delta as Record<string, unknown> | undefined;
+  if (!delta || delta.type !== "text_delta") return "";
+  return typeof delta.text === "string" ? delta.text : "";
+}
+
 function createPendingRequest(
   sessionId: string,
   toolName: string,
@@ -108,8 +132,75 @@ function createPendingRequest(
   return { requestId, decisionPromise };
 }
 
+async function readSettings(): Promise<RuntimeSettings> {
+  try {
+    const raw = await fs.readFile(SETTINGS_FILE, "utf-8");
+    const parsed = JSON.parse(raw) as Partial<RuntimeSettings>;
+    return {
+      model: parsed.model || DEFAULT_SETTINGS.model,
+      baseUrl: parsed.baseUrl || DEFAULT_SETTINGS.baseUrl,
+      authToken: parsed.authToken || DEFAULT_SETTINGS.authToken
+    };
+  } catch {
+    return { ...DEFAULT_SETTINGS };
+  }
+}
+
+async function writeSettings(settings: RuntimeSettings): Promise<void> {
+  await fs.mkdir(path.dirname(SETTINGS_FILE), { recursive: true });
+  await fs.writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 2), "utf-8");
+}
+
+function buildQueryEnv(settings: RuntimeSettings): Record<string, string | undefined> {
+  return {
+    ...process.env,
+    ANTHROPIC_MODEL: settings.model,
+    ANTHROPIC_BASE_URL: settings.baseUrl,
+    ANTHROPIC_AUTH_TOKEN: settings.authToken
+  };
+}
+
+function maskToken(token: string): string {
+  if (!token) return "";
+  if (token.length <= 8) return "********";
+  return `${token.slice(0, 4)}...${token.slice(-4)}`;
+}
+
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, transport: "query-sse", askQuestion: true });
+});
+
+app.get("/api/settings", async (_req, res) => {
+  const settings = await readSettings();
+  res.json({
+    model: settings.model,
+    baseUrl: settings.baseUrl,
+    hasToken: Boolean(settings.authToken),
+    tokenPreview: maskToken(settings.authToken)
+  });
+});
+
+app.post("/api/settings", async (req, res) => {
+  const current = await readSettings();
+  const model = typeof req.body?.model === "string" ? req.body.model.trim() : current.model;
+  const baseUrl = typeof req.body?.baseUrl === "string" ? req.body.baseUrl.trim() : current.baseUrl;
+  const tokenInput = typeof req.body?.authToken === "string" ? req.body.authToken.trim() : "";
+  const keepExistingToken = req.body?.keepExistingToken !== false;
+
+  const next: RuntimeSettings = {
+    model: model || current.model,
+    baseUrl: baseUrl || current.baseUrl,
+    authToken: tokenInput ? tokenInput : keepExistingToken ? current.authToken : ""
+  };
+
+  await writeSettings(next);
+  res.json({
+    ok: true,
+    model: next.model,
+    baseUrl: next.baseUrl,
+    hasToken: Boolean(next.authToken),
+    tokenPreview: maskToken(next.authToken)
+  });
 });
 
 app.post("/api/chat", async (req, res) => {
@@ -123,12 +214,14 @@ app.post("/api/chat", async (req, res) => {
   }
 
   try {
+    const settings = await readSettings();
     const events: NormalizedEvent[] = [];
     for await (const event of query({
       prompt: message,
       options: {
         cwd: process.cwd(),
         settingSources: ["project"],
+        env: buildQueryEnv(settings),
         ...(sdkSessionId ? { resume: sdkSessionId } : { sessionId })
       }
     })) {
@@ -166,18 +259,27 @@ app.post("/api/chat/sse", async (req, res) => {
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
   writeSse(res, "session", { sessionId });
+  const heartbeat = setInterval(() => {
+    if (!closed) {
+      res.write(": heartbeat\n\n");
+    }
+  }, 15000);
 
   let closed = false;
   req.on("close", () => {
     closed = true;
+    clearInterval(heartbeat);
   });
 
   try {
+    const settings = await readSettings();
     for await (const event of query({
       prompt: message,
       options: {
         cwd: process.cwd(),
         settingSources: ["project"],
+        includePartialMessages: true,
+        env: buildQueryEnv(settings),
         ...(sdkSessionId ? { resume: sdkSessionId } : { sessionId }),
         canUseTool: async (toolName, input, options) => {
           const inputObj = (input ?? {}) as Record<string, unknown>;
@@ -203,17 +305,23 @@ app.post("/api/chat/sse", async (req, res) => {
       if (normalized.sessionId) {
         sessionMap.set(sessionId, normalized.sessionId);
       }
+      const deltaText = extractDeltaText(event);
+      if (deltaText) {
+        writeSse(res, "delta", { sessionId, text: deltaText });
+      }
       writeSse(res, "message", normalized);
     }
 
     if (!closed) {
       writeSse(res, "done", { sessionId });
+      clearInterval(heartbeat);
       res.end();
     }
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     if (!closed) {
       writeSse(res, "error", { sessionId, error: msg });
+      clearInterval(heartbeat);
       res.end();
     }
   }

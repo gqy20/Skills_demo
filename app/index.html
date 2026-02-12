@@ -7,32 +7,76 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <main class="app">
-      <h1>Claude Agent SDK Demo</h1>
-      <p class="hint">复用项目级 settings/skills/hooks，前端通过 /api/chat 调用。</p>
-      <p id="session-meta" class="hint"></p>
+    <div class="bg-shape bg-shape-a"></div>
+    <div class="bg-shape bg-shape-b"></div>
 
-      <form id="chat-form" class="panel">
-        <label for="message">输入任务或问题</label>
-        <textarea id="message" rows="5" placeholder="例如：/commander status"></textarea>
-        <button type="submit" id="send-btn">发送</button>
-      </form>
+    <main class="workspace">
+      <section class="chat-shell">
+        <header class="chat-head">
+          <div class="chat-head-row">
+            <h1>Agent Workspace</h1>
+            <button id="open-settings" class="btn-secondary" type="button">设置</button>
+          </div>
+          <p>流式响应 + AskUserQuestion 交互闭环</p>
+        </header>
 
-      <section class="panel">
-        <h2>Assistant Reply</h2>
-        <pre id="reply" class="output">等待输入...</pre>
+        <section id="timeline" class="timeline" aria-live="polite">
+          <article class="bubble bubble-assistant">
+            <p>准备就绪。输入任务后将实时显示回复。</p>
+          </article>
+        </section>
+
+        <form id="chat-form" class="composer">
+          <label for="message">Prompt</label>
+          <textarea id="message" rows="4" placeholder="例如：/commander status"></textarea>
+          <div class="composer-actions">
+            <button type="submit" id="send-btn">发送</button>
+          </div>
+        </form>
       </section>
 
-      <section class="panel">
-        <h2>Events</h2>
-        <pre id="events" class="output">[]</pre>
-      </section>
+      <aside class="inspector">
+        <section class="panel">
+          <h2>Session</h2>
+          <p id="session-meta" class="session-tag">Session: (new)</p>
+        </section>
 
-      <section class="panel">
-        <h2>Pending Input</h2>
-        <div id="pending" class="pending-empty">当前没有待处理交互</div>
-      </section>
+        <section class="panel">
+          <h2>Pending Input</h2>
+          <div id="pending" class="pending-empty">当前没有待处理交互</div>
+        </section>
+
+        <section class="panel panel-events">
+          <h2>Events</h2>
+          <pre id="events" class="output">[]</pre>
+        </section>
+      </aside>
     </main>
+
+    <div id="settings-modal" class="modal hidden" aria-hidden="true">
+      <div class="modal-card">
+        <div class="modal-head">
+          <h2>运行配置</h2>
+          <button id="close-settings" class="btn-secondary" type="button">关闭</button>
+        </div>
+        <form id="settings-form" class="settings-form">
+          <label for="setting-model">ANTHROPIC_MODEL</label>
+          <input id="setting-model" type="text" placeholder="glm-5" />
+
+          <label for="setting-base-url">ANTHROPIC_BASE_URL</label>
+          <input id="setting-base-url" type="text" placeholder="https://open.bigmodel.cn/api/anthropic" />
+
+          <label for="setting-auth-token">ANTHROPIC_AUTH_TOKEN</label>
+          <input id="setting-auth-token" type="password" placeholder="输入新 token（留空保留当前）" />
+
+          <p id="token-preview" class="hint"></p>
+
+          <div class="pending-actions">
+            <button id="save-settings" type="submit">保存配置</button>
+          </div>
+        </form>
+      </div>
+    </div>
     <script src="./main.js" type="module"></script>
   </body>
 </html>

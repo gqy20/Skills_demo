@@ -1,10 +1,18 @@
 const form = document.getElementById("chat-form");
 const messageInput = document.getElementById("message");
 const sendBtn = document.getElementById("send-btn");
-const replyEl = document.getElementById("reply");
+const timelineEl = document.getElementById("timeline");
 const eventsEl = document.getElementById("events");
 const sessionMetaEl = document.getElementById("session-meta");
 const pendingEl = document.getElementById("pending");
+const openSettingsBtn = document.getElementById("open-settings");
+const closeSettingsBtn = document.getElementById("close-settings");
+const settingsModal = document.getElementById("settings-modal");
+const settingsForm = document.getElementById("settings-form");
+const settingModelInput = document.getElementById("setting-model");
+const settingBaseUrlInput = document.getElementById("setting-base-url");
+const settingAuthTokenInput = document.getElementById("setting-auth-token");
+const tokenPreviewEl = document.getElementById("token-preview");
 
 let currentSessionId = null;
 const pendingQueue = [];
@@ -15,11 +23,31 @@ function setSession(sessionId) {
   sessionMetaEl.textContent = currentSessionId ? `Session: ${currentSessionId}` : "Session: (new)";
 }
 
+function showSettingsModal(show) {
+  settingsModal.classList.toggle("hidden", !show);
+  settingsModal.setAttribute("aria-hidden", show ? "false" : "true");
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
+}
+
+function scrollTimelineBottom() {
+  timelineEl.scrollTop = timelineEl.scrollHeight;
+}
+
+function createBubble(role, text, extraClass = "") {
+  const article = document.createElement("article");
+  article.className = `bubble ${role === "user" ? "bubble-user" : "bubble-assistant"} ${extraClass}`.trim();
+  const p = document.createElement("p");
+  p.textContent = text;
+  article.appendChild(p);
+  timelineEl.appendChild(article);
+  scrollTimelineBottom();
+  return p;
 }
 
 async function resolvePending(payload) {
@@ -31,6 +59,42 @@ async function resolvePending(payload) {
   if (!response.ok) {
     throw new Error((await response.text()) || response.statusText);
   }
+}
+
+async function loadSettings() {
+  const response = await fetch("/api/settings");
+  if (!response.ok) {
+    throw new Error((await response.text()) || response.statusText);
+  }
+  const data = await response.json();
+  settingModelInput.value = data.model || "";
+  settingBaseUrlInput.value = data.baseUrl || "";
+  settingAuthTokenInput.value = "";
+  tokenPreviewEl.textContent = data.hasToken
+    ? `已配置 token: ${data.tokenPreview || "********"}`
+    : "当前未配置 token";
+}
+
+async function saveSettings() {
+  const payload = {
+    model: settingModelInput.value.trim(),
+    baseUrl: settingBaseUrlInput.value.trim(),
+    authToken: settingAuthTokenInput.value.trim(),
+    keepExistingToken: true
+  };
+  const response = await fetch("/api/settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    throw new Error((await response.text()) || response.statusText);
+  }
+  const data = await response.json();
+  tokenPreviewEl.textContent = data.hasToken
+    ? `已配置 token: ${data.tokenPreview || "********"}`
+    : "当前未配置 token";
+  settingAuthTokenInput.value = "";
 }
 
 function renderPendingEmpty() {
@@ -208,6 +272,33 @@ function parseSseChunk(chunk, state, onEvent) {
 
 setSession(null);
 renderPendingEmpty();
+loadSettings().catch(() => {
+  tokenPreviewEl.textContent = "配置读取失败，请稍后重试。";
+});
+
+openSettingsBtn.addEventListener("click", () => {
+  loadSettings()
+    .then(() => showSettingsModal(true))
+    .catch((error) => {
+      alert(`读取配置失败: ${error instanceof Error ? error.message : String(error)}`);
+    });
+});
+
+closeSettingsBtn.addEventListener("click", () => showSettingsModal(false));
+
+settingsModal.addEventListener("click", (event) => {
+  if (event.target === settingsModal) showSettingsModal(false);
+});
+
+settingsForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    await saveSettings();
+    showSettingsModal(false);
+  } catch (error) {
+    alert(`保存失败: ${error instanceof Error ? error.message : String(error)}`);
+  }
+});
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -215,8 +306,10 @@ form.addEventListener("submit", async (event) => {
   const message = messageInput.value.trim();
   if (!message) return;
 
+  createBubble("user", message);
+  const assistantTextNode = createBubble("assistant", "处理中...", "bubble-streaming");
+
   sendBtn.disabled = true;
-  replyEl.textContent = "处理中...";
   eventsEl.textContent = "[]";
   pendingQueue.length = 0;
   activePending = null;
@@ -233,12 +326,16 @@ form.addEventListener("submit", async (event) => {
     });
 
     if (!response.ok) {
-      replyEl.textContent = `请求失败: ${(await response.text()) || response.statusText}`;
+      assistantTextNode.parentElement.classList.remove("bubble-streaming");
+      assistantTextNode.parentElement.classList.add("bubble-error");
+      assistantTextNode.textContent = `请求失败: ${(await response.text()) || response.statusText}`;
       return;
     }
 
     if (!response.body) {
-      replyEl.textContent = "请求失败: 浏览器不支持流式读取";
+      assistantTextNode.parentElement.classList.remove("bubble-streaming");
+      assistantTextNode.parentElement.classList.add("bubble-error");
+      assistantTextNode.textContent = "请求失败: 浏览器不支持流式读取";
       return;
     }
 
@@ -247,6 +344,7 @@ form.addEventListener("submit", async (event) => {
     const decoder = new TextDecoder();
     const events = [];
     const replyParts = [];
+    let receivedDelta = false;
 
     const onEvent = (eventName, data) => {
       events.push({ event: eventName, data });
@@ -262,8 +360,27 @@ form.addEventListener("submit", async (event) => {
         return;
       }
 
+      if (eventName === "delta") {
+        const delta = typeof data?.text === "string" ? data.text : "";
+        if (delta) {
+          receivedDelta = true;
+          if (assistantTextNode.textContent === "处理中...") {
+            assistantTextNode.textContent = "";
+          }
+          assistantTextNode.textContent += delta;
+          scrollTimelineBottom();
+        }
+        return;
+      }
+
       if (eventName === "error") {
-        replyEl.textContent = `请求异常: ${data?.error || "unknown error"}`;
+        assistantTextNode.parentElement.classList.remove("bubble-streaming");
+        assistantTextNode.parentElement.classList.add("bubble-error");
+        assistantTextNode.textContent = `请求异常: ${data?.error || "unknown error"}`;
+        return;
+      }
+
+      if (receivedDelta) {
         return;
       }
 
@@ -273,7 +390,8 @@ form.addEventListener("submit", async (event) => {
 
       if (type.includes("assistant") || type.includes("result") || type.includes("message")) {
         replyParts.push(text);
-        replyEl.textContent = replyParts.join("\n\n");
+        assistantTextNode.textContent = replyParts.join("\n\n");
+        scrollTimelineBottom();
       }
     };
 
@@ -283,12 +401,18 @@ form.addEventListener("submit", async (event) => {
       parseSseChunk(decoder.decode(value, { stream: true }), state, onEvent);
     }
 
-    if (!replyParts.length) {
-      replyEl.textContent = "(流式完成，但没有提取到文本回复，请查看 Events)";
+    assistantTextNode.parentElement.classList.remove("bubble-streaming");
+
+    if (!replyParts.length && !assistantTextNode.textContent.trim()) {
+      assistantTextNode.textContent = "(流式完成，但没有提取到文本回复，请查看 Events)";
     }
   } catch (error) {
-    replyEl.textContent = `请求异常: ${error instanceof Error ? error.message : String(error)}`;
+    assistantTextNode.parentElement.classList.remove("bubble-streaming");
+    assistantTextNode.parentElement.classList.add("bubble-error");
+    assistantTextNode.textContent = `请求异常: ${error instanceof Error ? error.message : String(error)}`;
   } finally {
     sendBtn.disabled = false;
+    messageInput.value = "";
+    messageInput.focus();
   }
 });
