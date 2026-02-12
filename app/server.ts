@@ -43,12 +43,14 @@ type RuntimeSettings = {
   model: string;
   baseUrl: string;
   authToken: string;
+  mcpEnabled: boolean;
 };
 
 const DEFAULT_SETTINGS: RuntimeSettings = {
   model: process.env.ANTHROPIC_MODEL || "glm-5",
   baseUrl: process.env.ANTHROPIC_BASE_URL || "https://open.bigmodel.cn/api/anthropic",
-  authToken: process.env.ANTHROPIC_AUTH_TOKEN || ""
+  authToken: process.env.ANTHROPIC_AUTH_TOKEN || "",
+  mcpEnabled: true
 };
 
 function extractText(value: unknown): string[] {
@@ -139,7 +141,8 @@ async function readSettings(): Promise<RuntimeSettings> {
     return {
       model: parsed.model || DEFAULT_SETTINGS.model,
       baseUrl: parsed.baseUrl || DEFAULT_SETTINGS.baseUrl,
-      authToken: parsed.authToken || DEFAULT_SETTINGS.authToken
+      authToken: parsed.authToken || DEFAULT_SETTINGS.authToken,
+      mcpEnabled: typeof parsed.mcpEnabled === "boolean" ? parsed.mcpEnabled : DEFAULT_SETTINGS.mcpEnabled
     };
   } catch {
     return { ...DEFAULT_SETTINGS };
@@ -149,6 +152,27 @@ async function readSettings(): Promise<RuntimeSettings> {
 async function writeSettings(settings: RuntimeSettings): Promise<void> {
   await fs.mkdir(path.dirname(SETTINGS_FILE), { recursive: true });
   await fs.writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 2), "utf-8");
+}
+
+async function getMcpServerNames(): Promise<string[]> {
+  try {
+    const raw = await fs.readFile(path.join(PROJECT_ROOT, ".mcp.json"), "utf-8");
+    const parsed = JSON.parse(raw) as { mcpServers?: Record<string, unknown> };
+    return Object.keys(parsed.mcpServers || {});
+  } catch {
+    return [];
+  }
+}
+
+async function applyMcpToggle(queryInstance: ReturnType<typeof query>, enabled: boolean): Promise<void> {
+  const names = await getMcpServerNames();
+  for (const name of names) {
+    try {
+      await queryInstance.toggleMcpServer(name, enabled);
+    } catch {
+      // ignore per-server toggle failures to keep response path resilient
+    }
+  }
 }
 
 function buildQueryEnv(settings: RuntimeSettings): Record<string, string | undefined> {
@@ -175,6 +199,7 @@ app.get("/api/settings", async (_req, res) => {
   res.json({
     model: settings.model,
     baseUrl: settings.baseUrl,
+    mcpEnabled: settings.mcpEnabled,
     hasToken: Boolean(settings.authToken),
     tokenPreview: maskToken(settings.authToken)
   });
@@ -185,12 +210,14 @@ app.post("/api/settings", async (req, res) => {
   const model = typeof req.body?.model === "string" ? req.body.model.trim() : current.model;
   const baseUrl = typeof req.body?.baseUrl === "string" ? req.body.baseUrl.trim() : current.baseUrl;
   const tokenInput = typeof req.body?.authToken === "string" ? req.body.authToken.trim() : "";
+  const mcpEnabled = typeof req.body?.mcpEnabled === "boolean" ? req.body.mcpEnabled : current.mcpEnabled;
   const keepExistingToken = req.body?.keepExistingToken !== false;
 
   const next: RuntimeSettings = {
     model: model || current.model,
     baseUrl: baseUrl || current.baseUrl,
-    authToken: tokenInput ? tokenInput : keepExistingToken ? current.authToken : ""
+    authToken: tokenInput ? tokenInput : keepExistingToken ? current.authToken : "",
+    mcpEnabled
   };
 
   await writeSettings(next);
@@ -198,6 +225,7 @@ app.post("/api/settings", async (req, res) => {
     ok: true,
     model: next.model,
     baseUrl: next.baseUrl,
+    mcpEnabled: next.mcpEnabled,
     hasToken: Boolean(next.authToken),
     tokenPreview: maskToken(next.authToken)
   });
@@ -216,7 +244,7 @@ app.post("/api/chat", async (req, res) => {
   try {
     const settings = await readSettings();
     const events: NormalizedEvent[] = [];
-    for await (const event of query({
+    const queryInstance = query({
       prompt: message,
       options: {
         cwd: process.cwd(),
@@ -224,7 +252,9 @@ app.post("/api/chat", async (req, res) => {
         env: buildQueryEnv(settings),
         ...(sdkSessionId ? { resume: sdkSessionId } : { sessionId })
       }
-    })) {
+    });
+    await applyMcpToggle(queryInstance, settings.mcpEnabled);
+    for await (const event of queryInstance) {
       const normalized = normalizeSdkEvent(event);
       events.push(normalized);
       if (normalized.sessionId) {
@@ -273,7 +303,7 @@ app.post("/api/chat/sse", async (req, res) => {
 
   try {
     const settings = await readSettings();
-    for await (const event of query({
+    const queryInstance = query({
       prompt: message,
       options: {
         cwd: process.cwd(),
@@ -299,7 +329,9 @@ app.post("/api/chat/sse", async (req, res) => {
           return decisionPromise;
         }
       }
-    })) {
+    });
+    await applyMcpToggle(queryInstance, settings.mcpEnabled);
+    for await (const event of queryInstance) {
       if (closed) break;
       const normalized = normalizeSdkEvent(event);
       if (normalized.sessionId) {

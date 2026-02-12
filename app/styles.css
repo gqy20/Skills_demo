@@ -93,6 +93,11 @@ body {
   gap: 10px;
 }
 
+.head-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .chat-head p {
   margin: 6px 0 0;
   color: var(--muted);
@@ -191,6 +196,12 @@ button {
   background: rgba(255, 255, 255, 0.72);
   border: 1px solid var(--line);
   color: #30405d;
+}
+
+.btn-secondary.is-off {
+  color: #8c2b2b;
+  border-color: rgba(224, 70, 70, 0.35);
+  background: rgba(255, 237, 237, 0.8);
 }
 
 button:disabled {

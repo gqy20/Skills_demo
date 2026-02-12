@@ -15,7 +15,10 @@
         <header class="chat-head">
           <div class="chat-head-row">
             <h1>Agent Workspace</h1>
-            <button id="open-settings" class="btn-secondary" type="button">设置</button>
+            <div class="head-actions">
+              <button id="toggle-mcp" class="btn-secondary" type="button">MCP: ON</button>
+              <button id="open-settings" class="btn-secondary" type="button">设置</button>
+            </div>
           </div>
           <p>流式响应 + AskUserQuestion 交互闭环</p>
         </header>
@@ -70,6 +73,10 @@
           <input id="setting-auth-token" type="password" placeholder="输入新 token（留空保留当前）" />
 
           <p id="token-preview" class="hint"></p>
+          <label class="pending-option">
+            <input id="setting-mcp-enabled" type="checkbox" />
+            启用 MCP（关闭后用于快速无 MCP 测试）
+          </label>
 
           <div class="pending-actions">
             <button id="save-settings" type="submit">保存配置</button>

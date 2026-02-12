@@ -7,14 +7,17 @@ const sessionMetaEl = document.getElementById("session-meta");
 const pendingEl = document.getElementById("pending");
 const openSettingsBtn = document.getElementById("open-settings");
 const closeSettingsBtn = document.getElementById("close-settings");
+const toggleMcpBtn = document.getElementById("toggle-mcp");
 const settingsModal = document.getElementById("settings-modal");
 const settingsForm = document.getElementById("settings-form");
 const settingModelInput = document.getElementById("setting-model");
 const settingBaseUrlInput = document.getElementById("setting-base-url");
 const settingAuthTokenInput = document.getElementById("setting-auth-token");
+const settingMcpEnabledInput = document.getElementById("setting-mcp-enabled");
 const tokenPreviewEl = document.getElementById("token-preview");
 
 let currentSessionId = null;
+let currentMcpEnabled = true;
 const pendingQueue = [];
 let activePending = null;
 
@@ -26,6 +29,13 @@ function setSession(sessionId) {
 function showSettingsModal(show) {
   settingsModal.classList.toggle("hidden", !show);
   settingsModal.setAttribute("aria-hidden", show ? "false" : "true");
+}
+
+function setMcpEnabled(enabled) {
+  currentMcpEnabled = Boolean(enabled);
+  toggleMcpBtn.textContent = `MCP: ${currentMcpEnabled ? "ON" : "OFF"}`;
+  toggleMcpBtn.classList.toggle("is-off", !currentMcpEnabled);
+  settingMcpEnabledInput.checked = currentMcpEnabled;
 }
 
 function escapeHtml(value) {
@@ -70,6 +80,7 @@ async function loadSettings() {
   settingModelInput.value = data.model || "";
   settingBaseUrlInput.value = data.baseUrl || "";
   settingAuthTokenInput.value = "";
+  setMcpEnabled(data.mcpEnabled !== false);
   tokenPreviewEl.textContent = data.hasToken
     ? `已配置 token: ${data.tokenPreview || "********"}`
     : "当前未配置 token";
@@ -80,6 +91,7 @@ async function saveSettings() {
     model: settingModelInput.value.trim(),
     baseUrl: settingBaseUrlInput.value.trim(),
     authToken: settingAuthTokenInput.value.trim(),
+    mcpEnabled: settingMcpEnabledInput.checked,
     keepExistingToken: true
   };
   const response = await fetch("/api/settings", {
@@ -91,6 +103,7 @@ async function saveSettings() {
     throw new Error((await response.text()) || response.statusText);
   }
   const data = await response.json();
+  setMcpEnabled(data.mcpEnabled !== false);
   tokenPreviewEl.textContent = data.hasToken
     ? `已配置 token: ${data.tokenPreview || "********"}`
     : "当前未配置 token";
@@ -274,6 +287,31 @@ setSession(null);
 renderPendingEmpty();
 loadSettings().catch(() => {
   tokenPreviewEl.textContent = "配置读取失败，请稍后重试。";
+});
+
+toggleMcpBtn.addEventListener("click", async () => {
+  const next = !currentMcpEnabled;
+  try {
+    const payload = {
+      model: settingModelInput.value.trim(),
+      baseUrl: settingBaseUrlInput.value.trim(),
+      authToken: "",
+      mcpEnabled: next,
+      keepExistingToken: true
+    };
+    const response = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      throw new Error((await response.text()) || response.statusText);
+    }
+    const data = await response.json();
+    setMcpEnabled(data.mcpEnabled !== false);
+  } catch (error) {
+    alert(`切换 MCP 失败: ${error instanceof Error ? error.message : String(error)}`);
+  }
 });
 
 openSettingsBtn.addEventListener("click", () => {
