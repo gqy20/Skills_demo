@@ -337,3 +337,10 @@ MINERU_API_KEY=your_mineru_api_key
 - **过程可见** - 推理日志记录 AI 的思考过程和方法论
 - **两次确认** - 分析结果确认 + 技能计划确认，确保准确性
 - **并发安全** - 每个任务独立的推理日志，支持多任务并行
+
+## Agent SDK Web Demo
+
+仓库已提供 TypeScript 版最小接入（后端 API + 简单前端）：
+
+- 文档：`docs/agent-sdk-web-minimal.md`
+- 启动：`npm install && npm run dev`

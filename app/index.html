@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Skills Demo Agent Web</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <h1>Claude Agent SDK Demo</h1>
+      <p class="hint">复用项目级 settings/skills/hooks，前端通过 /api/chat 调用。</p>
+
+      <form id="chat-form" class="panel">
+        <label for="message">输入任务或问题</label>
+        <textarea id="message" rows="5" placeholder="例如：/commander status"></textarea>
+        <button type="submit" id="send-btn">发送</button>
+      </form>
+
+      <section class="panel">
+        <h2>Assistant Reply</h2>
+        <pre id="reply" class="output">等待输入...</pre>
+      </section>
+
+      <section class="panel">
+        <h2>Events</h2>
+        <pre id="events" class="output">[]</pre>
+      </section>
+    </main>
+    <script src="./main.js" type="module"></script>
+  </body>
+</html>
