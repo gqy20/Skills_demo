@@ -17,7 +17,8 @@
 
 body {
   margin: 0;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   color: var(--ink);
   font-family: "Avenir Next", "Manrope", "PingFang SC", "Hiragino Sans GB", sans-serif;
   background: radial-gradient(circle at 8% 14%, #dff6f2 0%, transparent 28%),
@@ -53,6 +54,7 @@ body {
   position: relative;
   z-index: 1;
   width: min(1880px, 100%);
+  height: 100vh;
   margin: 0 auto;
   padding: 10px 12px 14px;
   display: grid;
@@ -69,10 +71,16 @@ body {
 }
 
 .chat-shell {
-  min-height: calc(100vh - 24px);
+  height: calc(100vh - 24px);
+  min-height: 0;
   display: grid;
   grid-template-rows: auto 1fr auto;
   overflow: hidden;
+}
+
+.timeline-wrap {
+  position: relative;
+  min-height: 0;
 }
 
 .chat-head {
@@ -112,8 +120,12 @@ body {
 }
 
 .timeline {
-  padding: 10px 14px;
+  position: relative;
+  min-height: 0;
+  height: 100%;
+  padding: 10px 14px 58px;
   overflow: auto;
+  scroll-behavior: smooth;
 }
 
 .timeline-inner {
@@ -122,6 +134,21 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.timeline-jump {
+  position: absolute;
+  right: 18px;
+  bottom: 12px;
+  z-index: 3;
+  padding: 8px 12px;
+  border-radius: 999px;
+  box-shadow: 0 6px 18px rgba(14, 35, 74, 0.22);
+  font-size: 0.78rem;
+}
+
+.timeline-jump.hidden {
+  display: none;
 }
 
 .bubble {
@@ -270,7 +297,7 @@ button:disabled {
   justify-self: stretch;
   position: sticky;
   top: 10px;
-  height: calc(100vh - 20px);
+  height: calc(100vh - 24px);
   overflow: auto;
   padding-right: 2px;
 }

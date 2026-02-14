@@ -11,14 +11,47 @@ export function createTimelineController(timelineEl, stickyThresholdPx = 80) {
   let messages = [];
   const messageNodeMap = new Map();
   let timelineInnerEl = null;
+  let jumpBtnEl = null;
+  let followLatest = true;
+  let unseenUpdates = 0;
+  let lastAutoScrollAt = 0;
 
-  function scrollBottom() {
+  function nearBottom() {
+    const remaining = timelineEl.scrollHeight - timelineEl.scrollTop - timelineEl.clientHeight;
+    return remaining <= stickyThresholdPx;
+  }
+
+  function setJumpVisible(visible) {
+    if (!jumpBtnEl) return;
+    jumpBtnEl.classList.toggle("hidden", !visible);
+  }
+
+  function renderJumpLabel() {
+    if (!jumpBtnEl) return;
+    jumpBtnEl.textContent = unseenUpdates > 0 ? `回到底部（${unseenUpdates} 条新内容）` : "回到底部";
+  }
+
+  function bumpUnseen() {
+    unseenUpdates += 1;
+    renderJumpLabel();
+    setJumpVisible(true);
+  }
+
+  function maybeAutoScroll() {
+    const now = performance.now();
+    if (now - lastAutoScrollAt < 80) return;
+    lastAutoScrollAt = now;
     timelineEl.scrollTop = timelineEl.scrollHeight;
   }
 
-  function shouldStickToBottom() {
-    const remaining = timelineEl.scrollHeight - timelineEl.scrollTop - timelineEl.clientHeight;
-    return remaining <= stickyThresholdPx;
+  function scrollBottom(forceFollow = false) {
+    timelineEl.scrollTop = timelineEl.scrollHeight;
+    if (forceFollow) {
+      followLatest = true;
+      unseenUpdates = 0;
+      renderJumpLabel();
+      setJumpVisible(false);
+    }
   }
 
   function appendMessageNode(msg, animate) {
@@ -54,7 +87,11 @@ export function createTimelineController(timelineEl, stickyThresholdPx = 80) {
     const next = { id, role, text, status };
     messages.push(next);
     appendMessageNode(next, true);
-    scrollBottom();
+    if (followLatest || nearBottom()) {
+      maybeAutoScroll();
+    } else {
+      bumpUnseen();
+    }
     return id;
   }
 
@@ -69,9 +106,13 @@ export function createTimelineController(timelineEl, stickyThresholdPx = 80) {
       renderTimeline();
       return;
     }
-    const stickToBottom = shouldStickToBottom();
+    const stickToBottom = nearBottom();
     applyMessageNodeState(cachedNode.article, cachedNode.textEl, next);
-    if (stickToBottom) scrollBottom();
+    if (followLatest || stickToBottom) {
+      maybeAutoScroll();
+    } else if (next.status === "streaming" || next.status === "complete") {
+      bumpUnseen();
+    }
   }
 
   function renderTimeline() {
@@ -86,12 +127,32 @@ export function createTimelineController(timelineEl, stickyThresholdPx = 80) {
     scrollBottom();
   }
 
+  function bindScrollControls(buttonEl) {
+    jumpBtnEl = buttonEl || null;
+    timelineEl.addEventListener("scroll", () => {
+      if (nearBottom()) {
+        followLatest = true;
+        unseenUpdates = 0;
+        renderJumpLabel();
+        setJumpVisible(false);
+      } else {
+        followLatest = false;
+        renderJumpLabel();
+        setJumpVisible(true);
+      }
+    });
+    jumpBtnEl?.addEventListener("click", () => {
+      scrollBottom(true);
+    });
+  }
+
   return {
     setMessages,
     getMessages: () => messages,
     createMessage,
     updateMessage,
     renderTimeline,
-    focusBottom: scrollBottom
+    focusBottom: () => scrollBottom(true),
+    bindScrollControls
   };
 }
