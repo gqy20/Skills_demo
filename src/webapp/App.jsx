@@ -86,7 +86,6 @@ export default function App() {
   const [pendingState, setPendingState] = useState({
     byId: {},
     order: [],
-    history: [],
     activeId: null,
     drafts: {}
   });
@@ -94,9 +93,7 @@ export default function App() {
     toolGateEnabled: true,
     gateHits: 0,
     askCreated: 0,
-    askResolved: 0,
-    lastToolName: "",
-    lastEvent: ""
+    askResolved: 0
   });
   const controlsRef = useRef(null);
   const timelineRef = useRef(null);
@@ -206,12 +203,10 @@ export default function App() {
       const nextById = { ...prev.byId };
       delete nextById[requestId];
       const nextOrder = prev.order.filter((id) => id !== requestId);
-      const nextHistory = [{ requestId, kind: target.kind, toolName: target.toolName, status }, ...prev.history].slice(0, 12);
       return {
         ...prev,
         byId: nextById,
         order: nextOrder,
-        history: nextHistory,
         activeId: nextOrder[0] || null
       };
     });
@@ -266,8 +261,7 @@ export default function App() {
       if (part?.type === "data-tool-gate-status") {
         setDiagnostics((prev) => ({
           ...prev,
-          toolGateEnabled: part?.data?.enabled !== false,
-          lastEvent: `tool-gate-status:${part?.data?.enabled !== false ? "on" : "off"}`
+          toolGateEnabled: part?.data?.enabled !== false
         }));
         return;
       }
@@ -276,15 +270,13 @@ export default function App() {
         trackMcpUsage(part?.data?.toolName, null);
         setDiagnostics((prev) => ({
           ...prev,
-          gateHits: prev.gateHits + 1,
-          lastToolName: String(part?.data?.toolName || ""),
-          lastEvent: `gate-hit:${String(part?.data?.toolName || "unknown")}`
+          gateHits: prev.gateHits + 1
         }));
         return;
       }
 
       if (part?.type === "data-ask-user-question-created") {
-        setDiagnostics((prev) => ({ ...prev, askCreated: prev.askCreated + 1, lastEvent: "ask-created" }));
+        setDiagnostics((prev) => ({ ...prev, askCreated: prev.askCreated + 1 }));
         upsertPending("ask_user_question", part.data || {});
         return;
       }
@@ -300,7 +292,7 @@ export default function App() {
         part?.type === "data-ask-user-question-timeout" ||
         part?.type === "data-ask-user-question-canceled"
       ) {
-        setDiagnostics((prev) => ({ ...prev, askResolved: prev.askResolved + 1, lastEvent: String(part.type) }));
+        setDiagnostics((prev) => ({ ...prev, askResolved: prev.askResolved + 1 }));
         resolvePending(part.data || {}, part.type.split("-").slice(-1)[0]);
         return;
       }
@@ -446,14 +438,12 @@ export default function App() {
     setLastUserText(text);
     setInputText("");
     setEvents([]);
-    setPendingState({ byId: {}, order: [], history: [], activeId: null, drafts: {} });
+    setPendingState({ byId: {}, order: [], activeId: null, drafts: {} });
     setDiagnostics((prev) => ({
       ...prev,
       gateHits: 0,
       askCreated: 0,
-      askResolved: 0,
-      lastToolName: "",
-      lastEvent: ""
+      askResolved: 0
     }));
     setRuntimeUsage({ skills: initialSkillsState, mcps: {} });
     setUsageExpanded({ skills: false, mcps: false });

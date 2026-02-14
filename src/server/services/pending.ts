@@ -131,22 +131,6 @@ export class PendingRequestStore {
     return { requestId, createdAt, expiresAt, decisionPromise };
   }
 
-  notifyCreated(requestId: string): void {
-    const pending = this.pendingRequests.get(requestId);
-    if (!pending) return;
-    pending.notify(lifecycleEventType(pending.kind, "created"), {
-      requestId: pending.requestId,
-      sessionId: pending.sessionId,
-      toolName: pending.toolName,
-      kind: pending.kind,
-      input: pending.input,
-      suggestions: pending.suggestions,
-      toolUseID: pending.toolUseID,
-      createdAt: pending.createdAt,
-      expiresAt: pending.expiresAt
-    });
-  }
-
   resolveInput(
     requestId: string,
     behavior: "allow" | "deny",
