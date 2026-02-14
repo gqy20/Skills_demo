@@ -31,7 +31,41 @@ function normalizeSkillDescription(value: unknown): string {
   return text || "无描述";
 }
 
+function isUsableSkillDescription(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const text = value.trim();
+  if (!text) return false;
+  if (text === "---") return false;
+  return true;
+}
+
+function parseFrontmatterDescription(raw: string): string {
+  const lines = raw.split(/\r?\n/);
+  if (lines.length < 3) return "";
+  if (lines[0].trim() !== "---") return "";
+
+  let end = -1;
+  for (let i = 1; i < lines.length; i += 1) {
+    if (lines[i].trim() === "---") {
+      end = i;
+      break;
+    }
+  }
+  if (end <= 1) return "";
+
+  for (let i = 1; i < end; i += 1) {
+    const line = lines[i].trim();
+    if (!line.toLowerCase().startsWith("description:")) continue;
+    const value = line.slice("description:".length).trim();
+    return normalizeSkillDescription(value.replace(/^['"]|['"]$/g, ""));
+  }
+  return "";
+}
+
 function summarizeSkillMarkdown(raw: string): string {
+  const frontmatterDescription = parseFrontmatterDescription(raw);
+  if (frontmatterDescription) return frontmatterDescription;
+
   const lines = raw
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -39,6 +73,7 @@ function summarizeSkillMarkdown(raw: string): string {
   for (const line of lines) {
     if (line.startsWith("#")) continue;
     if (line.startsWith("```")) continue;
+    if (line === "---") continue;
     return normalizeSkillDescription(line.replace(/^[-*]\s+/, "").slice(0, 220));
   }
   return "无描述";
@@ -92,9 +127,10 @@ function normalizeSkills(commands: SlashCommand[], owned: SkillItem[]): SkillIte
       const normalized = normalizeSkillName(name);
       const ownedItem = ownedMap.get(normalized);
       if (!ownedItem) return null;
+      const preferredDescription = isUsableSkillDescription(c.description) ? c.description : ownedItem.description;
       return {
         name,
-        description: normalizeSkillDescription(c.description || ownedItem.description || ""),
+        description: normalizeSkillDescription(preferredDescription || ""),
         argumentHint: c.argumentHint || "",
         source: ownedItem.source
       };
