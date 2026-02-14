@@ -82,6 +82,7 @@ async function resolvePending(payload) {
   if (!response.ok) {
     throw new Error((await response.text()) || response.statusText);
   }
+  return response.json();
 }
 
 async function loadSettings() {
@@ -137,6 +138,16 @@ function renderPendingEmpty() {
   pendingEl.textContent = "当前没有待处理交互";
 }
 
+function removePendingByRequestId(requestId) {
+  if (!requestId) return;
+  const idx = pendingQueue.findIndex((item) => item?.data?.requestId === requestId);
+  if (idx >= 0) pendingQueue.splice(idx, 1);
+  if (activePending?.data?.requestId === requestId) {
+    activePending = null;
+    shiftPending();
+  }
+}
+
 function shiftPending() {
   activePending = pendingQueue.shift() || null;
   if (!activePending) {
@@ -169,6 +180,7 @@ function shiftPending() {
           behavior: "allow",
           alwaysAllow: pendingEl.querySelector("#always-allow").checked
         });
+        removePendingByRequestId(activePending.data.requestId);
         shiftPending();
       } catch (error) {
         alert(`提交失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -182,6 +194,7 @@ function shiftPending() {
           behavior: "deny",
           message: "User denied from web UI."
         });
+        removePendingByRequestId(activePending.data.requestId);
         shiftPending();
       } catch (error) {
         alert(`提交失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -247,6 +260,7 @@ function shiftPending() {
             answers
           }
         });
+        removePendingByRequestId(activePending.data.requestId);
         shiftPending();
       } catch (error) {
         alert(`提交失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -260,6 +274,7 @@ function shiftPending() {
           behavior: "deny",
           message: "User denied AskUserQuestion from web UI."
         });
+        removePendingByRequestId(activePending.data.requestId);
         shiftPending();
       } catch (error) {
         alert(`提交失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -272,6 +287,11 @@ function shiftPending() {
 }
 
 function enqueuePending(evt) {
+  const requestId = evt?.data?.requestId;
+  if (!requestId) return;
+  const existing = pendingQueue.find((item) => item?.data?.requestId === requestId);
+  if (existing) return;
+  if (activePending?.data?.requestId === requestId) return;
   pendingQueue.push(evt);
   if (!activePending) shiftPending();
 }
@@ -449,13 +469,25 @@ form.addEventListener("submit", async (event) => {
         return;
       }
 
-      if (type === "data-permission-request") {
+      if (type === "data-permission-request-created") {
         enqueuePending({ event: "permission_request", data: payload?.data || {} });
         return;
       }
 
-      if (type === "data-ask-user-question") {
+      if (type === "data-ask-user-question-created") {
         enqueuePending({ event: "ask_user_question", data: payload?.data || {} });
+        return;
+      }
+
+      if (
+        type === "data-permission-request-resolved" ||
+        type === "data-permission-request-timeout" ||
+        type === "data-permission-request-canceled" ||
+        type === "data-ask-user-question-resolved" ||
+        type === "data-ask-user-question-timeout" ||
+        type === "data-ask-user-question-canceled"
+      ) {
+        removePendingByRequestId(payload?.data?.requestId);
         return;
       }
 

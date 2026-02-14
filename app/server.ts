@@ -18,12 +18,28 @@ const PROJECT_ROOT = path.resolve(__dirname, "..");
 const SETTINGS_FILE = path.join(PROJECT_ROOT, ".info", "agent-web-settings.json");
 
 type PendingRequest = {
+  requestId: string;
   sessionId: string;
   toolName: string;
+  kind: "ask_user_question" | "permission_request";
+  toolUseID?: string;
   input: Record<string, unknown>;
+  createdAt: number;
+  expiresAt: number;
+  status: "pending" | "allow" | "deny" | "timeout" | "canceled";
   suggestions?: PermissionUpdate[];
+  notify: (eventType: string, data: Record<string, unknown>) => void;
   resolve: (decision: PermissionResult) => void;
   timeout: NodeJS.Timeout;
+};
+
+type RequestResolutionRecord = {
+  requestId: string;
+  sessionId: string;
+  toolName: string;
+  kind: PendingRequest["kind"];
+  status: Exclude<PendingRequest["status"], "pending">;
+  resolvedAt: number;
 };
 
 type RuntimeSettings = {
@@ -45,6 +61,7 @@ type ChatMessage = {
 };
 
 const pendingRequests = new Map<string, PendingRequest>();
+const resolvedRequests = new Map<string, RequestResolutionRecord>();
 const sessionMap = new Map<string, string>();
 const sessionSeedMap = new Map<string, string>();
 
@@ -121,6 +138,18 @@ function writeSseDone(res: Response): void {
   res.write("data: [DONE]\n\n");
 }
 
+function lifecycleEventType(kind: PendingRequest["kind"], phase: "created" | "resolved" | "timeout" | "canceled"): string {
+  return kind === "ask_user_question" ? `data-ask-user-question-${phase}` : `data-permission-request-${phase}`;
+}
+
+function upsertResolvedRequest(record: RequestResolutionRecord): void {
+  resolvedRequests.set(record.requestId, record);
+  if (resolvedRequests.size > 2000) {
+    const oldest = resolvedRequests.keys().next().value;
+    if (oldest) resolvedRequests.delete(oldest);
+  }
+}
+
 function logTrace(traceId: string, phase: string, data: Record<string, unknown> = {}): void {
   const line = {
     ts: new Date().toISOString(),
@@ -165,17 +194,41 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: str
 }
 
 function createPendingRequest(
+  kind: PendingRequest["kind"],
   sessionId: string,
   toolName: string,
   input: Record<string, unknown>,
+  toolUseID: string | undefined,
+  notify: PendingRequest["notify"],
   suggestions?: PermissionUpdate[],
   timeoutMs = 5 * 60 * 1000
 ): { requestId: string; decisionPromise: Promise<PermissionResult> } {
   const requestId = randomUUID();
+  const createdAt = Date.now();
+  const expiresAt = createdAt + timeoutMs;
 
   const decisionPromise = new Promise<PermissionResult>((resolve) => {
     const timeout = setTimeout(() => {
+      const pending = pendingRequests.get(requestId);
+      if (!pending || pending.status !== "pending") return;
+      pending.status = "timeout";
       pendingRequests.delete(requestId);
+      upsertResolvedRequest({
+        requestId,
+        sessionId,
+        toolName,
+        kind,
+        status: "timeout",
+        resolvedAt: Date.now()
+      });
+      notify(lifecycleEventType(kind, "timeout"), {
+        requestId,
+        sessionId,
+        toolName,
+        toolUseID,
+        status: "timeout",
+        expiresAt
+      });
       resolve({
         behavior: "deny",
         message: "Timed out waiting for user input."
@@ -183,10 +236,17 @@ function createPendingRequest(
     }, timeoutMs);
 
     pendingRequests.set(requestId, {
+      requestId,
       sessionId,
       toolName,
+      kind,
+      toolUseID,
       input,
+      createdAt,
+      expiresAt,
+      status: "pending",
       suggestions,
+      notify,
       resolve,
       timeout
     });
@@ -419,7 +479,20 @@ app.post("/api/chat/ui", async (req, res) => {
       options.canUseTool = async (toolName, input, hookOptions) => {
         const inputObj = (input ?? {}) as Record<string, unknown>;
         const isAskUserQuestion = toolName === "AskUserQuestion";
-        const { requestId, decisionPromise } = createPendingRequest(sessionId, toolName, inputObj, hookOptions?.suggestions);
+        const kind: PendingRequest["kind"] = isAskUserQuestion ? "ask_user_question" : "permission_request";
+        const notify: PendingRequest["notify"] = (eventType, data) => {
+          if (closed) return;
+          writeSseData(res, { type: eventType, data });
+        };
+        const { requestId, decisionPromise } = createPendingRequest(
+          kind,
+          sessionId,
+          toolName,
+          inputObj,
+          hookOptions?.toolUseID,
+          notify,
+          hookOptions?.suggestions
+        );
         writeDebugSse(res, closed, debugSseEnabled, traceId, "tool_permission_requested", {
           requestId,
           toolName,
@@ -427,19 +500,17 @@ app.post("/api/chat/ui", async (req, res) => {
           toolUseID: hookOptions?.toolUseID
         });
 
-        if (!closed) {
-          writeSseData(res, {
-            type: isAskUserQuestion ? "data-ask-user-question" : "data-permission-request",
-            data: {
-              requestId,
-              sessionId,
-              toolName,
-              input: inputObj,
-              suggestions: hookOptions?.suggestions,
-              toolUseID: hookOptions?.toolUseID
-            }
-          });
-        }
+        notify(lifecycleEventType(kind, "created"), {
+          requestId,
+          sessionId,
+          toolName,
+          kind,
+          input: inputObj,
+          suggestions: hookOptions?.suggestions,
+          toolUseID: hookOptions?.toolUseID,
+          createdAt: pendingRequests.get(requestId)?.createdAt,
+          expiresAt: pendingRequests.get(requestId)?.expiresAt
+        });
 
         return decisionPromise;
       };
@@ -536,16 +607,16 @@ app.post("/api/chat/ui", async (req, res) => {
     }
 
     if (!closed) {
+      logTrace(traceId, "stream_completed", {
+        sessionId,
+        streamEventCount,
+        deltaCount
+      });
       writeSseData(res, { type: "text-end", id: partId });
       writeSseData(res, { type: "finish" });
       writeSseDone(res);
       doneSent = true;
       clearInterval(heartbeat);
-      writeDebugSse(res, closed, debugSseEnabled, traceId, "stream_completed", {
-        sessionId,
-        streamEventCount,
-        deltaCount
-      });
       res.end();
     }
   } catch (error) {
@@ -584,7 +655,28 @@ app.post("/api/input", (req, res) => {
 
   const pending = pendingRequests.get(requestId);
   if (!pending) {
-    res.status(404).json({ error: "request not found or already resolved" });
+    const resolved = resolvedRequests.get(requestId);
+    if (resolved) {
+      res.json({ ok: true, requestId, status: resolved.status, idempotent: true });
+      return;
+    }
+    res.status(404).json({ error: "request not found" });
+    return;
+  }
+
+  if (updatedInput !== undefined && (!updatedInput || typeof updatedInput !== "object")) {
+    res.status(400).json({ error: "updatedInput must be an object when provided" });
+    return;
+  }
+  if (
+    pending.kind === "ask_user_question" &&
+    updatedInput &&
+    "answers" in (updatedInput as Record<string, unknown>) &&
+    (typeof (updatedInput as Record<string, unknown>).answers !== "object" ||
+      (updatedInput as Record<string, unknown>).answers === null ||
+      Array.isArray((updatedInput as Record<string, unknown>).answers))
+  ) {
+    res.status(400).json({ error: "updatedInput.answers must be an object" });
     return;
   }
 
@@ -592,11 +684,46 @@ app.post("/api/input", (req, res) => {
   pendingRequests.delete(requestId);
 
   if (behavior === "deny") {
+    pending.status = "deny";
+    upsertResolvedRequest({
+      requestId: pending.requestId,
+      sessionId: pending.sessionId,
+      toolName: pending.toolName,
+      kind: pending.kind,
+      status: "deny",
+      resolvedAt: Date.now()
+    });
+    pending.notify(lifecycleEventType(pending.kind, "resolved"), {
+      requestId: pending.requestId,
+      sessionId: pending.sessionId,
+      toolName: pending.toolName,
+      kind: pending.kind,
+      toolUseID: pending.toolUseID,
+      status: "deny",
+      message
+    });
     pending.resolve({
       behavior: "deny",
       message
     });
   } else {
+    pending.status = "allow";
+    upsertResolvedRequest({
+      requestId: pending.requestId,
+      sessionId: pending.sessionId,
+      toolName: pending.toolName,
+      kind: pending.kind,
+      status: "allow",
+      resolvedAt: Date.now()
+    });
+    pending.notify(lifecycleEventType(pending.kind, "resolved"), {
+      requestId: pending.requestId,
+      sessionId: pending.sessionId,
+      toolName: pending.toolName,
+      kind: pending.kind,
+      toolUseID: pending.toolUseID,
+      status: "allow"
+    });
     pending.resolve({
       behavior: "allow",
       updatedInput:
@@ -607,7 +734,54 @@ app.post("/api/input", (req, res) => {
     });
   }
 
-  res.json({ ok: true });
+  res.json({ ok: true, requestId, status: pending.status });
+});
+
+app.post("/api/input/cancel", (req, res) => {
+  const requestId = typeof req.body?.requestId === "string" ? req.body.requestId : "";
+  const message = typeof req.body?.message === "string" ? req.body.message : "Canceled by user from web UI.";
+  if (!requestId) {
+    res.status(400).json({ error: "requestId is required" });
+    return;
+  }
+
+  const pending = pendingRequests.get(requestId);
+  if (!pending) {
+    const resolved = resolvedRequests.get(requestId);
+    if (resolved) {
+      res.json({ ok: true, requestId, status: resolved.status, idempotent: true });
+      return;
+    }
+    res.status(404).json({ error: "request not found" });
+    return;
+  }
+
+  clearTimeout(pending.timeout);
+  pending.status = "canceled";
+  pendingRequests.delete(requestId);
+  upsertResolvedRequest({
+    requestId: pending.requestId,
+    sessionId: pending.sessionId,
+    toolName: pending.toolName,
+    kind: pending.kind,
+    status: "canceled",
+    resolvedAt: Date.now()
+  });
+  pending.notify(lifecycleEventType(pending.kind, "canceled"), {
+    requestId: pending.requestId,
+    sessionId: pending.sessionId,
+    toolName: pending.toolName,
+    kind: pending.kind,
+    toolUseID: pending.toolUseID,
+    status: "canceled",
+    message
+  });
+  pending.resolve({
+    behavior: "deny",
+    message
+  });
+
+  res.json({ ok: true, requestId, status: "canceled" });
 });
 
 app.get("*", (_req, res) => {

@@ -6,6 +6,7 @@
 - 升级到最新 `0.2.x`
 - 提供 AI SDK UI Message Stream 接口 `POST /api/chat/ui` 给前端调用
 - 支持 `AskUserQuestion`/权限请求回传：前端通过 `POST /api/input` 响应
+- 支持请求取消：前端通过 `POST /api/input/cancel` 中止待处理请求
 - 提供设置界面，可配置并持久化：
   - `ANTHROPIC_MODEL`
   - `ANTHROPIC_BASE_URL`
@@ -63,6 +64,8 @@ http://localhost:3000
   - `debugEnabled`：启用 SDK `debug + stderr`，并执行原生控制探针（`initializationResult`/`accountInfo`/`mcpServerStatus`/`supportedModels`）
   - `debugSseEnabled`：将调试信息以 `data-debug` 块下发到前端
 - 当 SDK 触发 `canUseTool`：
-  - `AskUserQuestion` 下发 `data-ask-user-question`
-  - 其他工具下发 `data-permission-request`
+  - `AskUserQuestion` 下发 `data-ask-user-question-created`
+  - 其他工具下发 `data-permission-request-created`
+  - 生命周期状态包含：`*-resolved`、`*-timeout`、`*-canceled`
   - 前端调用 `POST /api/input` 返回 `allow/deny`、可选 `updatedInput`、`alwaysAllow`
+  - 支持 `POST /api/input/cancel` 主动取消，并保持幂等返回
