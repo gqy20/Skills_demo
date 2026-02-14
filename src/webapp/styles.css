@@ -207,21 +207,44 @@ body {
   gap: 8px;
 }
 
-.activity-strip {
+.usage-strip {
   border: 1px solid rgba(27, 83, 150, 0.15);
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.86);
   padding: 8px 10px;
 }
 
-.activity-strip strong {
+.usage-strip strong {
   display: inline-block;
   font-size: 0.8rem;
   color: #355579;
   margin-bottom: 4px;
 }
 
-.activity-strip ul {
+.usage-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.usage-card {
+  border: 1px solid rgba(22, 34, 66, 0.12);
+  border-radius: 10px;
+  background: rgba(250, 252, 255, 0.85);
+  padding: 6px 8px;
+}
+
+.usage-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #355579;
+}
+
+.usage-card ul {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -229,39 +252,46 @@ body {
   gap: 4px;
 }
 
-.activity-strip li {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.usage-card li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
   font-size: 0.78rem;
   color: #405a7a;
 }
 
-.activity-dot {
-  width: 8px;
-  height: 8px;
+.usage-card li span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usage-card li em {
+  font-style: normal;
+  color: #27496d;
+  font-weight: 700;
+}
+
+.activity-toggle {
+  padding: 2px 8px;
+  border: 1px solid rgba(22, 34, 66, 0.14);
   border-radius: 999px;
-  flex: 0 0 8px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #355579;
+  font-size: 0.7rem;
+  line-height: 1.4;
 }
 
-.activity-tool {
-  background: #2c8f7e;
-}
-
-.activity-gate {
-  background: #c68a29;
-}
-
-.activity-ask {
-  background: #b85c2a;
-}
-
-.activity-mcp {
-  background: #3f6fd9;
-}
-
-.activity-sdk {
-  background: #6e7e96;
+.activity-details {
+  margin: 0;
+  border: 1px solid rgba(22, 34, 66, 0.14);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: rgba(244, 248, 255, 0.85);
+  color: #355579;
+  font-size: 0.72rem;
+  overflow: auto;
+  max-height: 130px;
 }
 
 .empty-actions {
@@ -392,10 +422,10 @@ body {
 
 .composer textarea {
   width: 100%;
-  min-height: 78px;
+  min-height: 40px;
   border: 1px solid rgba(59, 108, 170, 0.22);
   border-radius: 16px;
-  padding: 10px 14px 52px;
+  padding: 8px 14px 48px;
   resize: vertical;
   font: inherit;
   color: var(--ink);

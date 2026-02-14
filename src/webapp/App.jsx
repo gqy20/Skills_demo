@@ -5,7 +5,6 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 const MAX_EVENT_LOG = 120;
-const MAX_ACTIVITY_LOG = 80;
 const QUICK_PROMPTS = [
   { title: "文献综述分析", text: "请基于当前文献目录，提取研究问题、方法、结论并给出研究空白。" },
   { title: "科研初稿生成", text: "请根据已有文献与项目背景，生成研究报告初稿（摘要、方法、实验设计、讨论）。" }
@@ -33,10 +32,32 @@ function shortText(value, max = 120) {
   return text.length > max ? `${text.slice(0, max)}...` : text;
 }
 
+function extractSlashCommand(text) {
+  const m = String(text || "").trim().match(/^\/([a-zA-Z0-9_-]+)/);
+  return m ? m[1].toLowerCase() : "";
+}
+
+function parseMcpToolName(rawName) {
+  const name = String(rawName || "").trim();
+  if (!name) return null;
+  if (name.startsWith("mcp__")) {
+    const parts = name.split("__").filter(Boolean);
+    if (parts.length >= 3) return { server: parts[1], tool: parts.slice(2).join("__"), raw: name };
+    return { server: "unknown", tool: name, raw: name };
+  }
+  if (name.startsWith("mcp:")) {
+    const parts = name.split(":");
+    if (parts.length >= 3) return { server: parts[1] || "unknown", tool: parts.slice(2).join(":"), raw: name };
+    return { server: "unknown", tool: name, raw: name };
+  }
+  return null;
+}
+
 export default function App() {
   const [workspaces, setWorkspaces] = useState([]);
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState("");
   const [currentSessionId, setCurrentSessionId] = useState(null);
+  const [runtimeModel, setRuntimeModel] = useState("");
   const [settings, setSettings] = useState({
     model: "",
     baseUrl: "",
@@ -53,7 +74,8 @@ export default function App() {
     debugSseEnabled: false
   });
   const [events, setEvents] = useState([]);
-  const [activityFeed, setActivityFeed] = useState([]);
+  const [runtimeUsage, setRuntimeUsage] = useState({ skills: {}, mcps: {} });
+  const [usageExpanded, setUsageExpanded] = useState({ skills: false, mcps: false });
   const [skills, setSkills] = useState([]);
   const [files, setFiles] = useState([]);
   const [controlsOpen, setControlsOpen] = useState(false);
@@ -79,8 +101,40 @@ export default function App() {
   const controlsRef = useRef(null);
   const timelineRef = useRef(null);
 
-  const pushActivity = useCallback((kind, text) => {
-    setActivityFeed((prev) => [{ id: createId(), kind, text, ts: Date.now() }, ...prev].slice(0, MAX_ACTIVITY_LOG));
+  const trackSkillUsage = useCallback((skillName, details = null) => {
+    const name = String(skillName || "").trim().toLowerCase();
+    if (!name) return;
+    setRuntimeUsage((prev) => {
+      const old = prev.skills[name] || { count: 0, lastTs: 0, details: null };
+      return {
+        ...prev,
+        skills: {
+          ...prev.skills,
+          [name]: { count: old.count + 1, lastTs: Date.now(), details: details || old.details || null }
+        }
+      };
+    });
+  }, []);
+
+  const trackMcpUsage = useCallback((toolName, elapsedSeconds = null) => {
+    const parsed = parseMcpToolName(toolName);
+    if (!parsed) return false;
+    const key = `${parsed.server}:${parsed.tool}`;
+    setRuntimeUsage((prev) => {
+      const old = prev.mcps[key] || { count: 0, lastTs: 0, details: null };
+      return {
+        ...prev,
+        mcps: {
+          ...prev.mcps,
+          [key]: {
+            count: old.count + 1,
+            lastTs: Date.now(),
+            details: { server: parsed.server, tool: parsed.tool, raw: parsed.raw, elapsedSeconds }
+          }
+        }
+      };
+    });
+    return true;
   }, []);
 
   const workspaceQuery = useCallback(
@@ -191,27 +245,21 @@ export default function App() {
       }
 
       if (part?.type === "data-sdk-init") {
-        const model = shortText(part?.data?.model || "-", 40);
-        const toolCount = Number(part?.data?.toolCount || 0);
-        pushActivity("sdk", `SDK 初始化 · model=${model} · tools=${toolCount}`);
-        return;
-      }
-
-      if (part?.type === "data-mcp-toggled") {
-        pushActivity("mcp", `MCP ${part?.data?.enabled ? "已启用" : "已禁用"}`);
+        setRuntimeModel(String(part?.data?.model || ""));
         return;
       }
 
       if (part?.type === "data-tool-progress") {
-        const name = shortText(String(part?.data?.toolName || "unknown"), 48);
-        const elapsed = typeof part?.data?.elapsedSeconds === "number" ? ` · ${part.data.elapsedSeconds}s` : "";
-        pushActivity("tool", `调用 ${name}${elapsed}`);
+        trackMcpUsage(part?.data?.toolName, part?.data?.elapsedSeconds ?? null);
         return;
       }
 
       if (part?.type === "data-tool-use-summary") {
-        const summary = shortText(String(part?.data?.summary || ""), 200);
-        if (summary) pushActivity("tool", summary);
+        const summary = String(part?.data?.summary || "");
+        const matched = summary.match(/\/([a-zA-Z0-9_-]+)/g) || [];
+        for (const token of matched) {
+          trackSkillUsage(token.replace("/", ""), { source: "summary", summary: shortText(summary, 280) });
+        }
         return;
       }
 
@@ -225,7 +273,7 @@ export default function App() {
       }
 
       if (part?.type === "data-tool-gate-hit") {
-        pushActivity("gate", `Tool Gate: ${String(part?.data?.toolName || "unknown")}`);
+        trackMcpUsage(part?.data?.toolName, null);
         setDiagnostics((prev) => ({
           ...prev,
           gateHits: prev.gateHits + 1,
@@ -236,14 +284,13 @@ export default function App() {
       }
 
       if (part?.type === "data-ask-user-question-created") {
-        pushActivity("ask", "AskUserQuestion 待处理");
         setDiagnostics((prev) => ({ ...prev, askCreated: prev.askCreated + 1, lastEvent: "ask-created" }));
         upsertPending("ask_user_question", part.data || {});
         return;
       }
 
       if (part?.type === "data-permission-request-created") {
-        pushActivity("ask", `权限确认: ${String(part?.data?.toolName || "unknown")}`);
+        trackMcpUsage(part?.data?.toolName, null);
         upsertPending("permission_request", part.data || {});
         return;
       }
@@ -381,6 +428,8 @@ export default function App() {
         debugEnabled: data.debugEnabled === true,
         debugSseEnabled: data.debugSseEnabled === true
       });
+      setCurrentSessionId(null);
+      setRuntimeModel("");
       setDiagnostics((prev) => ({ ...prev, toolGateEnabled: data.toolGateEnabled !== false }));
       return data;
     },
@@ -390,6 +439,10 @@ export default function App() {
   const submitUserMessage = async (overrideText = null) => {
     const text = (overrideText ?? inputText).trim();
     if (!text || isStreaming || blockingPending) return;
+    const initialSkill = extractSlashCommand(text);
+    const initialSkillsState = initialSkill
+      ? { [initialSkill]: { count: 1, lastTs: Date.now(), details: { source: "prompt", text: shortText(text, 220) } } }
+      : {};
     setLastUserText(text);
     setInputText("");
     setEvents([]);
@@ -402,7 +455,8 @@ export default function App() {
       lastToolName: "",
       lastEvent: ""
     }));
-    setActivityFeed([]);
+    setRuntimeUsage({ skills: initialSkillsState, mcps: {} });
+    setUsageExpanded({ skills: false, mcps: false });
     await sendMessage({ id: createId(), text });
   };
 
@@ -435,6 +489,22 @@ export default function App() {
       }
     }));
   };
+
+  const skillUsageList = useMemo(
+    () =>
+      Object.entries(runtimeUsage.skills)
+        .map(([name, item]) => ({ name, ...(item || {}) }))
+        .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0)),
+    [runtimeUsage.skills]
+  );
+
+  const mcpUsageList = useMemo(
+    () =>
+      Object.entries(runtimeUsage.mcps)
+        .map(([key, item]) => ({ key, ...(item || {}) }))
+        .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0)),
+    [runtimeUsage.mcps]
+  );
 
   return (
     <>
@@ -509,6 +579,7 @@ export default function App() {
             <div className="runtime-meta">
               <span className="meta-chip">Workspace: {currentWorkspaceId || "-"}</span>
               <span className="meta-chip">Model: {settings.model || "-"}</span>
+              <span className="meta-chip">Runtime: {runtimeModel || "-"}</span>
               <span className="meta-chip">API Key: {settings.hasToken ? "已配置" : "未配置"}</span>
               <span className="meta-chip">MinerU: {settings.hasMineruKey ? "已配置" : "未配置"}</span>
               <span className="meta-chip">Gate: {settings.toolGateEnabled ? "ON" : "OFF"}</span>
@@ -537,17 +608,51 @@ export default function App() {
                   </div>
                 )}
 
-                {activityFeed.length > 0 && (
-                  <section className="activity-strip">
-                    <strong>调用轨迹</strong>
-                    <ul>
-                      {activityFeed.slice(0, 6).map((item) => (
-                        <li key={item.id}>
-                          <span className={`activity-dot activity-${item.kind}`} />
-                          {item.text}
-                        </li>
-                      ))}
-                    </ul>
+                {(skillUsageList.length > 0 || mcpUsageList.length > 0) && (
+                  <section className="usage-strip">
+                    <strong>运行使用情况</strong>
+                    <div className="usage-grid">
+                      <article className="usage-card">
+                        <header>
+                          <span>Skills</span>
+                          <button
+                            type="button"
+                            className="activity-toggle"
+                            onClick={() => setUsageExpanded((prev) => ({ ...prev, skills: !prev.skills }))}
+                          >
+                            {usageExpanded.skills ? "收起" : "展开"}
+                          </button>
+                        </header>
+                        <ul>
+                          {(usageExpanded.skills ? skillUsageList : skillUsageList.slice(0, 3)).map((item) => (
+                            <li key={item.name}>
+                              <span>/{item.name}</span>
+                              <em>x{item.count || 1}</em>
+                            </li>
+                          ))}
+                        </ul>
+                      </article>
+                      <article className="usage-card">
+                        <header>
+                          <span>MCP</span>
+                          <button
+                            type="button"
+                            className="activity-toggle"
+                            onClick={() => setUsageExpanded((prev) => ({ ...prev, mcps: !prev.mcps }))}
+                          >
+                            {usageExpanded.mcps ? "收起" : "展开"}
+                          </button>
+                        </header>
+                        <ul>
+                          {(usageExpanded.mcps ? mcpUsageList : mcpUsageList.slice(0, 3)).map((item) => (
+                            <li key={item.key}>
+                              <span>{item.details?.server || "mcp"}::{item.details?.tool || item.key}</span>
+                              <em>x{item.count || 1}</em>
+                            </li>
+                          ))}
+                        </ul>
+                      </article>
+                    </div>
                   </section>
                 )}
 
@@ -570,10 +675,14 @@ export default function App() {
                           isLastAssistant && isStreaming && !showProcessing ? "bubble-streaming" : ""
                         } ${showProcessing ? "bubble-processing" : ""}`}
                       >
-                        {msg.role === "assistant" && !showProcessing ? (
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+                        {msg.role === "assistant" ? (
+                          showProcessing ? (
+                            <p>处理中</p>
+                          ) : (
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+                          )
                         ) : (
-                          <p>处理中</p>
+                          <p>{text}</p>
                         )}
                       </article>
                     );
