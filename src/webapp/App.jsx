@@ -40,6 +40,7 @@ export default function App() {
   const [files, setFiles] = useState([]);
   const [controlsOpen, setControlsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inputText, setInputText] = useState("");
   const [lastUserText, setLastUserText] = useState("");
   const [pendingState, setPendingState] = useState({
@@ -354,12 +355,15 @@ export default function App() {
     <>
       <div className="bg-shape bg-shape-a" />
       <div className="bg-shape bg-shape-b" />
-      <main className="workspace">
+      <main className={`workspace ${sidebarOpen ? "workspace-with-sidebar" : "workspace-chat-only"}`}>
         <section className="chat-shell">
           <header className="chat-head">
             <div className="chat-head-row">
               <h1>Agent Workspace</h1>
               <div className="head-actions" ref={controlsRef}>
+                <button className="btn-secondary" type="button" onClick={() => setSidebarOpen((v) => !v)}>
+                  {sidebarOpen ? "隐藏侧栏" : "侧栏"}
+                </button>
                 <button className="btn-secondary" type="button" onClick={() => setControlsOpen((v) => !v)}>
                   控制
                 </button>
@@ -418,23 +422,30 @@ export default function App() {
                     <p>准备就绪。输入任务后将实时显示回复。</p>
                   </article>
                 )}
-                {messages.map((msg) => {
-                  const text = textFromMessage(msg);
-                  return (
-                    <article
-                      key={msg.id}
-                      className={`bubble ${msg.role === "user" ? "bubble-user" : "bubble-assistant"} ${
-                        msg.role === "assistant" && isStreaming ? "bubble-streaming" : ""
-                      }`}
-                    >
-                      {msg.role === "assistant" ? (
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{text || ""}</ReactMarkdown>
-                      ) : (
-                        <p>{text}</p>
-                      )}
-                    </article>
-                  );
-                })}
+                {(() => {
+                  const lastAssistantId = messages
+                    .slice()
+                    .reverse()
+                    .find((item) => item.role === "assistant")?.id;
+                  return messages.map((msg) => {
+                    const isLastAssistant = msg.role === "assistant" && lastAssistantId === msg.id;
+                    const text = textFromMessage(msg);
+                    return (
+                      <article
+                        key={msg.id}
+                        className={`bubble ${msg.role === "user" ? "bubble-user" : "bubble-assistant"} ${
+                          isLastAssistant && isStreaming ? "bubble-streaming" : ""
+                        }`}
+                      >
+                        {msg.role === "assistant" ? (
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{text || ""}</ReactMarkdown>
+                        ) : (
+                          <p>{text}</p>
+                        )}
+                      </article>
+                    );
+                  });
+                })()}
               </div>
             </section>
           </section>
@@ -584,7 +595,7 @@ export default function App() {
           </form>
         </section>
 
-        <aside className="inspector">
+        <aside className={`inspector ${sidebarOpen ? "" : "hidden"}`}>
           <section className="panel">
             <h2>Workspace</h2>
             <select value={currentWorkspaceId} onChange={(event) => setCurrentWorkspaceId(event.target.value)}>

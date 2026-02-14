@@ -58,8 +58,12 @@ body {
   margin: 0 auto;
   padding: 10px 12px 14px;
   display: grid;
-  grid-template-columns: minmax(0, 4fr) minmax(280px, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
+}
+
+.workspace.workspace-with-sidebar {
+  grid-template-columns: minmax(0, 4fr) minmax(280px, 1fr);
 }
 
 .chat-shell,
@@ -203,12 +207,15 @@ body {
 }
 
 .bubble-streaming {
+  position: relative;
   box-shadow: inset 0 0 0 1px rgba(24, 169, 153, 0.38);
 }
 
-.bubble-streaming p::after {
+.bubble-streaming::after {
   content: "▍";
-  margin-left: 2px;
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
   color: rgba(14, 122, 114, 0.75);
   animation: stream-caret 0.9s steps(1, end) infinite;
 }
@@ -345,6 +352,10 @@ button:disabled {
   height: calc(100vh - 24px);
   overflow: auto;
   padding-right: 2px;
+}
+
+.inspector.hidden {
+  display: none;
 }
 
 .panel {
