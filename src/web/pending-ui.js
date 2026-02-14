@@ -44,6 +44,33 @@ function collectAskAnswers(form, questions) {
   return answers;
 }
 
+const askWizardDraftByRequest = new Map();
+
+function getAskDraft(requestId, questionCount) {
+  const existing = askWizardDraftByRequest.get(requestId);
+  if (existing && typeof existing === "object") {
+    existing.index = Math.min(Math.max(Number(existing.index) || 0, 0), Math.max(questionCount - 1, 0));
+    if (!existing.answers || typeof existing.answers !== "object") existing.answers = {};
+    return existing;
+  }
+  const next = { index: 0, answers: {} };
+  askWizardDraftByRequest.set(requestId, next);
+  return next;
+}
+
+function saveCurrentAskAnswer(form, question, questionIndex, answers) {
+  if (!question) return;
+  const key = question?.id || question?.question || `q_${questionIndex}`;
+  const selected = form.querySelector(`input[name="q_${questionIndex}"]:checked`)?.value || "";
+  const custom = form.querySelector(`input[data-free-input="${questionIndex}"]`)?.value?.trim() || "";
+  const answer = custom || selected;
+  if (answer) {
+    answers[key] = answer;
+  } else {
+    delete answers[key];
+  }
+}
+
 function renderDiagnostics(diagnostics) {
   const toolGateEnabled = diagnostics?.toolGateEnabled !== false;
   const gateHits = Number(diagnostics?.gateHits || 0);
@@ -134,25 +161,32 @@ export function renderPendingPanel({
   }
 
   const questions = Array.isArray(active.input?.questions) ? active.input.questions : [];
-  const formHtml = questions
-    .map((q, index) => {
-      const title = escapeHtml(q?.question || `Question ${index + 1}`);
-      const options = Array.isArray(q?.options) ? q.options : [];
-      const optionsHtml = options
-        .map((opt, i) => {
-          const label = escapeHtml(opt?.label || `Option ${i + 1}`);
-          return `<label class="pending-option"><input type="radio" name="q_${index}" value="${label}" /> ${label}</label>`;
-        })
-        .join("");
-      return `
-        <fieldset class="pending-fieldset">
-          <legend>${title}</legend>
-          ${optionsHtml || "<p>无预置选项，请填写文本答案。</p>"}
-          <input data-free-input="${index}" type="text" placeholder="可选：自定义答案" />
-        </fieldset>
-      `;
+  const draft = getAskDraft(active.requestId, questions.length);
+  const currentIndex = draft.index;
+  const currentQuestion = questions[currentIndex];
+  const currentKey = currentQuestion?.id || currentQuestion?.question || `q_${currentIndex}`;
+  const currentSavedAnswer = typeof draft.answers?.[currentKey] === "string" ? draft.answers[currentKey] : "";
+  const currentOptions = Array.isArray(currentQuestion?.options) ? currentQuestion.options : [];
+  const matchedOption =
+    currentOptions.find((opt) => (opt?.label || "").trim() === currentSavedAnswer.trim())?.label || "";
+  const customValue = matchedOption ? "" : currentSavedAnswer;
+  const optionsHtml = currentOptions
+    .map((opt, i) => {
+      const label = escapeHtml(opt?.label || `Option ${i + 1}`);
+      const checked = matchedOption === (opt?.label || "") ? "checked" : "";
+      return `<label class="pending-option"><input type="radio" name="q_${currentIndex}" value="${label}" ${checked} /> ${label}</label>`;
     })
     .join("");
+  const formHtml = currentQuestion
+    ? `
+      <fieldset class="pending-fieldset">
+        <legend>问题 ${currentIndex + 1} / ${questions.length}</legend>
+        <p>${escapeHtml(currentQuestion?.question || `Question ${currentIndex + 1}`)}</p>
+        ${optionsHtml || "<p>无预置选项，请填写文本答案。</p>"}
+        <input data-free-input="${currentIndex}" type="text" placeholder="可选：自定义答案" value="${escapeHtml(customValue)}" />
+      </fieldset>
+    `
+    : '<p class="hint">没有可展示的问题，直接提交将透传原始输入。</p>';
 
   pendingEl.className = "";
   pendingEl.innerHTML = `
@@ -162,7 +196,9 @@ export function renderPendingPanel({
     <form id="ask-form">
       ${formHtml}
       <div class="pending-actions">
-        <button type="submit">提交答案</button>
+        <button type="button" id="ask-prev" ${currentIndex <= 0 ? "disabled" : ""}>上一题</button>
+        <button type="button" id="ask-next" ${currentIndex >= questions.length - 1 ? "disabled" : ""}>下一题</button>
+        <button type="submit">${questions.length > 1 ? "提交全部答案" : "提交答案"}</button>
         <button type="button" id="ask-deny">拒绝</button>
         <button type="button" id="ask-cancel">取消请求</button>
       </div>
@@ -172,17 +208,59 @@ export function renderPendingPanel({
   `;
 
   const askForm = pendingEl.querySelector("#ask-form");
+  pendingEl.querySelector("#ask-prev")?.addEventListener("click", () => {
+    saveCurrentAskAnswer(askForm, currentQuestion, currentIndex, draft.answers);
+    draft.index = Math.max(0, currentIndex - 1);
+    askWizardDraftByRequest.set(active.requestId, draft);
+    renderPendingPanel({
+      pendingEl,
+      active,
+      activeList,
+      history,
+      diagnostics,
+      activePendingId,
+      onPermissionAllow,
+      onPermissionDeny,
+      onPermissionCancel,
+      onAskSubmit,
+      onAskDeny,
+      onAskCancel
+    });
+  });
+  pendingEl.querySelector("#ask-next")?.addEventListener("click", () => {
+    saveCurrentAskAnswer(askForm, currentQuestion, currentIndex, draft.answers);
+    draft.index = Math.min(questions.length - 1, currentIndex + 1);
+    askWizardDraftByRequest.set(active.requestId, draft);
+    renderPendingPanel({
+      pendingEl,
+      active,
+      activeList,
+      history,
+      diagnostics,
+      activePendingId,
+      onPermissionAllow,
+      onPermissionDeny,
+      onPermissionCancel,
+      onAskSubmit,
+      onAskDeny,
+      onAskCancel
+    });
+  });
   askForm?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const answers = collectAskAnswers(askForm, questions);
+    saveCurrentAskAnswer(askForm, currentQuestion, currentIndex, draft.answers);
+    const answers = { ...draft.answers, ...collectAskAnswers(askForm, questions) };
+    askWizardDraftByRequest.delete(active.requestId);
     await onAskSubmit(active.requestId, answers, active.input || {});
   });
 
   pendingEl.querySelector("#ask-deny")?.addEventListener("click", async () => {
+    askWizardDraftByRequest.delete(active.requestId);
     await onAskDeny(active.requestId);
   });
 
   pendingEl.querySelector("#ask-cancel")?.addEventListener("click", async () => {
+    askWizardDraftByRequest.delete(active.requestId);
     await onAskCancel(active.requestId);
   });
 }
