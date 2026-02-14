@@ -48,6 +48,9 @@ const CREATED_EVENT_KIND = {
   [`${ASK_EVENT_PREFIX}created`]: "ask_user_question",
   [`${PERMISSION_EVENT_PREFIX}created`]: "permission_request"
 };
+const SCROLL_STICKY_THRESHOLD_PX = 80;
+const messageNodeMap = new Map();
+let timelineInnerEl = null;
 
 function setSession(sessionId) {
   state.currentSessionId = sessionId || null;
@@ -84,6 +87,11 @@ function scrollTimelineBottom() {
   timelineEl.scrollTop = timelineEl.scrollHeight;
 }
 
+function shouldStickToBottom() {
+  const remaining = timelineEl.scrollHeight - timelineEl.scrollTop - timelineEl.clientHeight;
+  return remaining <= SCROLL_STICKY_THRESHOLD_PX;
+}
+
 function setStreamingState(streaming) {
   state.isStreaming = Boolean(streaming);
   sendBtn.disabled = state.isStreaming;
@@ -93,8 +101,10 @@ function setStreamingState(streaming) {
 
 function createMessage(role, text, status = "complete") {
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  state.messages.push({ id, role, text, status });
-  renderTimeline();
+  const next = { id, role, text, status };
+  state.messages.push(next);
+  appendMessageNode(next, true);
+  scrollTimelineBottom();
   return id;
 }
 
@@ -104,26 +114,58 @@ function updateMessage(id, updater) {
   const prev = state.messages[idx];
   const next = typeof updater === "function" ? updater(prev) : { ...prev, ...updater };
   state.messages[idx] = next;
-  renderTimeline();
+  const cachedNode = messageNodeMap.get(id);
+  if (!cachedNode) {
+    renderTimeline();
+    return;
+  }
+  const stickToBottom = shouldStickToBottom();
+  applyMessageNodeState(cachedNode.article, cachedNode.textEl, next);
+  if (stickToBottom) scrollTimelineBottom();
+}
+
+function applyMessageNodeState(article, textEl, msg) {
+  article.className = `bubble ${msg.role === "user" ? "bubble-user" : "bubble-assistant"}`.trim();
+  if (msg.status === "streaming") article.classList.add("bubble-streaming");
+  if (msg.status === "streaming" && msg.text === "处理中...") article.classList.add("bubble-processing");
+  if (msg.status === "error") article.classList.add("bubble-error");
+  if (msg.status === "stopped") article.classList.add("bubble-stopped");
+  textEl.textContent = msg.text;
+}
+
+function appendMessageNode(msg, animate) {
+  if (!timelineInnerEl) {
+    timelineInnerEl = document.createElement("div");
+    timelineInnerEl.className = "timeline-inner";
+    timelineEl.appendChild(timelineInnerEl);
+  }
+  const article = document.createElement("article");
+  const textEl = document.createElement("p");
+  applyMessageNodeState(article, textEl, msg);
+  if (animate) {
+    article.classList.add("bubble-enter");
+    article.addEventListener(
+      "animationend",
+      () => {
+        article.classList.remove("bubble-enter");
+      },
+      { once: true }
+    );
+  }
+  article.appendChild(textEl);
+  timelineInnerEl.appendChild(article);
+  messageNodeMap.set(msg.id, { article, textEl });
 }
 
 function renderTimeline() {
   timelineEl.innerHTML = "";
-  const inner = document.createElement("div");
-  inner.className = "timeline-inner";
+  messageNodeMap.clear();
+  timelineInnerEl = document.createElement("div");
+  timelineInnerEl.className = "timeline-inner";
   for (const msg of state.messages) {
-    const article = document.createElement("article");
-    article.className = `bubble ${msg.role === "user" ? "bubble-user" : "bubble-assistant"}`.trim();
-    if (msg.status === "streaming") article.classList.add("bubble-streaming");
-    if (msg.status === "streaming" && msg.text === "处理中...") article.classList.add("bubble-processing");
-    if (msg.status === "error") article.classList.add("bubble-error");
-    if (msg.status === "stopped") article.classList.add("bubble-stopped");
-    const p = document.createElement("p");
-    p.textContent = msg.text;
-    article.appendChild(p);
-    inner.appendChild(article);
+    appendMessageNode(msg, false);
   }
-  timelineEl.appendChild(inner);
+  timelineEl.appendChild(timelineInnerEl);
   scrollTimelineBottom();
 }
 

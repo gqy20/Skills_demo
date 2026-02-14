@@ -129,6 +129,9 @@ body {
   border-radius: 12px;
   padding: 11px 13px;
   line-height: 1.5;
+}
+
+.bubble-enter {
   animation: bubble-in 220ms ease-out;
 }
 
