@@ -71,6 +71,7 @@ body {
 }
 
 .chat-shell {
+  position: relative;
   height: calc(100vh - 24px);
   min-height: 0;
   display: grid;
@@ -221,6 +222,10 @@ body {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.65) 0%, rgba(242, 247, 255, 0.75) 100%);
 }
 
+.composer.is-blocked {
+  opacity: 0.6;
+}
+
 .composer label {
   display: block;
   font-size: 0.83rem;
@@ -251,6 +256,25 @@ body {
   border-color: rgba(14, 122, 114, 0.48);
   box-shadow: 0 0 0 3px rgba(24, 169, 153, 0.14), 0 8px 20px rgba(22, 60, 116, 0.12);
   transform: translateY(-1px);
+}
+
+.pending-overlay {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 12px;
+  z-index: 11;
+  border: 1px solid rgba(24, 169, 153, 0.28);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 16px 30px rgba(17, 42, 86, 0.18);
+  padding: 10px 12px;
+  max-height: min(48vh, 420px);
+  overflow: auto;
+}
+
+.pending-overlay.hidden {
+  display: none;
 }
 
 .composer-actions {
@@ -460,6 +484,12 @@ button:disabled {
 .pending-empty {
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+.pending-summary p {
+  margin: 0 0 6px;
+  font-size: 0.84rem;
+  color: #334263;
 }
 
 .hint {

@@ -22,6 +22,7 @@ const stopBtn = document.getElementById("stop-btn");
 const retryBtn = document.getElementById("retry-btn");
 const timelineEl = document.getElementById("timeline");
 const timelineJumpBtn = document.getElementById("timeline-jump-btn");
+const pendingOverlayEl = document.getElementById("pending-overlay");
 const eventsEl = document.getElementById("events");
 const workspaceSelectEl = document.getElementById("workspace-select");
 const workspaceMetaEl = document.getElementById("workspace-meta");
@@ -60,6 +61,7 @@ const state = {
   activePendingId: null,
   lastUserMessage: "",
   isStreaming: false,
+  hasBlockingPending: false,
   currentAbortController: null,
   fileTree: new Map(),
   fileExpanded: new Set([""]),
@@ -117,9 +119,16 @@ function setToolGateEnabled(enabled) {
 
 function setStreamingState(streaming) {
   state.isStreaming = Boolean(streaming);
-  sendBtn.disabled = state.isStreaming;
+  refreshComposerState();
+}
+
+function refreshComposerState() {
+  const blocked = state.hasBlockingPending;
+  sendBtn.disabled = state.isStreaming || blocked;
   stopBtn.disabled = !state.isStreaming;
-  retryBtn.disabled = state.isStreaming || !state.lastUserMessage;
+  retryBtn.disabled = state.isStreaming || !state.lastUserMessage || blocked;
+  messageInput.disabled = blocked;
+  form.classList.toggle("is-blocked", blocked);
 }
 
 function createMessage(role, text, status = "complete") {
@@ -218,13 +227,12 @@ async function saveSettingsWithPayload(payload) {
 
 function renderPendingPanel() {
   const active = pendingController.getActivePending();
-  renderPendingUi({
-    pendingEl,
-    active,
-    activeList: pendingController.getActivePendingList(),
-    history: pendingController.getHistory(),
-    diagnostics: state.askDiagnostics,
-    activePendingId: pendingController.getActivePendingId(),
+  const activeList = pendingController.getActivePendingList();
+  const history = pendingController.getHistory();
+  state.hasBlockingPending = Boolean(active);
+  refreshComposerState();
+
+  const handlers = {
     onPermissionAllow: async (requestId, alwaysAllow) => {
       await pendingController.submitDecision(requestId, { behavior: "allow", alwaysAllow }, "allow", "提交失败");
     },
@@ -264,7 +272,39 @@ function renderPendingPanel() {
     onAskCancel: async (requestId) => {
       await pendingController.submitCancel(requestId);
     }
-  });
+  };
+
+  if (active) {
+    pendingOverlayEl.classList.remove("hidden");
+    renderPendingUi({
+      pendingEl: pendingOverlayEl,
+      active,
+      activeList,
+      history,
+      diagnostics: state.askDiagnostics,
+      activePendingId: pendingController.getActivePendingId(),
+      ...handlers
+    });
+    requestAnimationFrame(() => {
+      const focusTarget = pendingOverlayEl.querySelector("input, button, textarea, select");
+      if (focusTarget instanceof HTMLElement) focusTarget.focus();
+    });
+  } else {
+    pendingOverlayEl.classList.add("hidden");
+    pendingOverlayEl.innerHTML = "";
+  }
+
+  const queueCount = activeList.length;
+  const lastStatus = history[0]?.status || "none";
+  const diag = state.askDiagnostics;
+  pendingEl.className = "pending-summary";
+  pendingEl.innerHTML = `
+    <p><strong>队列:</strong> ${queueCount}</p>
+    <p><strong>当前状态:</strong> ${active ? "等待你的输入" : "空闲"}</p>
+    <p><strong>最近结果:</strong> ${lastStatus}</p>
+    <p class="hint">Gate=${diag.toolGateEnabled ? "ON" : "OFF"} · Hits=${diag.gateHits} · Ask=${diag.askCreated}/${diag.askResolved}</p>
+    ${active ? '<p class="hint">交互面板已覆盖输入框，请先完成当前项。</p>' : ""}
+  `;
 }
 
 function routeLifecycleEvent(type, data) {
@@ -415,6 +455,7 @@ settingsForm.addEventListener("submit", async (event) => {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (state.hasBlockingPending) return;
   const message = messageInput.value.trim();
   if (!message) return;
   await sendMessage(message, false);
@@ -452,7 +493,7 @@ async function stopCurrentStream() {
 }
 
 async function sendMessage(message, isRetry) {
-  if (state.isStreaming) return;
+  if (state.isStreaming || state.hasBlockingPending) return;
   if (!isRetry) {
     createMessage("user", message, "complete");
     messageInput.value = "";
@@ -602,7 +643,9 @@ async function sendMessage(message, isRetry) {
   } finally {
     state.currentAbortController = null;
     setStreamingState(false);
-    messageInput.focus();
+    if (!state.hasBlockingPending) {
+      messageInput.focus();
+    }
   }
 }
 
