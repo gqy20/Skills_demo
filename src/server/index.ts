@@ -635,6 +635,11 @@ function normalizeSkillName(name: string): string {
   return name.trim().toLowerCase();
 }
 
+function normalizeSkillDescription(value: unknown): string {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text || "无描述";
+}
+
 function summarizeSkillMarkdown(raw: string): string {
   const lines = raw
     .split(/\r?\n/)
@@ -643,9 +648,9 @@ function summarizeSkillMarkdown(raw: string): string {
   for (const line of lines) {
     if (line.startsWith("#")) continue;
     if (line.startsWith("```")) continue;
-    return line.replace(/^[-*]\s+/, "").slice(0, 220);
+    return normalizeSkillDescription(line.replace(/^[-*]\s+/, "").slice(0, 220));
   }
-  return "";
+  return "无描述";
 }
 
 async function collectLocalSkills(baseDir: string, source: SkillItem["source"]): Promise<SkillItem[]> {
@@ -698,7 +703,7 @@ function normalizeSkills(commands: SlashCommand[], owned: SkillItem[]): SkillIte
       if (!ownedItem) return null;
       return {
         name,
-        description: c.description || ownedItem.description || "",
+        description: normalizeSkillDescription(c.description || ownedItem.description || ""),
         argumentHint: c.argumentHint || "",
         source: ownedItem.source
       };

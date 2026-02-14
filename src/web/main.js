@@ -125,6 +125,11 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;");
 }
 
+function normalizeSkillDescription(value) {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text || "无描述";
+}
+
 function scrollTimelineBottom() {
   timelineEl.scrollTop = timelineEl.scrollHeight;
 }
@@ -253,7 +258,7 @@ function renderSkills(items) {
     head.appendChild(source);
     const desc = document.createElement("p");
     desc.className = "skills-desc";
-    desc.textContent = item.description || "无描述";
+    desc.textContent = normalizeSkillDescription(item.description);
     li.appendChild(head);
     li.appendChild(desc);
     if (item.argumentHint) {
