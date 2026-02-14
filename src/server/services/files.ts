@@ -6,7 +6,6 @@ const DEFAULT_FILE_EXCLUDES = new Set([
   ".git",
   "node_modules",
   "dist",
-  "assets/videos",
   "coverage",
   ".DS_Store",
   ".idea",

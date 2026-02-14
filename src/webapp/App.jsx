@@ -194,12 +194,11 @@ export default function App() {
     });
   }, []);
 
-  const resolvePending = useCallback((data, status) => {
+  const resolvePending = useCallback((data) => {
     const requestId = data?.requestId;
     if (!requestId) return;
     setPendingState((prev) => {
-      const target = prev.byId[requestId];
-      if (!target) return prev;
+      if (!prev.byId[requestId]) return prev;
       const nextById = { ...prev.byId };
       delete nextById[requestId];
       const nextOrder = prev.order.filter((id) => id !== requestId);
@@ -293,7 +292,7 @@ export default function App() {
         part?.type === "data-ask-user-question-canceled"
       ) {
         setDiagnostics((prev) => ({ ...prev, askResolved: prev.askResolved + 1 }));
-        resolvePending(part.data || {}, part.type.split("-").slice(-1)[0]);
+        resolvePending(part.data || {});
         return;
       }
 
@@ -302,7 +301,7 @@ export default function App() {
         part?.type === "data-permission-request-timeout" ||
         part?.type === "data-permission-request-canceled"
       ) {
-        resolvePending(part.data || {}, part.type.split("-").slice(-1)[0]);
+        resolvePending(part.data || {});
       }
     },
     onError: (error) => {
@@ -452,12 +451,12 @@ export default function App() {
 
   const submitPending = async (requestId, payload) => {
     await apiPostJson("/api/input", { requestId, ...payload });
-    resolvePending({ requestId }, payload.behavior === "deny" ? "deny" : "allow");
+    resolvePending({ requestId });
   };
 
   const cancelPending = async (requestId) => {
     await apiPostJson("/api/input/cancel", { requestId });
-    resolvePending({ requestId }, "canceled");
+    resolvePending({ requestId });
   };
 
   const askQuestions = Array.isArray(activePending?.input?.questions) ? activePending.input.questions : [];
