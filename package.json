@@ -1,11 +1,22 @@
 {
   "name": "skills-demo-agent-web",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "type": "module",
+  "main": "dist/server/index.js",
+  "bin": {
+    "skills-demo-agent-web": "dist/server/index.js"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "dev": "tsx app/server.ts",
-    "check": "tsc --noEmit"
+    "dev": "tsx src/server/index.ts",
+    "check": "tsc --noEmit",
+    "build": "npm run build:server && npm run build:web",
+    "build:server": "tsc -p tsconfig.build.json",
+    "build:web": "node scripts/copy-web.mjs",
+    "start": "node dist/server/index.js"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.39",

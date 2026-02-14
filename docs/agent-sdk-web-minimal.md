@@ -20,10 +20,10 @@
 
 - `package.json`
 - `tsconfig.json`
-- `app/server.ts`
-- `app/index.html`
-- `app/main.js`
-- `app/styles.css`
+- `src/server/index.ts`
+- `src/web/index.html`
+- `src/web/main.js`
+- `src/web/styles.css`
 
 ## 运行
 
