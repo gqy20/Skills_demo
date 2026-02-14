@@ -1,368 +1,253 @@
-# Skills Demo
+# Skills Demo Agent Web
 
-基于 Claude Code Skills 的自适应 AI 助手。
+一个面向科研工作流的 Claude Code Web 工作台（可理解为“科研版 Claude cowork”）：
+- 在浏览器中与 Claude Agent SDK 进行流式对话
+- 在会话中处理工具权限确认与 AskUserQuestion
+- 查看并切换 Workspace、Skills、文件树
+- 为科研常见流程提供快捷入口（文献分析、科研初稿生成）
 
-## 📹 演示视频
+## 项目定位
 
-[![CLI 使用演示](https://raw.githubusercontent.com/gqy20/Skills_demo/main/assets/videos/thumbnail.png)](https://raw.githubusercontent.com/gqy20/Skills_demo/main/assets/videos/test-cli-usage.mp4)
+本项目不是“纯聊天壳”，而是把 Claude Code 的工程能力（skills、hooks、MCP、会话恢复）放到可视化界面中，方便科研场景下的人机协作：
+- 文献整理和摘要
+- 研究问题拆解
+- 方法与实验设计草稿生成
+- 多工作区并行管理
 
-## 系统架构
+## 核心能力
 
-```mermaid
-flowchart TB
-    subgraph Input["📁 输入层"]
-        INFO["info/<br/>用户资料"]
-        TEMPLATES[".templates/<br/>模板文件"]
-    end
+- AI SDK UI Message Stream 协议接入（`POST /api/chat/ui`）
+- 流式 SSE 输出，支持增量文本、事件调试、心跳保活
+- 会话恢复：`sessionId -> sdk session_id` 映射，支持多轮上下文续接
+- 工具交互网关（Tool Gate）：
+  - `AskUserQuestion` 交互回传
+  - 工具权限请求（allow/deny/cancel）
+- 运行时开关：`MCP`、`Tool Gate`、`Speed Mode`、`Debug`
+- 多工作区支持：通过 `AGENT_WORKSPACE_ROOT` + `AGENT_WORKSPACES`
+- Skills 列表展示（仅 project/user skills，带 SDK 能力过滤）
+- 工作区文件树 API（遵循 `.gitignore` + 内置忽略规则）
+- 设置持久化：写入 `<workspace>/.info/agent-web-settings.json`
 
-    subgraph Core["⚙️ 核心层"]
-        UP["/user-profile<br/>用户画像"]
-        CMD["/commander<br/>任务管理"]
-        SG["skill-generator<br/>技能生成"]
-    end
+## 外部核对结论（GitHub/官方资料）
 
-    subgraph Data["💾 数据层"]
-        USR[".info/usr.json<br/>用户画像"]
-        TASKS[".info/tasks.json<br/>任务索引"]
-        STATUS[".info/.status.json<br/>运行状态"]
-        REASON[".info/.reasoning.md<br/>推理日志索引"]
-        META[".info/.reasoning.meta.json<br/>推理元数据"]
-    end
+基于对 Anthropic 官方仓库、Vercel AI SDK 文档和同类开源 WebUI 的核对，本项目当前方向是正确的，且有三点优势：
 
-    subgraph Skills["🔧 技能层"]
-        BUILTIN["内置技能<br/>user-profile<br/>commander<br/>skill-generator"]
-        PDF["pdf_processor<br/>PDF文献处理"]
-        USKILL["u_ 技能<br/>用户经验"]
-        PSKILL["p_ 技能<br/>验证技能"]
-        KSKILL["k_ 技能<br/>任务子技能"]
-    end
+- 与 Claude Agent SDK 深度对齐：`canUseTool` + pending input 回传链路完整
+- 与 AI SDK UI Message Stream 对齐：SSE 事件模型和前端 `useChat` 兼容
+- 兼顾本地工程工作流：workspace/skills/files 三块信息在一个界面内闭环
 
-    subgraph Hooks["🪝 Hooks 系统"]
-        SS["session-start<br/>会话检查"]
-        UT["update-status<br/>状态更新"]
-        TS["track-skills<br/>变更追踪"]
-        ID["intent-detect<br/>意图路由"]
-        UR["update-reasoning<br/>推理更新⭐"]
-        CR["capture-reasoning<br/>推理捕获"]
-        FR["fix-reasoning<br/>推理修复"]
-    end
+基于外部项目的推断（非本仓库现状）：
+- 若要走“团队可用”的科研 cowork 产品化路线，下一阶段优先级应是 `鉴权/权限边界`、`审计日志`、`任务/文档持久化`，而不是继续增加 UI 控件。
 
-    subgraph Output["📤 输出层"]
-        RESULTS["results/<br/>任务结果"]
-        REASON_FILES["results/*/.reasoning.md<br/>推理日志"]
-        STATUSLINE["状态栏<br/>实时显示"]
-    end
+## 技术栈
 
-    %% 数据流
-    INFO -->|读取| UP
-    UP -->|生成| USR
-    USR -->|定制| CMD
-    CMD -->|调用| SG
-    SG -->|创建| KSKILL
-    UP -.->|可选| SG
-    SG -.->|可选| USKILL
-    KSKILL -->|升级| PSKILL
-    PSKILL -->|复用| KSKILL
+- 后端：Node.js + Express + TypeScript
+- Agent：`@anthropic-ai/claude-agent-sdk`
+- 前端：React + `@ai-sdk/react` + Vite
+- 协议：SSE（`text/event-stream`）+ `x-vercel-ai-ui-message-stream: v1`
 
-    %% Hooks 触发
-    CMD -.->|SessionStart| SS
-    CMD -.->|UserPrompt| ID
-    CMD -.->|TaskCreate/Update| UR
-    CMD -.->|ToolUse| UT
-    CMD -.->|Write/Edit| CR
-    SG -.->|Edit| TS
-    SS -.->|启动| FR
+## 快速开始
 
-    %% 状态更新
-    UT --> STATUS
-    TS --> TASKS
-    SS --> STATUS
-    UR --> REASON
-    UR --> META
-    CR --> REASON
-    CR --> META
-    FR --> REASON_FILES
-
-    %% 输出
-    KSKILL --> RESULTS
-    USKILL --> RESULTS
-    PSKILL --> RESULTS
-    UR --> REASON_FILES
-    STATUS --> STATUSLINE
-    USR --> STATUS
-
-    %% 样式
-    classDef inputStyle fill:#e1f5fe,stroke:#01579b
-    classDef coreStyle fill:#f3e5f5,stroke:#4a148c
-    classDef dataStyle fill:#fff3e0,stroke:#e65100
-    classDef skillStyle fill:#e8f5e9,stroke:#1b5e20
-    classDef hookStyle fill:#fce4ec,stroke:#880e4f
-    classDef outputStyle fill:#f1f8e9,stroke:#33691e
-
-    class INFO,TEMPLATES inputStyle
-    class UP,CMD,SG coreStyle
-    class USR,TASKS,STATUS,REASON,META dataStyle
-    class BUILTIN,PDF,USKILL,PSKILL,KSKILL skillStyle
-    class SS,UT,TS,ID,UR,CR,FR hookStyle
-    class RESULTS,REASON_FILES,STATUSLINE outputStyle
-```
-
-## 核心思路
-
-```
-用户画像 → 任务拆解 → 子技能生成 → 逐步执行 → 结果记录
-```
-
-### 工作流程
-
-```
-建立画像 → 启动任务 → 两次确认 → 生成技能 → 逐步执行 → 查看推理日志
-```
-
-1. **建立画像** - 在 `info/` 目录添加个人信息，运行 `/user-profile`
-2. **启动任务** - 使用 `/commander start [任务描述]` 创建新任务
-   - 第一次确认：确认任务分析结果（类型、技术栈、参考技能）
-   - 第二次确认：确认技能生成计划
-3. **执行步骤** - 逐个使用生成的子技能完成每一步
-4. **查看推理日志** - 在 `results/k01/.reasoning.md` 查看执行过程和方法论
-
-### 推理日志系统
-
-新推出的推理日志系统自动记录每个任务的执行过程：
-
-- **Mermaid 流程图**：可视化任务进度和方法标签
-- **方法论详情表**：展示每个步骤使用的方法和工具
-- **执行时间线**：记录关键事件和时间戳
-- **推理块捕获**：保存 `<reasoning>` 块中的思考过程
-
-#### 自动维护机制
-
-推理日志通过 Hooks 系统自动维护，无需手动操作：
-
-| Hook | 触发时机 | 作用 |
-|:-----|---------|-----|
-| `update-reasoning-on-task.sh` | TaskCreate/TaskUpdate | **任务操作时自动更新** |
-| `capture-reasoning.sh` | Write/Edit .reasoning.md | 捕获推理块内容 |
-| `fix-reasoning.sh` | SessionStart | 修复损坏的推理文件 |
-
-**核心特性**：每次任务操作（创建、更新）都会自动触发推理日志更新。
-
-#### 查看推理日志
+### 1. 安装依赖
 
 ```bash
-# 查看全局推理索引（活跃任务汇总）
-cat .info/.reasoning.md
-
-# 查看特定任务的推理日志
-cat results/k01/.reasoning.md
-
-# 查看推理元数据
-cat .info/.reasoning.meta.json
+npm install
 ```
 
-### 快速开始
-
-**推荐方式**：使用一键启动脚本
+### 2. 启动开发环境
 
 ```bash
-./scripts/start.sh
+npm run dev
 ```
 
-脚本会自动完成：
-1. 检查并安装 Claude Code
-2. 检查并安装 uv（Python 包管理器）
-3. 清理技能文件（k_*, u_*, p_*）
-4. 清理旧数据
-5. 初始化配置文件
+默认监听：`http://127.0.0.1:3000`
 
-**手动安装**（如需自定义）：
+说明：`npm run dev` 会先构建前端静态资源（`build:web`），再启动 TypeScript 后端。
 
-1. **Fork 项目并创建 Codespace**
-   - 访问 [Skills Demo](https://github.com/gqy20/Skills_demo)
-   - 点击 Fork，然后创建 Codespace
+### 3. 打开 Web 界面
 
-2. **安装 Claude Code**
+访问：`http://127.0.0.1:3000`
 
-   macOS/Linux/WSL:
-   ```bash
-   curl -fsSL https://claude.ai/install.sh | bash
-   ```
-
-   Windows PowerShell:
-   ```powershell
-   irm https://claude.ai/install.ps1 | iex
-   ```
-
-3. **配置认证信息**
-
-   ```bash
-   export ANTHROPIC_AUTH_TOKEN="your-auth-token-here"
-   export ANTHROPIC_BASE_URL="https://open.bigmodel.cn/api/anthropic"
-   ```
-
-4. **准备个人信息**
-
-   将任意资料丢入 `info/` 目录（支持 `.md`、`.json`、`.pdf`、`.txt`）
-
-5. **运行第一个任务**
-
-   ```bash
-   # 生成用户画像
-   /user-profile
-
-   # 启动任务
-   /commander start 创建一个 Hello World 页面
-
-   # 执行第一步
-   /commander continue k01
-   ```
-
-## 📖 详细文档
-
-- [使用指南](docs/usage.md) - 完整命令参考、数据结构说明、工作流示例
-- [结果目录说明](docs/results.md) - results/ 目录结构详解
-- [状态栏配置](docs/statusline.md) - 自定义状态栏使用说明
-- [Hooks 系统](docs/hooks.md) - 自动化钩子详解
-- [PDF 文献处理器](.claude/skills/pdf_processor/SKILL.md) - PDF 转 Markdown + AI 摘要
-
-## 提交前校验（pre-commit）
-
-项目已内置 `.pre-commit-config.yaml`，用于统一提交质量门：
-
-- `pre-commit` 阶段：格式与基础文件检查 + `npm run check`
-- `pre-push` 阶段：`npm run build`
-
-初始化方式：
+## 构建与运行
 
 ```bash
-pip install pre-commit
-pre-commit install --hook-type pre-commit --hook-type pre-push
-pre-commit run --all-files
+# 类型检查
+npm run check
+
+# 生产构建（server + web）
+npm run build
+
+# 运行构建产物
+npm start
 ```
 
-临时跳过（不推荐）：
+## 环境变量
 
-```bash
-git commit --no-verify
-git push --no-verify
+后端默认值（来自 `src/server/index.ts`）：
+
+- `HOST`：默认 `127.0.0.1`
+- `PORT`：默认 `3000`
+- `ANTHROPIC_MODEL`：默认 `glm-5`
+- `ANTHROPIC_BASE_URL`：默认 `https://open.bigmodel.cn/api/anthropic`
+- `ANTHROPIC_AUTH_TOKEN`：默认空
+- `MINERU_API_KEY`：默认空
+- `AGENT_WEB_DEBUG=1`：启用后端 debug 探针
+- `AGENT_WEB_DEBUG_SSE=1`：通过 SSE 下发 debug 事件
+
+工作区相关：
+
+- `AGENT_WORKSPACE_ROOT`：主工作区（默认当前进程目录）
+- `AGENT_WORKSPACES`：附加工作区列表（逗号或换行分隔）
+
+## 运行时设置（Web 内可改）
+
+通过设置弹窗可修改并持久化：
+
+- `model`
+- `baseUrl`
+- `authToken`
+- `mineruApiKey`
+- `mcpEnabled`
+- `speedModeEnabled`
+- `toolGateEnabled`
+- `debugEnabled`
+- `debugSseEnabled`
+
+配置保存位置：
+
+- `<workspace>/.info/agent-web-settings.json`
+
+### Speed Mode 行为
+
+启用后会走快速路径：
+- `settingSources = []`（不加载 project settings/hooks）
+- `thinking` 关闭
+- 跳过 MCP 批量 toggle
+
+## API 一览
+
+### 系统接口
+
+- `GET /api/health`：健康状态、workspace、hooks 模式
+- `GET /api/workspaces`：可用工作区列表
+- `GET /api/settings`：读取当前工作区设置
+- `POST /api/settings`：更新当前工作区设置
+- `GET /api/skills`：读取 skills（project/user）
+- `GET /api/files`：读取工作区文件树（`path` + `depth`）
+
+### 对话与交互
+
+- `POST /api/chat/ui`：主对话流接口（SSE）
+- `POST /api/chat/stop`：中止当前会话流
+- `POST /api/input`：响应 AskUserQuestion/权限请求
+- `POST /api/input/cancel`：取消待处理输入
+
+## 生产安全建议
+
+当前实现更偏本地/内网开发环境。若部署到共享网络，建议至少补齐：
+
+- 访问控制：为所有 `/api/*` 增加鉴权（反向代理 Basic Auth、OIDC、或网关 Token）
+- 网络边界：保持 `HOST=127.0.0.1`，对外暴露时只经受控反向代理
+- 密钥策略：避免把长效 token 明文落盘，优先短期令牌或密钥管理服务
+- 审计能力：记录关键操作（模型切换、工具授权、MCP 开关、会话停止）
+- 会话隔离：多用户场景下增加用户级 session namespace，避免会话串扰
+
+## 前端功能概览
+
+- Chat 主区：流式消息、停止、重试
+- Quick Prompts：
+  - 文献综述分析
+  - 科研初稿生成
+- Pending Overlay：
+  - 工具权限确认（allow/deny/cancel）
+  - AskUserQuestion 多题问答
+- 侧栏：
+  - Workspace 切换
+  - Skills 列表
+  - 文件树预览
+  - 事件流调试信息
+
+## 与 Skills/Hooks 的关系
+
+仓库仍保留 Claude Code 的 skills 与 hooks 体系（`/.claude`），Web 层是其可视化入口与调度层：
+
+- Skills 目录：`.claude/skills/`
+  - `commander`
+  - `user-profile`
+  - `skill-generator`
+  - `pdf_processor`
+- Hooks 目录：`.claude/hooks/`
+
+相关文档：
+- `docs/usage.md`
+- `docs/hooks.md`
+- `docs/statusline.md`
+- `docs/agent-sdk-web-minimal.md`
+
+## 目录结构（当前）
+
+```text
+src/
+  server/
+    index.ts
+    routes/
+      chat.ts
+      input.ts
+      system.ts
+    services/
+      chat.ts
+      files.ts
+      pending.ts
+      query.ts
+      settings.ts
+      skills.ts
+      workspaces.ts
+  webapp/
+    App.jsx
+    main.jsx
+    styles.css
+    index.html
+scripts/
+  start.sh
+  start.ps1
+docs/
+  usage.md
+  hooks.md
+  statusline.md
+  agent-sdk-web-minimal.md
+.claude/
+  skills/
+  hooks/
 ```
 
-### 文件命名规范
+## 常见问题
 
-| 类型 | 格式 | 示例 |
-|:-----|:-----|:-----|
-| 测试视频 | `test-<描述>.mp4` | `test-cli-usage.mp4` |
-| 演示视频 | `demo-<功能>.mp4` | `demo-skill-upgrade.mp4` |
-| 教程视频 | `tutorial-<主题>-<part>.mp4` | `tutorial-hooks-01.mp4` |
+1. 页面打开报 `Web assets not found in dist/web`  
+   先执行 `npm run build:web`，或直接用 `npm run dev`。
 
-## 核心命令
+2. 没有返回模型内容  
+   检查 `ANTHROPIC_AUTH_TOKEN`、`baseUrl`、`model` 是否有效。
 
-| 命令 | 说明 |
-|------|------|
-| `/user-profile` | 生成用户画像 |
-| `/commander start [任务]` | 启动新任务（两次确认流程） |
-| `/commander status` | 全局状态 |
-| `/commander progress k01` | 任务进度 |
-| `/k01_init_project` | 执行子技能 |
-| `cat .info/.reasoning.md` | 查看推理日志全局索引 |
-| `cat results/k01/.reasoning.md` | 查看任务推理日志 |
-| `cat .info/.reasoning.meta.json` | 查看推理元数据 |
+3. 工具一直等待确认  
+   检查 `Gate` 是否开启；开启后需在 Pending 面板手动允许或回答问题。
 
-### 推理日志快速查看
+4. 看不到 Skills  
+   检查 `.claude/skills/*/SKILL.md` 是否存在，及工作区是否选对。
 
-```bash
-# 查看所有活跃任务的推理摘要
-cat .info/.reasoning.md
+## 备注
 
-# 查看特定任务的详细推理过程
-cat results/k01/.reasoning.md
+- 本 README 已按当前代码实现（`src/server/*` + `src/webapp/*`）更新。
+- 若你要继续强化“科研 cowork”定位，建议下一步补充：
+  - 领域化 Prompt 模板库（研究问题、实验设计、审稿回复）
+  - 论文库索引与检索 API
+  - 结果导出（Markdown/Word）流水线
 
-# 查看推理元数据（包含所有任务状态）
-cat .info/.reasoning.meta.json
-```
+## 参考资料
 
-> 💡 完整命令参考请查看 [使用指南](docs/usage.md#核心命令)
-
-## 📚 PDF 文献处理
-
-内置 PDF 文献处理器，自动将 PDF 论文转换为 Markdown 并生成 AI 摘要。
-
-### 功能特性
-
-| 功能 | 说明 |
-|:-----|:-----|
-| **PDF 扫描** | 自动扫描 `01_articles/` 目录 |
-| **格式转换** | 使用 MinerU API 将 PDF 转为 Markdown |
-| **AI 摘要** | Claude Code 直接生成中文结构化摘要 |
-| **并行处理** | 支持多线程并发处理 |
-| **断点续传** | 已处理文件不会重复转换 |
-| **自动检测** | Hook 自动检测待处理文件 |
-
-### 使用方法
-
-```bash
-# 放入 PDF 文件到 01_articles/ 目录
-cp paper.pdf 01_articles/
-
-# 使用 Skill 处理
-/pdf-processor
-
-# 或直接运行脚本
-python .claude/skills/pdf_processor/scripts/processor.py
-```
-
-### 输出结构
-
-```
-01_articles/
-├── paper.pdf                    # 原始 PDF
-└── processed/
-    ├── md/
-    │   └── paper.md             # 转换后的 Markdown
-    ├── imgs/
-    │   └── paper/               # 提取的图片
-    └── summaries/
-        └── paper.json           # AI 生成的摘要
-```
-
-### 摘要 JSON 格式
-
-```json
-{
-  "filename": "paper.pdf",
-  "title": "论文完整标题",
-  "authors": ["作者1", "作者2"],
-  "abstract": "论文摘要原文",
-  "summary": "中文通俗总结（200-300字）",
-  "key_findings": ["发现1", "发现2"],
-  "keywords": ["关键词1", "关键词2"],
-  "metadata": {"journal": "Nature", "year": 2025},
-  "generated_at": "2026-02-06T12:00:00Z"
-}
-```
-
-### 配置
-
-在 `.env` 文件中配置：
-
-```bash
-# MinerU API Key（必需，用于 PDF 转 Markdown）
-MINERU_API_KEY=your_mineru_api_key
-```
-
-> 💡 MinerU API 申请地址：https://mineru.net/apiManage
-
-## 设计理念
-
-- **以人为本** - 基于用户画像定制 AI 行为
-- **任务驱动** - 将大任务拆解为可执行的子技能
-- **过程可见** - 推理日志记录 AI 的思考过程和方法论
-- **两次确认** - 分析结果确认 + 技能计划确认，确保准确性
-- **并发安全** - 每个任务独立的推理日志，支持多任务并行
-
-## Agent SDK Web Demo
-
-仓库已提供 TypeScript 版最小接入（后端 API + 简单前端）：
-
-- 文档：`docs/agent-sdk-web-minimal.md`
-- 启动：`npm install && npm run dev`
+- Anthropic Claude Code（官方仓库）：https://github.com/anthropics/claude-code
+- Claude Agent SDK（官方仓库）：https://github.com/anthropics/claude-agent-sdk-typescript
+- Claude Code SDK 文档（`canUseTool`）：https://docs.anthropic.com/zh-CN/docs/claude-code/sdk/sdk-tool-permissions
+- Vercel AI SDK `useChat`：https://ai-sdk.dev/docs/reference/ai-sdk-ui/use-chat
+- Vercel AI SDK UI Message Stream 协议：https://sdk.vercel.ai/providers/ai-sdk-providers/anthropic#ui-message-stream-example
+- 同类开源项目（对比参考）：https://github.com/siteboon/claudecodeui
+- 同类开源项目（对比参考）：https://github.com/daodao97/chatbox
