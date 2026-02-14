@@ -225,6 +225,28 @@ cat .info/.reasoning.meta.json
 - [Hooks 系统](docs/hooks.md) - 自动化钩子详解
 - [PDF 文献处理器](.claude/skills/pdf_processor/SKILL.md) - PDF 转 Markdown + AI 摘要
 
+## 提交前校验（pre-commit）
+
+项目已内置 `.pre-commit-config.yaml`，用于统一提交质量门：
+
+- `pre-commit` 阶段：格式与基础文件检查 + `npm run check`
+- `pre-push` 阶段：`npm run build`
+
+初始化方式：
+
+```bash
+pip install pre-commit
+pre-commit install --hook-type pre-commit --hook-type pre-push
+pre-commit run --all-files
+```
+
+临时跳过（不推荐）：
+
+```bash
+git commit --no-verify
+git push --no-verify
+```
+
 ### 文件命名规范
 
 | 类型 | 格式 | 示例 |
