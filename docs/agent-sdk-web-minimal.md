@@ -43,10 +43,15 @@ http://localhost:3000
 确保你本机已有可用的 Claude Code/Anthropic 环境变量（例如 `ANTHROPIC_AUTH_TOKEN`）。  
 该最小版本不额外封装鉴权，直接使用当前运行环境中的配置。
 
+可选：
+
+- `AGENT_WORKSPACE_ROOT`：指定工作区根目录（读取 `.claude/.mcp.json`、写入 `.info`、SDK `cwd` 均以此为准）。不设置时默认使用进程 `cwd`。
+
 ## 说明
 
 - 当前为 SSE (`text/event-stream`) + AI SDK UI Message Stream 协议（`x-vercel-ai-ui-message-stream: v1`）
 - 请求体对齐 AI SDK：`{ id, messages }`
+- `GET /api/health` 会返回当前 `workspaceRoot` 与 `hooksMode`，用于排查 hooks 是否被 speed mode 关闭
 - Skills 列表优先基于 Claude Agent SDK 原生 `supportedCommands()`，并按本地 user/project skills 过滤；失败时回退到本地 skills 列表（缓存 30s）
 - 完整流式开启方式：
   - `query(..., { includePartialMessages: true })`

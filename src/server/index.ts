@@ -15,9 +15,9 @@ const host = process.env.HOST || "127.0.0.1";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const PROJECT_ROOT = path.resolve(__dirname, "../..");
+const WORKSPACE_ROOT = path.resolve(process.env.AGENT_WORKSPACE_ROOT || process.cwd());
 const WEB_ROOT = path.resolve(__dirname, "../web");
-const SETTINGS_FILE = path.join(PROJECT_ROOT, ".info", "agent-web-settings.json");
+const SETTINGS_FILE = path.join(WORKSPACE_ROOT, ".info", "agent-web-settings.json");
 
 type PendingRequest = {
   requestId: string;
@@ -309,7 +309,7 @@ async function writeSettings(settings: RuntimeSettings): Promise<void> {
 
 async function getMcpServerNames(): Promise<string[]> {
   try {
-    const raw = await fs.readFile(path.join(PROJECT_ROOT, ".mcp.json"), "utf-8");
+    const raw = await fs.readFile(path.join(WORKSPACE_ROOT, ".mcp.json"), "utf-8");
     const parsed = JSON.parse(raw) as { mcpServers?: Record<string, unknown> };
     return Object.keys(parsed.mcpServers || {});
   } catch {
@@ -344,7 +344,7 @@ function buildQueryOptions(
   extra: Partial<Parameters<typeof query>[0]["options"]> = {}
 ): NonNullable<Parameters<typeof query>[0]["options"]> {
   const base: NonNullable<Parameters<typeof query>[0]["options"]> = {
-    cwd: process.cwd(),
+    cwd: WORKSPACE_ROOT,
     env: buildQueryEnv(settings),
     includePartialMessages: true,
     ...(sdkSessionId ? { resume: sdkSessionId } : { sessionId }),
@@ -420,7 +420,7 @@ async function collectLocalSkills(baseDir: string, source: SkillItem["source"]):
 }
 
 async function collectOwnedSkills(): Promise<SkillItem[]> {
-  const projectDir = path.join(PROJECT_ROOT, ".claude", "skills");
+  const projectDir = path.join(WORKSPACE_ROOT, ".claude", "skills");
   const userDir = path.join(os.homedir(), ".claude", "skills");
   const [projectItems, userItems] = await Promise.all([
     collectLocalSkills(projectDir, "project"),
@@ -487,8 +487,15 @@ async function fetchSkills(settings: RuntimeSettings): Promise<SkillItem[]> {
   }
 }
 
-app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, transport: "ui-message-stream", askQuestion: true });
+app.get("/api/health", async (_req, res) => {
+  const settings = await readSettings();
+  res.json({
+    ok: true,
+    transport: "ui-message-stream",
+    askQuestion: true,
+    workspaceRoot: WORKSPACE_ROOT,
+    hooksMode: settings.speedModeEnabled ? "disabled-by-speed-mode" : "project-hooks-enabled"
+  });
 });
 
 app.get("/api/settings", async (_req, res) => {
