@@ -39,6 +39,7 @@ const state = {
   currentAbortController: null
 };
 let skillsLoading = false;
+let isComposing = false;
 
 function setSession(sessionId) {
   state.currentSessionId = sessionId || null;
@@ -582,6 +583,22 @@ form.addEventListener("submit", async (event) => {
   await sendMessage(message, false);
 });
 
+messageInput.addEventListener("compositionstart", () => {
+  isComposing = true;
+});
+
+messageInput.addEventListener("compositionend", () => {
+  isComposing = false;
+});
+
+messageInput.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  if (event.shiftKey) return;
+  if (event.isComposing || isComposing) return;
+  event.preventDefault();
+  form.requestSubmit();
+});
+
 async function stopCurrentStream() {
   if (!state.isStreaming) return;
   const sessionId = state.currentSessionId;
@@ -605,6 +622,7 @@ async function sendMessage(message, isRetry) {
   if (state.isStreaming) return;
   if (!isRetry) {
     createMessage("user", message, "complete");
+    messageInput.value = "";
   }
   state.lastUserMessage = message;
   setStreamingState(true);
@@ -722,9 +740,6 @@ async function sendMessage(message, isRetry) {
   } finally {
     state.currentAbortController = null;
     setStreamingState(false);
-    if (!isRetry) {
-      messageInput.value = "";
-    }
     messageInput.focus();
   }
 }
