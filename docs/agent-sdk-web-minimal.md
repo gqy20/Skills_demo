@@ -7,6 +7,7 @@
 - 提供 AI SDK UI Message Stream 接口 `POST /api/chat/ui` 给前端调用
 - 支持 `AskUserQuestion`/权限请求回传：前端通过 `POST /api/input` 响应
 - 支持请求取消：前端通过 `POST /api/input/cancel` 中止待处理请求
+- 支持流式停止：前端通过 `POST /api/chat/stop` 中止当前流
 - 提供设置界面，可配置并持久化：
   - `ANTHROPIC_MODEL`
   - `ANTHROPIC_BASE_URL`
@@ -69,3 +70,6 @@ http://localhost:3000
   - 生命周期状态包含：`*-resolved`、`*-timeout`、`*-canceled`
   - 前端调用 `POST /api/input` 返回 `allow/deny`、可选 `updatedInput`、`alwaysAllow`
   - 支持 `POST /api/input/cancel` 主动取消，并保持幂等返回
+- 前端支持“停止/重试”：
+  - Stop：`AbortController` + 后端 `POST /api/chat/stop`
+  - Retry：复用最后一条用户消息重新发起请求

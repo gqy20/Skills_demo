@@ -1,6 +1,8 @@
 const form = document.getElementById("chat-form");
 const messageInput = document.getElementById("message");
 const sendBtn = document.getElementById("send-btn");
+const stopBtn = document.getElementById("stop-btn");
+const retryBtn = document.getElementById("retry-btn");
 const timelineEl = document.getElementById("timeline");
 const eventsEl = document.getElementById("events");
 const sessionMetaEl = document.getElementById("session-meta");
@@ -27,7 +29,10 @@ const state = {
   currentSpeedModeEnabled: false,
   pendingById: new Map(),
   pendingOrder: [],
-  activePendingId: null
+  activePendingId: null,
+  lastUserMessage: "",
+  isStreaming: false,
+  currentAbortController: null
 };
 
 function setSession(sessionId) {
@@ -63,6 +68,13 @@ function escapeHtml(value) {
 
 function scrollTimelineBottom() {
   timelineEl.scrollTop = timelineEl.scrollHeight;
+}
+
+function setStreamingState(streaming) {
+  state.isStreaming = Boolean(streaming);
+  sendBtn.disabled = state.isStreaming;
+  stopBtn.disabled = !state.isStreaming;
+  retryBtn.disabled = state.isStreaming || !state.lastUserMessage;
 }
 
 function createBubble(role, text, extraClass = "") {
@@ -374,6 +386,7 @@ function parseSseChunk(chunk, stateRef, onPayload) {
 
 setSession(null);
 renderPendingPanel();
+setStreamingState(false);
 loadSettings().catch(() => {
   tokenPreviewEl.textContent = "配置读取失败，请稍后重试。";
 });
@@ -437,10 +450,36 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const message = messageInput.value.trim();
   if (!message) return;
+  await sendMessage(message, false);
+});
 
-  createBubble("user", message);
+async function stopCurrentStream() {
+  if (!state.isStreaming) return;
+  const sessionId = state.currentSessionId;
+  if (state.currentAbortController) {
+    state.currentAbortController.abort();
+  }
+  if (sessionId) {
+    try {
+      await fetch("/api/chat/stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: sessionId })
+      });
+    } catch {
+      // best effort stop
+    }
+  }
+}
+
+async function sendMessage(message, isRetry) {
+  if (state.isStreaming) return;
+  if (!isRetry) {
+    createBubble("user", message);
+  }
+  state.lastUserMessage = message;
+  setStreamingState(true);
   const assistantTextNode = createBubble("assistant", "处理中...", "bubble-streaming");
-  sendBtn.disabled = true;
   eventsEl.textContent = "[]";
 
   state.pendingById.clear();
@@ -448,10 +487,13 @@ form.addEventListener("submit", async (event) => {
   state.activePendingId = null;
   renderPendingPanel();
 
+  const abortController = new AbortController();
+  state.currentAbortController = abortController;
   try {
     const response = await fetch("/api/chat/ui", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: abortController.signal,
       body: JSON.stringify({
         id: state.currentSessionId || undefined,
         messages: [{ role: "user", content: message }]
@@ -535,11 +577,27 @@ form.addEventListener("submit", async (event) => {
     }
   } catch (error) {
     assistantTextNode.parentElement.classList.remove("bubble-streaming");
-    assistantTextNode.parentElement.classList.add("bubble-error");
-    assistantTextNode.textContent = `请求异常: ${error instanceof Error ? error.message : String(error)}`;
+    if (error instanceof Error && error.name === "AbortError") {
+      assistantTextNode.textContent = "已停止生成";
+    } else {
+      assistantTextNode.parentElement.classList.add("bubble-error");
+      assistantTextNode.textContent = `请求异常: ${error instanceof Error ? error.message : String(error)}`;
+    }
   } finally {
-    sendBtn.disabled = false;
-    messageInput.value = "";
+    state.currentAbortController = null;
+    setStreamingState(false);
+    if (!isRetry) {
+      messageInput.value = "";
+    }
     messageInput.focus();
   }
+}
+
+stopBtn.addEventListener("click", async () => {
+  await stopCurrentStream();
+});
+
+retryBtn.addEventListener("click", async () => {
+  if (!state.lastUserMessage) return;
+  await sendMessage(state.lastUserMessage, true);
 });

@@ -64,6 +64,7 @@ const pendingRequests = new Map<string, PendingRequest>();
 const resolvedRequests = new Map<string, RequestResolutionRecord>();
 const sessionMap = new Map<string, string>();
 const sessionSeedMap = new Map<string, string>();
+const activeQueries = new Map<string, ReturnType<typeof query>>();
 
 const DEFAULT_SETTINGS: RuntimeSettings = {
   model: process.env.ANTHROPIC_MODEL || "glm-5",
@@ -441,6 +442,7 @@ app.post("/api/chat/ui", async (req, res) => {
   });
 
   let closed = false;
+  let queryInstance: ReturnType<typeof query> | null = null;
   let streamEventCount = 0;
   let deltaCount = 0;
   let doneSent = false;
@@ -453,6 +455,14 @@ app.post("/api/chat/ui", async (req, res) => {
   req.on("close", () => {
     closed = true;
     clearInterval(heartbeat);
+    if (queryInstance) {
+      try {
+        queryInstance.close();
+      } catch {
+        // ignore close errors on disconnect
+      }
+    }
+    activeQueries.delete(sessionId);
     logTrace(traceId, "client_closed", { sessionId, streamEventCount, deltaCount });
   });
 
@@ -516,7 +526,8 @@ app.post("/api/chat/ui", async (req, res) => {
       };
     }
 
-    const queryInstance = query({ prompt: message, options });
+    queryInstance = query({ prompt: message, options });
+    activeQueries.set(sessionId, queryInstance);
     writeDebugSse(res, closed, debugSseEnabled, traceId, "query_created", {
       sessionId,
       hasResume: Boolean(sdkSessionId)
@@ -631,6 +642,7 @@ app.post("/api/chat/ui", async (req, res) => {
       res.end();
     }
   } finally {
+    activeQueries.delete(sessionId);
     logTrace(traceId, "request_finished", {
       sessionId,
       closed,
@@ -639,6 +651,34 @@ app.post("/api/chat/ui", async (req, res) => {
       deltaCount
     });
   }
+});
+
+app.post("/api/chat/stop", async (req, res) => {
+  const sessionId = typeof req.body?.id === "string" ? req.body.id : "";
+  if (!sessionId) {
+    res.status(400).json({ error: "id is required" });
+    return;
+  }
+
+  const queryInstance = activeQueries.get(sessionId);
+  if (!queryInstance) {
+    res.json({ ok: true, id: sessionId, stopped: false, reason: "no_active_query" });
+    return;
+  }
+
+  try {
+    await queryInstance.interrupt();
+  } catch {
+    // ignore interrupt errors and proceed to close
+  }
+
+  try {
+    queryInstance.close();
+  } catch {
+    // ignore close errors
+  }
+  activeQueries.delete(sessionId);
+  res.json({ ok: true, id: sessionId, stopped: true });
 });
 
 app.post("/api/input", (req, res) => {
