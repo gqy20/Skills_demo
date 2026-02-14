@@ -8,6 +8,8 @@ const eventsEl = document.getElementById("events");
 const sessionMetaEl = document.getElementById("session-meta");
 const skillsMetaEl = document.getElementById("skills-meta");
 const skillsListEl = document.getElementById("skills-list");
+const filesMetaEl = document.getElementById("files-meta");
+const filesListEl = document.getElementById("files-list");
 const pendingEl = document.getElementById("pending");
 const openSettingsBtn = document.getElementById("open-settings");
 const closeSettingsBtn = document.getElementById("close-settings");
@@ -36,7 +38,10 @@ const state = {
   activePendingId: null,
   lastUserMessage: "",
   isStreaming: false,
-  currentAbortController: null
+  currentAbortController: null,
+  fileTree: new Map(),
+  fileExpanded: new Set([""]),
+  fileLoading: new Set()
 };
 let skillsLoading = false;
 let isComposing = false;
@@ -232,6 +237,90 @@ function renderSkills(items) {
       li.appendChild(hint);
     }
     skillsListEl.appendChild(li);
+  }
+}
+
+function createFileRow(item, level) {
+  const li = document.createElement("li");
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = `files-row ${item.type === "file" ? "is-file" : "is-dir"}`;
+  btn.dataset.path = item.path;
+  btn.dataset.type = item.type;
+  btn.style.paddingLeft = `${6 + level * 14}px`;
+
+  const indent = document.createElement("span");
+  indent.className = "files-indent";
+  const toggle = document.createElement("span");
+  toggle.className = "files-toggle";
+  if (item.type === "directory") {
+    const expanded = state.fileExpanded.has(item.path);
+    toggle.textContent = expanded ? "▾" : item.hasChildren ? "▸" : "•";
+  } else {
+    toggle.textContent = "·";
+  }
+  const name = document.createElement("span");
+  name.className = "files-name";
+  name.textContent = item.name;
+
+  btn.appendChild(indent);
+  btn.appendChild(toggle);
+  btn.appendChild(name);
+  li.appendChild(btn);
+  return li;
+}
+
+function renderFileChildren(items, level) {
+  if (!Array.isArray(items)) return;
+  for (const item of items) {
+    filesListEl.appendChild(createFileRow(item, level));
+    if (item.type === "directory" && state.fileExpanded.has(item.path)) {
+      const children = state.fileTree.get(item.path);
+      if (children) {
+        renderFileChildren(children, level + 1);
+      } else if (state.fileLoading.has(item.path)) {
+        const loading = document.createElement("li");
+        loading.className = "hint";
+        loading.style.paddingLeft = `${20 + level * 14}px`;
+        loading.textContent = "加载中...";
+        filesListEl.appendChild(loading);
+      }
+    }
+  }
+}
+
+function renderFilesPanel() {
+  filesListEl.innerHTML = "";
+  const root = state.fileTree.get("") || [];
+  filesMetaEl.textContent = `工作区文件 ${root.length} 项`;
+  if (!root.length) {
+    const li = document.createElement("li");
+    li.className = "hint";
+    li.textContent = "暂无可展示文件";
+    filesListEl.appendChild(li);
+    return;
+  }
+  renderFileChildren(root, 0);
+}
+
+async function loadFiles(path = "", depth = 1) {
+  if (state.fileLoading.has(path)) return;
+  state.fileLoading.add(path);
+  if (!state.fileTree.has(path)) {
+    filesMetaEl.textContent = "加载中...";
+  }
+  try {
+    const response = await fetch(`/api/files?path=${encodeURIComponent(path)}&depth=${depth}`);
+    if (!response.ok) throw new Error((await response.text()) || response.statusText);
+    const data = await response.json();
+    const items = Array.isArray(data.items) ? data.items : [];
+    state.fileTree.set(path, items);
+    renderFilesPanel();
+  } catch (error) {
+    filesMetaEl.textContent = `加载失败: ${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    state.fileLoading.delete(path);
+    renderFilesPanel();
   }
 }
 
@@ -616,10 +705,29 @@ loadSettings().catch(() => {
   tokenPreviewEl.textContent = "配置读取失败，请稍后重试。";
 });
 loadSkills();
+loadFiles();
 setInterval(() => {
   if (document.hidden) return;
   loadSkills();
 }, 3000);
+
+filesListEl.addEventListener("click", async (event) => {
+  const target = event.target instanceof Element ? event.target.closest(".files-row") : null;
+  if (!target) return;
+  const itemPath = target.dataset.path || "";
+  const itemType = target.dataset.type || "";
+  if (itemType !== "directory") return;
+  if (state.fileExpanded.has(itemPath)) {
+    state.fileExpanded.delete(itemPath);
+    renderFilesPanel();
+    return;
+  }
+  state.fileExpanded.add(itemPath);
+  renderFilesPanel();
+  if (!state.fileTree.has(itemPath)) {
+    await loadFiles(itemPath, 1);
+  }
+});
 
 toggleMcpBtn.addEventListener("click", async () => {
   try {

@@ -69,6 +69,21 @@ type SkillItem = {
   source: "project" | "user";
 };
 
+type FileTreeItem = {
+  name: string;
+  path: string;
+  type: "file" | "directory";
+  size: number;
+  mtimeMs: number;
+  hasChildren?: boolean;
+  children?: FileTreeItem[];
+};
+
+type IgnoreRuleSet = {
+  prefixes: Set<string>;
+  names: Set<string>;
+};
+
 const pendingRequests = new Map<string, PendingRequest>();
 const resolvedRequests = new Map<string, RequestResolutionRecord>();
 const sessionMap = new Map<string, string>();
@@ -79,6 +94,22 @@ let skillsCache:
       key: string;
       expiresAt: number;
       items: SkillItem[];
+    }
+  | null = null;
+const DEFAULT_FILE_EXCLUDES = new Set([
+  ".git",
+  "node_modules",
+  "dist",
+  "assets/videos",
+  "coverage",
+  ".DS_Store",
+  ".idea",
+  ".vscode"
+]);
+let ignoreCache:
+  | {
+      loadedAt: number;
+      rules: IgnoreRuleSet;
     }
   | null = null;
 
@@ -367,6 +398,140 @@ function maskToken(token: string): string {
   return `${token.slice(0, 4)}...${token.slice(-4)}`;
 }
 
+function normalizeRelativePath(input: unknown): string {
+  if (typeof input !== "string") return "";
+  const cleaned = input.replaceAll("\\", "/").trim();
+  if (!cleaned || cleaned === ".") return "";
+  return cleaned.replace(/^\/+/, "").replace(/\/+$/, "");
+}
+
+function hasGlobPattern(value: string): boolean {
+  return /[*?[\]{}]/.test(value);
+}
+
+function normalizeIgnoreEntry(raw: string): string {
+  return normalizeRelativePath(raw.replace(/^\/+/, "").replace(/\/+$/, ""));
+}
+
+function makeDefaultIgnoreRules(): IgnoreRuleSet {
+  const rules: IgnoreRuleSet = { prefixes: new Set(), names: new Set() };
+  for (const item of DEFAULT_FILE_EXCLUDES) {
+    const normalized = normalizeIgnoreEntry(item);
+    if (!normalized) continue;
+    if (normalized.includes("/")) rules.prefixes.add(normalized);
+    else rules.names.add(normalized);
+  }
+  return rules;
+}
+
+async function loadIgnoreRules(): Promise<IgnoreRuleSet> {
+  const now = Date.now();
+  if (ignoreCache && now - ignoreCache.loadedAt < 15_000) {
+    return ignoreCache.rules;
+  }
+
+  const rules = makeDefaultIgnoreRules();
+  const gitignoreFile = path.join(WORKSPACE_ROOT, ".gitignore");
+
+  try {
+    const raw = await fs.readFile(gitignoreFile, "utf-8");
+    const lines = raw.split(/\r?\n/).map((line) => line.trim());
+    for (const line of lines) {
+      if (!line || line.startsWith("#")) continue;
+      if (line.startsWith("!")) continue;
+      if (hasGlobPattern(line)) continue;
+      const normalized = normalizeIgnoreEntry(line);
+      if (!normalized) continue;
+      if (normalized.includes("/")) rules.prefixes.add(normalized);
+      else rules.names.add(normalized);
+    }
+  } catch {
+    // ignore missing or unreadable .gitignore
+  }
+
+  ignoreCache = { loadedAt: now, rules };
+  return rules;
+}
+
+function resolveWorkspacePath(relativePath: string): string | null {
+  const abs = path.resolve(WORKSPACE_ROOT, relativePath || ".");
+  if (abs === WORKSPACE_ROOT) return abs;
+  if (!abs.startsWith(`${WORKSPACE_ROOT}${path.sep}`)) return null;
+  return abs;
+}
+
+function shouldExcludeEntry(relativePath: string, name: string, rules: IgnoreRuleSet): boolean {
+  if (!name) return true;
+  const normalizedRel = normalizeRelativePath(relativePath);
+  const full = normalizedRel ? `${normalizedRel}/${name}` : name;
+  if (rules.prefixes.has(full)) return true;
+  if (rules.prefixes.has(name)) return true;
+  if (rules.names.has(name)) return true;
+  for (const prefix of rules.prefixes) {
+    if (full.startsWith(`${prefix}/`)) return true;
+  }
+  return false;
+}
+
+async function directoryHasChildren(relativePath: string, rules: IgnoreRuleSet): Promise<boolean> {
+  const abs = resolveWorkspacePath(relativePath);
+  if (!abs) return false;
+  try {
+    const entries = await fs.readdir(abs, { withFileTypes: true });
+    return entries.some((entry) => !shouldExcludeEntry(relativePath, entry.name, rules));
+  } catch {
+    return false;
+  }
+}
+
+async function listWorkspaceFiles(relativePath: string, depth: number, rules: IgnoreRuleSet): Promise<FileTreeItem[]> {
+  const abs = resolveWorkspacePath(relativePath);
+  if (!abs) throw new Error("invalid path");
+
+  const stat = await fs.stat(abs);
+  if (!stat.isDirectory()) throw new Error("path must be directory");
+
+  const entries = await fs.readdir(abs, { withFileTypes: true });
+  const visible = entries.filter((entry) => !shouldExcludeEntry(relativePath, entry.name, rules));
+  const sorted = visible.sort((a, b) => {
+    if (a.isDirectory() && !b.isDirectory()) return -1;
+    if (!a.isDirectory() && b.isDirectory()) return 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  const items: FileTreeItem[] = [];
+  for (const entry of sorted) {
+    const itemPath = normalizeRelativePath(relativePath ? `${relativePath}/${entry.name}` : entry.name);
+    const itemAbs = resolveWorkspacePath(itemPath);
+    if (!itemAbs) continue;
+    const itemStat = await fs.stat(itemAbs);
+    if (entry.isDirectory()) {
+      const hasChildren = await directoryHasChildren(itemPath, rules);
+      const item: FileTreeItem = {
+        name: entry.name,
+        path: itemPath,
+        type: "directory",
+        size: 0,
+        mtimeMs: itemStat.mtimeMs,
+        hasChildren
+      };
+      if (depth > 1 && hasChildren) {
+        item.children = await listWorkspaceFiles(itemPath, depth - 1, rules);
+      }
+      items.push(item);
+    } else {
+      items.push({
+        name: entry.name,
+        path: itemPath,
+        type: "file",
+        size: itemStat.size,
+        mtimeMs: itemStat.mtimeMs
+      });
+    }
+  }
+  return items;
+}
+
 function skillsCacheKey(settings: RuntimeSettings): string {
   return JSON.stringify({
     speedModeEnabled: settings.speedModeEnabled,
@@ -525,6 +690,34 @@ app.get("/api/skills", async (_req, res) => {
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ ok: false, error: msg, items: [] });
+  }
+});
+
+app.get("/api/files", async (req, res) => {
+  try {
+    const relativePath = normalizeRelativePath(req.query?.path);
+    const depthRaw = Number(req.query?.depth ?? 1);
+    const depth = Number.isFinite(depthRaw) ? Math.min(Math.max(Math.floor(depthRaw), 1), 3) : 1;
+
+    const abs = resolveWorkspacePath(relativePath);
+    if (!abs) {
+      res.status(400).json({ ok: false, error: "invalid path" });
+      return;
+    }
+
+    const rules = await loadIgnoreRules();
+    const items = await listWorkspaceFiles(relativePath, depth, rules);
+    res.json({
+      ok: true,
+      root: WORKSPACE_ROOT,
+      path: relativePath,
+      depth,
+      count: items.length,
+      items
+    });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "unknown error";
     res.status(500).json({ ok: false, error: msg, items: [] });
   }
 });
