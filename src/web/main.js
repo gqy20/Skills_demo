@@ -33,6 +33,8 @@ const filesMetaEl = document.getElementById("files-meta");
 const filesListEl = document.getElementById("files-list");
 const pendingEl = document.getElementById("pending");
 const openSettingsBtn = document.getElementById("open-settings");
+const toggleControlsBtn = document.getElementById("toggle-controls-btn");
+const controlsPopover = document.getElementById("controls-popover");
 const closeSettingsBtn = document.getElementById("close-settings");
 const toggleMcpBtn = document.getElementById("toggle-mcp");
 const toggleSpeedBtn = document.getElementById("toggle-speed");
@@ -95,6 +97,11 @@ timeline.bindScrollControls(timelineJumpBtn);
 function setSession(sessionId) {
   state.currentSessionId = sessionId || null;
   sessionMetaEl.textContent = state.currentSessionId ? `Session: ${state.currentSessionId}` : "Session: (new)";
+}
+
+function setControlsPopoverVisible(visible) {
+  controlsPopover.classList.toggle("hidden", !visible);
+  toggleControlsBtn.setAttribute("aria-expanded", visible ? "true" : "false");
 }
 
 async function apiGetJson(pathname, params = {}) {
@@ -336,6 +343,7 @@ function routeLifecycleEvent(type, data) {
 }
 
 setSession(null);
+setControlsPopoverVisible(false);
 timeline.setMessages([{ id: "init", role: "assistant", text: "准备就绪。输入任务后将实时显示回复。", status: "complete" }]);
 renderTimeline();
 renderPendingPanel();
@@ -391,6 +399,7 @@ toggleMcpBtn.addEventListener("click", async () => {
         speedModeEnabled: state.currentSpeedModeEnabled
       })
     );
+    setControlsPopoverVisible(false);
   } catch (error) {
     alert(`切换 MCP 失败: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -404,6 +413,7 @@ toggleSpeedBtn.addEventListener("click", async () => {
         speedModeEnabled: !state.currentSpeedModeEnabled
       })
     );
+    setControlsPopoverVisible(false);
   } catch (error) {
     alert(`切换性能模式失败: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -418,6 +428,7 @@ toggleGateBtn.addEventListener("click", async () => {
         toolGateEnabled: !state.currentToolGateEnabled
       })
     );
+    setControlsPopoverVisible(false);
   } catch (error) {
     alert(`切换交互网关失败: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -426,10 +437,26 @@ toggleGateBtn.addEventListener("click", async () => {
 openSettingsBtn.addEventListener("click", () => {
   dataLoader
     .loadSettings()
-    .then(() => toggleSettingsModal(settingsModal, true))
+    .then(() => {
+      setControlsPopoverVisible(false);
+      toggleSettingsModal(settingsModal, true);
+    })
     .catch((error) => {
       alert(`读取配置失败: ${error instanceof Error ? error.message : String(error)}`);
     });
+});
+
+toggleControlsBtn.addEventListener("click", () => {
+  const shouldShow = controlsPopover.classList.contains("hidden");
+  setControlsPopoverVisible(shouldShow);
+});
+
+document.addEventListener("click", (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target) return;
+  if (target.closest("#toggle-controls-btn")) return;
+  if (target.closest("#controls-popover")) return;
+  setControlsPopoverVisible(false);
 });
 
 closeSettingsBtn.addEventListener("click", () => toggleSettingsModal(settingsModal, false));
