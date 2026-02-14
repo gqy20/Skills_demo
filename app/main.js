@@ -27,8 +27,10 @@ const state = {
   currentSessionId: null,
   currentMcpEnabled: true,
   currentSpeedModeEnabled: false,
+  messages: [],
   pendingById: new Map(),
   pendingOrder: [],
+  pendingHistory: [],
   activePendingId: null,
   lastUserMessage: "",
   isStreaming: false,
@@ -77,15 +79,37 @@ function setStreamingState(streaming) {
   retryBtn.disabled = state.isStreaming || !state.lastUserMessage;
 }
 
-function createBubble(role, text, extraClass = "") {
-  const article = document.createElement("article");
-  article.className = `bubble ${role === "user" ? "bubble-user" : "bubble-assistant"} ${extraClass}`.trim();
-  const p = document.createElement("p");
-  p.textContent = text;
-  article.appendChild(p);
-  timelineEl.appendChild(article);
+function createMessage(role, text, status = "complete") {
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  state.messages.push({ id, role, text, status });
+  renderTimeline();
+  return id;
+}
+
+function updateMessage(id, updater) {
+  const idx = state.messages.findIndex((item) => item.id === id);
+  if (idx < 0) return;
+  const prev = state.messages[idx];
+  const next = typeof updater === "function" ? updater(prev) : { ...prev, ...updater };
+  state.messages[idx] = next;
+  renderTimeline();
+}
+
+function renderTimeline() {
+  timelineEl.innerHTML = "";
+  for (const msg of state.messages) {
+    const article = document.createElement("article");
+    article.className = `bubble ${msg.role === "user" ? "bubble-user" : "bubble-assistant"}`.trim();
+    if (msg.status === "streaming") article.classList.add("bubble-streaming");
+    if (msg.status === "streaming" && msg.text === "处理中...") article.classList.add("bubble-processing");
+    if (msg.status === "error") article.classList.add("bubble-error");
+    if (msg.status === "stopped") article.classList.add("bubble-stopped");
+    const p = document.createElement("p");
+    p.textContent = msg.text;
+    article.appendChild(p);
+    timelineEl.appendChild(article);
+  }
   scrollTimelineBottom();
-  return p;
 }
 
 async function resolvePending(payload) {
@@ -177,6 +201,19 @@ function removePendingLocal(requestId) {
   renderPendingPanel();
 }
 
+function addPendingHistory(item, status) {
+  state.pendingHistory.unshift({
+    requestId: item.requestId,
+    kind: item.kind,
+    toolName: item.toolName,
+    status,
+    at: Date.now()
+  });
+  if (state.pendingHistory.length > 12) {
+    state.pendingHistory = state.pendingHistory.slice(0, 12);
+  }
+}
+
 function upsertPendingFromLifecycle(kind, data) {
   const requestId = data?.requestId;
   if (!requestId) return;
@@ -205,19 +242,41 @@ function resolvePendingLifecycle(data, status) {
   if (!item) return;
   item.status = status;
   state.pendingById.set(requestId, item);
+  addPendingHistory(item, status);
   removePendingLocal(requestId);
 }
 
 function renderPendingPanel() {
   const active = getActivePending();
+  const activeList = state.pendingOrder
+    .map((id) => state.pendingById.get(id))
+    .filter((item) => item?.status === "pending");
+  const queueList = activeList.length
+    ? `<ul class="pending-queue">${activeList
+        .map((item) => {
+          const requestId = escapeHtml(item.requestId);
+          const label = escapeHtml(item.kind === "ask_user_question" ? "AskUserQuestion" : item.toolName || "Permission");
+          return `<li class="${item.requestId === state.activePendingId ? "is-active" : ""}"><code>${requestId.slice(0, 8)}</code> ${label} <span class="pending-badge pending-badge-pending">pending</span></li>`;
+        })
+        .join("")}</ul>`
+    : '<p class="hint">待处理队列: 0</p>';
+  const historyList = state.pendingHistory.length
+    ? `<ul class="pending-history">${state.pendingHistory
+        .map((item) => {
+          const label = escapeHtml(item.kind === "ask_user_question" ? "AskUserQuestion" : item.toolName || "Permission");
+          const status = escapeHtml(item.status);
+          const badgeClass = `pending-badge-${status}`.replace(/[^a-z-]/g, "");
+          return `<li><span>${label}</span> <span class="pending-badge ${badgeClass}">${status}</span></li>`;
+        })
+        .join("")}</ul>`
+    : '<p class="hint">暂无历史状态</p>';
+
   if (!active) {
     pendingEl.className = "pending-empty";
-    pendingEl.textContent = "当前没有待处理交互";
+    pendingEl.innerHTML = `<p>当前没有待处理交互</p><h3>最近状态</h3>${historyList}`;
     return;
   }
-
-  const queueSize = state.pendingOrder.filter((id) => state.pendingById.get(id)?.status === "pending").length;
-  const queueBadge = `<p class="hint">待处理队列: ${queueSize}</p>`;
+  const queueBadge = `<h3>待处理队列</h3>${queueList}`;
 
   if (active.kind === "permission_request") {
     const tool = escapeHtml(active.toolName || "unknown");
@@ -237,6 +296,8 @@ function renderPendingPanel() {
         <button id="pending-deny" type="button">拒绝</button>
         <button id="pending-cancel" type="button">取消请求</button>
       </div>
+      <h3>最近状态</h3>
+      ${historyList}
     `;
 
     pendingEl.querySelector("#pending-allow").addEventListener("click", async () => {
@@ -246,6 +307,7 @@ function renderPendingPanel() {
           behavior: "allow",
           alwaysAllow: pendingEl.querySelector("#always-allow").checked
         });
+        addPendingHistory(active, "allow");
         removePendingLocal(active.requestId);
       } catch (error) {
         alert(`提交失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -255,6 +317,7 @@ function renderPendingPanel() {
     pendingEl.querySelector("#pending-deny").addEventListener("click", async () => {
       try {
         await resolvePending({ requestId: active.requestId, behavior: "deny", message: "User denied from web UI." });
+        addPendingHistory(active, "deny");
         removePendingLocal(active.requestId);
       } catch (error) {
         alert(`提交失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -264,6 +327,7 @@ function renderPendingPanel() {
     pendingEl.querySelector("#pending-cancel").addEventListener("click", async () => {
       try {
         await cancelPending(active.requestId);
+        addPendingHistory(active, "canceled");
         removePendingLocal(active.requestId);
       } catch (error) {
         alert(`取消失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -305,6 +369,8 @@ function renderPendingPanel() {
         <button type="button" id="ask-cancel">取消请求</button>
       </div>
     </form>
+    <h3>最近状态</h3>
+    ${historyList}
   `;
 
   const askForm = pendingEl.querySelector("#ask-form");
@@ -331,6 +397,7 @@ function renderPendingPanel() {
           answers
         }
       });
+      addPendingHistory(active, "allow");
       removePendingLocal(active.requestId);
     } catch (error) {
       alert(`提交失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -340,6 +407,7 @@ function renderPendingPanel() {
   denyBtn.addEventListener("click", async () => {
     try {
       await resolvePending({ requestId: active.requestId, behavior: "deny", message: "User denied AskUserQuestion." });
+      addPendingHistory(active, "deny");
       removePendingLocal(active.requestId);
     } catch (error) {
       alert(`提交失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -349,6 +417,7 @@ function renderPendingPanel() {
   cancelBtn.addEventListener("click", async () => {
     try {
       await cancelPending(active.requestId);
+      addPendingHistory(active, "canceled");
       removePendingLocal(active.requestId);
     } catch (error) {
       alert(`取消失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -385,6 +454,8 @@ function parseSseChunk(chunk, stateRef, onPayload) {
 }
 
 setSession(null);
+state.messages = [{ id: "init", role: "assistant", text: "准备就绪。输入任务后将实时显示回复。", status: "complete" }];
+renderTimeline();
 renderPendingPanel();
 setStreamingState(false);
 loadSettings().catch(() => {
@@ -475,11 +546,11 @@ async function stopCurrentStream() {
 async function sendMessage(message, isRetry) {
   if (state.isStreaming) return;
   if (!isRetry) {
-    createBubble("user", message);
+    createMessage("user", message, "complete");
   }
   state.lastUserMessage = message;
   setStreamingState(true);
-  const assistantTextNode = createBubble("assistant", "处理中...", "bubble-streaming");
+  const assistantMessageId = createMessage("assistant", "处理中...", "streaming");
   eventsEl.textContent = "[]";
 
   state.pendingById.clear();
@@ -501,16 +572,18 @@ async function sendMessage(message, isRetry) {
     });
 
     if (!response.ok) {
-      assistantTextNode.parentElement.classList.remove("bubble-streaming");
-      assistantTextNode.parentElement.classList.add("bubble-error");
-      assistantTextNode.textContent = `请求失败: ${(await response.text()) || response.statusText}`;
+      updateMessage(assistantMessageId, {
+        status: "error",
+        text: `请求失败: ${(await response.text()) || response.statusText}`
+      });
       return;
     }
 
     if (!response.body) {
-      assistantTextNode.parentElement.classList.remove("bubble-streaming");
-      assistantTextNode.parentElement.classList.add("bubble-error");
-      assistantTextNode.textContent = "请求失败: 浏览器不支持流式读取";
+      updateMessage(assistantMessageId, {
+        status: "error",
+        text: "请求失败: 浏览器不支持流式读取"
+      });
       return;
     }
 
@@ -552,16 +625,19 @@ async function sendMessage(message, isRetry) {
       if (type === "text-delta") {
         const delta = typeof payload?.delta === "string" ? payload.delta : "";
         if (!delta) return;
-        if (assistantTextNode.textContent === "处理中...") assistantTextNode.textContent = "";
-        assistantTextNode.textContent += delta;
-        scrollTimelineBottom();
+        updateMessage(assistantMessageId, (prev) => ({
+          ...prev,
+          status: "streaming",
+          text: prev.text === "处理中..." ? delta : `${prev.text}${delta}`
+        }));
         return;
       }
 
       if (type === "error") {
-        assistantTextNode.parentElement.classList.remove("bubble-streaming");
-        assistantTextNode.parentElement.classList.add("bubble-error");
-        assistantTextNode.textContent = `请求异常: ${payload?.error || "unknown error"}`;
+        updateMessage(assistantMessageId, {
+          status: "error",
+          text: `请求异常: ${payload?.error || "unknown error"}`
+        });
       }
     };
 
@@ -571,17 +647,19 @@ async function sendMessage(message, isRetry) {
       parseSseChunk(decoder.decode(value, { stream: true }), streamState, onPayload);
     }
 
-    assistantTextNode.parentElement.classList.remove("bubble-streaming");
-    if (!assistantTextNode.textContent.trim() || assistantTextNode.textContent === "处理中...") {
-      assistantTextNode.textContent = "(流式完成，但没有提取到文本回复，请查看 Events)";
-    }
+    updateMessage(assistantMessageId, (prev) => ({
+      ...prev,
+      status: prev.status === "error" ? "error" : "complete",
+      text: !prev.text.trim() || prev.text === "处理中..." ? "(流式完成，但没有提取到文本回复，请查看 Events)" : prev.text
+    }));
   } catch (error) {
-    assistantTextNode.parentElement.classList.remove("bubble-streaming");
     if (error instanceof Error && error.name === "AbortError") {
-      assistantTextNode.textContent = "已停止生成";
+      updateMessage(assistantMessageId, { status: "stopped", text: "已停止生成" });
     } else {
-      assistantTextNode.parentElement.classList.add("bubble-error");
-      assistantTextNode.textContent = `请求异常: ${error instanceof Error ? error.message : String(error)}`;
+      updateMessage(assistantMessageId, {
+        status: "error",
+        text: `请求异常: ${error instanceof Error ? error.message : String(error)}`
+      });
     }
   } finally {
     state.currentAbortController = null;
