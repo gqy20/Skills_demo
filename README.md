@@ -48,13 +48,20 @@
 
 ## 快速开始
 
-### 1. 安装依赖
+### 1. 克隆仓库
+
+```bash
+git clone https://github.com/gqy20/Skills_demo.git
+cd Skills_demo
+```
+
+### 2. 安装依赖
 
 ```bash
 npm install
 ```
 
-### 2. 启动开发环境
+### 3. 启动开发环境
 
 ```bash
 npm run dev
@@ -64,7 +71,7 @@ npm run dev
 
 说明：`npm run dev` 会先构建前端静态资源（`build:web`），再启动 TypeScript 后端。
 
-### 3. 打开 Web 界面
+### 4. 打开 Web 界面
 
 访问：`http://127.0.0.1:3000`
 
@@ -183,42 +190,6 @@ npm start
 - `docs/hooks.md`
 - `docs/statusline.md`
 - `docs/agent-sdk-web-minimal.md`
-
-## 目录结构（当前）
-
-```text
-src/
-  server/
-    index.ts
-    routes/
-      chat.ts
-      input.ts
-      system.ts
-    services/
-      chat.ts
-      files.ts
-      pending.ts
-      query.ts
-      settings.ts
-      skills.ts
-      workspaces.ts
-  webapp/
-    App.jsx
-    main.jsx
-    styles.css
-    index.html
-scripts/
-  start.sh
-  start.ps1
-docs/
-  usage.md
-  hooks.md
-  statusline.md
-  agent-sdk-web-minimal.md
-.claude/
-  skills/
-  hooks/
-```
 
 ## 常见问题
 
