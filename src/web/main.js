@@ -1,6 +1,15 @@
 import { apiGetJson as requestGetJson, apiPostJson as requestPostJson } from "./api.js";
 import { streamChatUi } from "./chat.js";
 import { renderPendingPanel as renderPendingUi } from "./pending-ui.js";
+import {
+  showSettingsModal as toggleSettingsModal,
+  setMcpEnabled as applyMcpToggle,
+  setSpeedModeEnabled as applySpeedToggle,
+  applySettingsToForm,
+  buildSettingsPayload as buildSettingsPayloadFromForm,
+  applySavedSettings
+} from "./settings-ui.js";
+import { renderSkills as renderSkillsList, renderFilesPanel as renderFilesTree } from "./inspector-ui.js";
 
 const form = document.getElementById("chat-form");
 const messageInput = document.getElementById("message");
@@ -79,34 +88,15 @@ async function apiPostJson(pathname, body = {}) {
 }
 
 function showSettingsModal(show) {
-  settingsModal.classList.toggle("hidden", !show);
-  settingsModal.setAttribute("aria-hidden", show ? "false" : "true");
+  toggleSettingsModal(settingsModal, show);
 }
 
 function setMcpEnabled(enabled) {
-  state.currentMcpEnabled = Boolean(enabled);
-  toggleMcpBtn.textContent = `MCP: ${state.currentMcpEnabled ? "ON" : "OFF"}`;
-  toggleMcpBtn.classList.toggle("is-off", !state.currentMcpEnabled);
-  settingMcpEnabledInput.checked = state.currentMcpEnabled;
+  applyMcpToggle(enabled, { state, toggleMcpBtn, settingMcpEnabledInput });
 }
 
 function setSpeedModeEnabled(enabled) {
-  state.currentSpeedModeEnabled = Boolean(enabled);
-  toggleSpeedBtn.textContent = `Speed: ${state.currentSpeedModeEnabled ? "ON" : "OFF"}`;
-  toggleSpeedBtn.classList.toggle("is-off", !state.currentSpeedModeEnabled);
-  settingSpeedEnabledInput.checked = state.currentSpeedModeEnabled;
-}
-
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-}
-
-function normalizeSkillDescription(value) {
-  const text = typeof value === "string" ? value.trim() : "";
-  return text || "无描述";
+  applySpeedToggle(enabled, { state, toggleSpeedBtn, settingSpeedEnabledInput });
 }
 
 function scrollTimelineBottom() {
@@ -209,108 +199,31 @@ async function loadSettings() {
     state.currentWorkspaceId = data.workspaceId;
     renderWorkspaceOptions();
   }
-  settingModelInput.value = data.model || "";
-  settingBaseUrlInput.value = data.baseUrl || "";
-  settingAuthTokenInput.value = "";
+  applySettingsToForm(data, {
+    settingModelInput,
+    settingBaseUrlInput,
+    settingAuthTokenInput,
+    settingToolGateEnabledInput,
+    settingDebugEnabledInput,
+    settingDebugSseEnabledInput,
+    tokenPreviewEl
+  });
   setMcpEnabled(data.mcpEnabled !== false);
   setSpeedModeEnabled(data.speedModeEnabled === true);
-  settingToolGateEnabledInput.checked = data.toolGateEnabled !== false;
-  settingDebugEnabledInput.checked = data.debugEnabled === true;
-  settingDebugSseEnabledInput.checked = data.debugSseEnabled === true;
-  tokenPreviewEl.textContent = data.hasToken ? `已配置 token: ${data.tokenPreview || "********"}` : "当前未配置 token";
 }
 
 function renderSkills(items) {
-  skillsListEl.innerHTML = "";
-  for (const item of items) {
-    const li = document.createElement("li");
-    li.className = "skills-item";
-    const head = document.createElement("div");
-    head.className = "skills-head";
-    const title = document.createElement("p");
-    title.className = "skills-name";
-    title.textContent = `/${item.name}`;
-    const source = document.createElement("span");
-    source.className = "skills-source";
-    source.textContent = item.source === "user" ? "user" : "project";
-    head.appendChild(title);
-    head.appendChild(source);
-    const desc = document.createElement("p");
-    desc.className = "skills-desc";
-    desc.textContent = normalizeSkillDescription(item.description);
-    li.appendChild(head);
-    li.appendChild(desc);
-    if (item.argumentHint) {
-      const hint = document.createElement("code");
-      hint.className = "skills-arg";
-      hint.textContent = item.argumentHint;
-      li.appendChild(hint);
-    }
-    skillsListEl.appendChild(li);
-  }
-}
-
-function createFileRow(item, level) {
-  const li = document.createElement("li");
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = `files-row ${item.type === "file" ? "is-file" : "is-dir"}`;
-  btn.dataset.path = item.path;
-  btn.dataset.type = item.type;
-  btn.style.paddingLeft = `${6 + level * 14}px`;
-
-  const indent = document.createElement("span");
-  indent.className = "files-indent";
-  const toggle = document.createElement("span");
-  toggle.className = "files-toggle";
-  if (item.type === "directory") {
-    const expanded = state.fileExpanded.has(item.path);
-    toggle.textContent = expanded ? "▾" : item.hasChildren ? "▸" : "•";
-  } else {
-    toggle.textContent = "·";
-  }
-  const name = document.createElement("span");
-  name.className = "files-name";
-  name.textContent = item.name;
-
-  btn.appendChild(indent);
-  btn.appendChild(toggle);
-  btn.appendChild(name);
-  li.appendChild(btn);
-  return li;
-}
-
-function renderFileChildren(items, level) {
-  if (!Array.isArray(items)) return;
-  for (const item of items) {
-    filesListEl.appendChild(createFileRow(item, level));
-    if (item.type === "directory" && state.fileExpanded.has(item.path)) {
-      const children = state.fileTree.get(item.path);
-      if (children) {
-        renderFileChildren(children, level + 1);
-      } else if (state.fileLoading.has(item.path)) {
-        const loading = document.createElement("li");
-        loading.className = "hint";
-        loading.style.paddingLeft = `${20 + level * 14}px`;
-        loading.textContent = "加载中...";
-        filesListEl.appendChild(loading);
-      }
-    }
-  }
+  renderSkillsList(items, skillsListEl);
 }
 
 function renderFilesPanel() {
-  filesListEl.innerHTML = "";
-  const root = state.fileTree.get("") || [];
-  filesMetaEl.textContent = `工作区文件 ${root.length} 项`;
-  if (!root.length) {
-    const li = document.createElement("li");
-    li.className = "hint";
-    li.textContent = "暂无可展示文件";
-    filesListEl.appendChild(li);
-    return;
-  }
-  renderFileChildren(root, 0);
+  renderFilesTree({
+    filesListEl,
+    filesMetaEl,
+    fileTree: state.fileTree,
+    fileExpanded: state.fileExpanded,
+    fileLoading: state.fileLoading
+  });
 }
 
 async function loadFiles(path = "", depth = 1) {
@@ -392,25 +305,24 @@ async function switchWorkspace(workspaceId) {
 }
 
 function buildSettingsPayload({ mcpEnabled, speedModeEnabled }) {
-  return {
-    model: settingModelInput.value.trim(),
-    baseUrl: settingBaseUrlInput.value.trim(),
-    authToken: settingAuthTokenInput.value.trim(),
-    mcpEnabled,
-    speedModeEnabled,
-    toolGateEnabled: settingToolGateEnabledInput.checked,
-    debugEnabled: settingDebugEnabledInput.checked,
-    debugSseEnabled: settingDebugSseEnabledInput.checked,
-    keepExistingToken: true
-  };
+  return buildSettingsPayloadFromForm(
+    {
+      settingModelInput,
+      settingBaseUrlInput,
+      settingAuthTokenInput,
+      settingToolGateEnabledInput,
+      settingDebugEnabledInput,
+      settingDebugSseEnabledInput
+    },
+    { mcpEnabled, speedModeEnabled }
+  );
 }
 
 async function saveSettingsWithPayload(payload) {
   const data = await apiPostJson("/api/settings", payload);
   setMcpEnabled(data.mcpEnabled !== false);
   setSpeedModeEnabled(data.speedModeEnabled === true);
-  tokenPreviewEl.textContent = data.hasToken ? `已配置 token: ${data.tokenPreview || "********"}` : "当前未配置 token";
-  settingAuthTokenInput.value = "";
+  applySavedSettings(data, { settingAuthTokenInput, tokenPreviewEl });
   await loadSkills();
   return data;
 }
