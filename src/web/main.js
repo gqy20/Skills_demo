@@ -87,10 +87,6 @@ async function apiPostJson(pathname, body = {}) {
   return requestPostJson(pathname, body, state.currentWorkspaceId);
 }
 
-function showSettingsModal(show) {
-  toggleSettingsModal(settingsModal, show);
-}
-
 function setMcpEnabled(enabled) {
   applyMcpToggle(enabled, { state, toggleMcpBtn, settingMcpEnabledInput });
 }
@@ -118,28 +114,6 @@ function renderTimeline() {
   timeline.renderTimeline();
 }
 
-async function resolvePending(payload) {
-  return apiPostJson("/api/input", payload);
-}
-
-async function cancelPending(requestId) {
-  return apiPostJson("/api/input/cancel", { requestId });
-}
-
-function renderSkills(items) {
-  renderSkillsList(items, skillsListEl);
-}
-
-function renderFilesPanel() {
-  renderFilesTree({
-    filesListEl,
-    filesMetaEl,
-    fileTree: state.fileTree,
-    fileExpanded: state.fileExpanded,
-    fileLoading: state.fileLoading
-  });
-}
-
 const dataLoader = createDataLoader({
   state,
   workspaceSelectEl,
@@ -160,13 +134,20 @@ const dataLoader = createDataLoader({
     }),
   setMcpEnabled,
   setSpeedModeEnabled,
-  renderSkills,
-  renderFilesPanel
+  renderSkills: (items) => renderSkillsList(items, skillsListEl),
+  renderFilesPanel: () =>
+    renderFilesTree({
+      filesListEl,
+      filesMetaEl,
+      fileTree: state.fileTree,
+      fileExpanded: state.fileExpanded,
+      fileLoading: state.fileLoading
+    })
 });
 const pendingController = createPendingController({
   state,
-  resolveRequest: (payload) => resolvePending(payload),
-  cancelRequest: (requestId) => cancelPending(requestId),
+  resolveRequest: (payload) => apiPostJson("/api/input", payload),
+  cancelRequest: (requestId) => apiPostJson("/api/input/cancel", { requestId }),
   onChanged: () => renderPendingPanel(),
   onError: (message) => alert(message)
 });
@@ -311,11 +292,23 @@ filesListEl.addEventListener("click", async (event) => {
   if (itemType !== "directory") return;
   if (state.fileExpanded.has(itemPath)) {
     state.fileExpanded.delete(itemPath);
-    renderFilesPanel();
+    renderFilesTree({
+      filesListEl,
+      filesMetaEl,
+      fileTree: state.fileTree,
+      fileExpanded: state.fileExpanded,
+      fileLoading: state.fileLoading
+    });
     return;
   }
   state.fileExpanded.add(itemPath);
-  renderFilesPanel();
+  renderFilesTree({
+    filesListEl,
+    filesMetaEl,
+    fileTree: state.fileTree,
+    fileExpanded: state.fileExpanded,
+    fileLoading: state.fileLoading
+  });
   if (!state.fileTree.has(itemPath)) {
     await dataLoader.loadFiles(itemPath, 1);
   }
@@ -350,16 +343,16 @@ toggleSpeedBtn.addEventListener("click", async () => {
 openSettingsBtn.addEventListener("click", () => {
   dataLoader
     .loadSettings()
-    .then(() => showSettingsModal(true))
+    .then(() => toggleSettingsModal(settingsModal, true))
     .catch((error) => {
       alert(`读取配置失败: ${error instanceof Error ? error.message : String(error)}`);
     });
 });
 
-closeSettingsBtn.addEventListener("click", () => showSettingsModal(false));
+closeSettingsBtn.addEventListener("click", () => toggleSettingsModal(settingsModal, false));
 
 settingsModal.addEventListener("click", (event) => {
-  if (event.target === settingsModal) showSettingsModal(false);
+  if (event.target === settingsModal) toggleSettingsModal(settingsModal, false);
 });
 
 settingsForm.addEventListener("submit", async (event) => {
@@ -371,7 +364,7 @@ settingsForm.addEventListener("submit", async (event) => {
         speedModeEnabled: settingSpeedEnabledInput.checked
       })
     );
-    showSettingsModal(false);
+    toggleSettingsModal(settingsModal, false);
   } catch (error) {
     alert(`保存失败: ${error instanceof Error ? error.message : String(error)}`);
   }
