@@ -4,7 +4,7 @@
 
 - 用 TypeScript 接入 `@anthropic-ai/claude-agent-sdk`
 - 升级到最新 `0.2.x`
-- 提供 SSE 流式接口 `POST /api/chat/sse` 给前端调用
+- 提供 AI SDK UI Message Stream 接口 `POST /api/chat/ui` 给前端调用
 - 支持 `AskUserQuestion`/权限请求回传：前端通过 `POST /api/input` 响应
 - 提供设置界面，可配置并持久化：
   - `ANTHROPIC_MODEL`
@@ -42,12 +42,12 @@ http://localhost:3000
 
 ## 说明
 
-- 当前为 SSE (`text/event-stream`)：前端 `fetch` + SSE 解析器实时渲染
-- 仍保留 `POST /api/chat` 非流式接口，便于调试或回归测试
+- 当前为 SSE (`text/event-stream`) + AI SDK UI Message Stream 协议（`x-vercel-ai-ui-message-stream: v1`）
+- 请求体对齐 AI SDK：`{ id, messages }`
 - 完整流式开启方式：
   - `query(..., { includePartialMessages: true })`
-  - 后端将 `stream_event/content_block_delta/text_delta` 转换为 `delta` SSE 事件
-  - 前端按 `delta` 逐步拼接气泡文本
+  - 后端将 `stream_event/content_block_delta/text_delta` 转换为 `text-delta` 协议块
+  - 结束时发送 `finish` 和 `[DONE]`
 - SSE 每 15 秒发送 heartbeat（`: heartbeat`）避免长连接被中间代理超时
 - 多轮会话通过本地 `sessionId -> sdk session_id` 映射实现（`resume`）
 - 设置存储于 `.info/agent-web-settings.json`，后端在每次 `query` 通过 `options.env` 注入生效
@@ -56,7 +56,13 @@ http://localhost:3000
   - `settingSources = []`（不加载 project settings/hook）
   - `thinking = disabled`
   - 跳过 MCP 批量 toggle 步骤
+- `toolGateEnabled`（交互网关）开关：
+  - ON：启用 `canUseTool`，支持 AskUserQuestion/权限回传
+  - OFF：禁用 `canUseTool`，用于纯流式链路排障
+- 新增调试开关：
+  - `debugEnabled`：启用 SDK `debug + stderr`，并执行原生控制探针（`initializationResult`/`accountInfo`/`mcpServerStatus`/`supportedModels`）
+  - `debugSseEnabled`：将调试信息以 `data-debug` 块下发到前端
 - 当 SDK 触发 `canUseTool`：
-  - `AskUserQuestion` 下发 `ask_user_question` SSE 事件
-  - 其他工具下发 `permission_request` SSE 事件
+  - `AskUserQuestion` 下发 `data-ask-user-question`
+  - 其他工具下发 `data-permission-request`
   - 前端调用 `POST /api/input` 返回 `allow/deny`、可选 `updatedInput`、`alwaysAllow`

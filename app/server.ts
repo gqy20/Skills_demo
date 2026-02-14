@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
-import { query, type SDKMessage, type PermissionResult } from "@anthropic-ai/claude-agent-sdk";
+import { query, type PermissionResult, type SDKMessage, type PermissionUpdate } from "@anthropic-ai/claude-agent-sdk";
 import type { Response } from "express";
 
 const app = express();
@@ -17,27 +17,14 @@ const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const SETTINGS_FILE = path.join(PROJECT_ROOT, ".info", "agent-web-settings.json");
 
-app.use(cors());
-app.use(express.json({ limit: "1mb" }));
-app.use(express.static(__dirname));
-
-type NormalizedEvent = {
-  type: string;
-  text: string;
-  sessionId?: string;
-};
-
 type PendingRequest = {
   sessionId: string;
   toolName: string;
   input: Record<string, unknown>;
-  suggestions?: unknown[];
+  suggestions?: PermissionUpdate[];
   resolve: (decision: PermissionResult) => void;
   timeout: NodeJS.Timeout;
 };
-
-const pendingRequests = new Map<string, PendingRequest>();
-const sessionMap = new Map<string, string>();
 
 type RuntimeSettings = {
   model: string;
@@ -45,15 +32,36 @@ type RuntimeSettings = {
   authToken: string;
   mcpEnabled: boolean;
   speedModeEnabled: boolean;
+  toolGateEnabled: boolean;
+  debugEnabled: boolean;
+  debugSseEnabled: boolean;
 };
+
+type ChatMessage = {
+  id?: string;
+  role?: string;
+  content?: unknown;
+  parts?: Array<{ type?: string; text?: string }>;
+};
+
+const pendingRequests = new Map<string, PendingRequest>();
+const sessionMap = new Map<string, string>();
+const sessionSeedMap = new Map<string, string>();
 
 const DEFAULT_SETTINGS: RuntimeSettings = {
   model: process.env.ANTHROPIC_MODEL || "glm-5",
   baseUrl: process.env.ANTHROPIC_BASE_URL || "https://open.bigmodel.cn/api/anthropic",
   authToken: process.env.ANTHROPIC_AUTH_TOKEN || "",
   mcpEnabled: true,
-  speedModeEnabled: false
+  speedModeEnabled: false,
+  toolGateEnabled: true,
+  debugEnabled: process.env.AGENT_WEB_DEBUG === "1",
+  debugSseEnabled: process.env.AGENT_WEB_DEBUG_SSE === "1"
 };
+
+app.use(cors());
+app.use(express.json({ limit: "1mb" }));
+app.use(express.static(__dirname));
 
 function extractText(value: unknown): string[] {
   if (typeof value === "string") {
@@ -75,25 +83,25 @@ function extractText(value: unknown): string[] {
   return [];
 }
 
-function normalizeSdkEvent(event: SDKMessage): NormalizedEvent {
-  const type = typeof event.type === "string" ? event.type : "event";
-  const text = extractText(event).join("\n").trim();
-  const sessionId = typeof event.session_id === "string" ? event.session_id : undefined;
-  return { type, text, sessionId };
-}
+function extractPrompt(messages: unknown): string {
+  if (!Array.isArray(messages)) return "";
 
-function collectReply(events: NormalizedEvent[]): string {
-  return events
-    .filter((event) => event.type.includes("assistant") || event.type.includes("result") || event.type.includes("message"))
-    .map((event) => event.text)
-    .filter(Boolean)
-    .join("\n\n")
-    .trim();
-}
+  const list = messages as ChatMessage[];
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const msg = list[i];
+    if (msg?.role !== "user") continue;
 
-function writeSse(res: Response, event: string, data: unknown): void {
-  res.write(`event: ${event}\n`);
-  res.write(`data: ${JSON.stringify(data)}\n\n`);
+    const partTexts = Array.isArray(msg.parts)
+      ? msg.parts.filter((p) => p?.type === "text").map((p) => p.text || "")
+      : [];
+    const fromParts = extractText(partTexts).join("\n").trim();
+    if (fromParts) return fromParts;
+
+    const fromContent = extractText(msg.content).join("\n").trim();
+    if (fromContent) return fromContent;
+  }
+
+  return "";
 }
 
 function extractDeltaText(event: SDKMessage): string {
@@ -105,11 +113,62 @@ function extractDeltaText(event: SDKMessage): string {
   return typeof delta.text === "string" ? delta.text : "";
 }
 
+function writeSseData(res: Response, data: unknown): void {
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function writeSseDone(res: Response): void {
+  res.write("data: [DONE]\n\n");
+}
+
+function logTrace(traceId: string, phase: string, data: Record<string, unknown> = {}): void {
+  const line = {
+    ts: new Date().toISOString(),
+    traceId,
+    phase,
+    ...data
+  };
+  console.log(JSON.stringify(line));
+}
+
+function writeDebugSse(
+  res: Response,
+  closed: boolean,
+  enabled: boolean,
+  traceId: string,
+  phase: string,
+  data: Record<string, unknown> = {}
+): void {
+  logTrace(traceId, phase, data);
+  if (!enabled || closed) return;
+  writeSseData(res, {
+    type: "data-debug",
+    data: {
+      traceId,
+      phase,
+      ...data
+    }
+  });
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 function createPendingRequest(
   sessionId: string,
   toolName: string,
   input: Record<string, unknown>,
-  suggestions?: unknown[],
+  suggestions?: PermissionUpdate[],
   timeoutMs = 5 * 60 * 1000
 ): { requestId: string; decisionPromise: Promise<PermissionResult> } {
   const requestId = randomUUID();
@@ -146,7 +205,13 @@ async function readSettings(): Promise<RuntimeSettings> {
       authToken: parsed.authToken || DEFAULT_SETTINGS.authToken,
       mcpEnabled: typeof parsed.mcpEnabled === "boolean" ? parsed.mcpEnabled : DEFAULT_SETTINGS.mcpEnabled,
       speedModeEnabled:
-        typeof parsed.speedModeEnabled === "boolean" ? parsed.speedModeEnabled : DEFAULT_SETTINGS.speedModeEnabled
+        typeof parsed.speedModeEnabled === "boolean" ? parsed.speedModeEnabled : DEFAULT_SETTINGS.speedModeEnabled,
+      toolGateEnabled:
+        typeof parsed.toolGateEnabled === "boolean" ? parsed.toolGateEnabled : DEFAULT_SETTINGS.toolGateEnabled,
+      debugEnabled:
+        typeof parsed.debugEnabled === "boolean" ? parsed.debugEnabled : DEFAULT_SETTINGS.debugEnabled,
+      debugSseEnabled:
+        typeof parsed.debugSseEnabled === "boolean" ? parsed.debugSseEnabled : DEFAULT_SETTINGS.debugSseEnabled
     };
   } catch {
     return { ...DEFAULT_SETTINGS };
@@ -174,7 +239,7 @@ async function applyMcpToggle(queryInstance: ReturnType<typeof query>, enabled: 
     try {
       await queryInstance.toggleMcpServer(name, enabled);
     } catch {
-      // ignore per-server toggle failures to keep response path resilient
+      // Ignore individual MCP toggle errors to keep stream path resilient.
     }
   }
 }
@@ -202,7 +267,6 @@ function buildQueryOptions(
   };
 
   if (settings.speedModeEnabled) {
-    // Fast path: skip project settings/hooks to reduce first-token latency.
     base.settingSources = [];
     base.thinking = { type: "disabled" };
     base.includePartialMessages = true;
@@ -220,7 +284,7 @@ function maskToken(token: string): string {
 }
 
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, transport: "query-sse", askQuestion: true });
+  res.json({ ok: true, transport: "ui-message-stream", askQuestion: true });
 });
 
 app.get("/api/settings", async (_req, res) => {
@@ -230,6 +294,9 @@ app.get("/api/settings", async (_req, res) => {
     baseUrl: settings.baseUrl,
     mcpEnabled: settings.mcpEnabled,
     speedModeEnabled: settings.speedModeEnabled,
+    toolGateEnabled: settings.toolGateEnabled,
+    debugEnabled: settings.debugEnabled,
+    debugSseEnabled: settings.debugSseEnabled,
     hasToken: Boolean(settings.authToken),
     tokenPreview: maskToken(settings.authToken)
   });
@@ -243,6 +310,11 @@ app.post("/api/settings", async (req, res) => {
   const mcpEnabled = typeof req.body?.mcpEnabled === "boolean" ? req.body.mcpEnabled : current.mcpEnabled;
   const speedModeEnabled =
     typeof req.body?.speedModeEnabled === "boolean" ? req.body.speedModeEnabled : current.speedModeEnabled;
+  const toolGateEnabled =
+    typeof req.body?.toolGateEnabled === "boolean" ? req.body.toolGateEnabled : current.toolGateEnabled;
+  const debugEnabled = typeof req.body?.debugEnabled === "boolean" ? req.body.debugEnabled : current.debugEnabled;
+  const debugSseEnabled =
+    typeof req.body?.debugSseEnabled === "boolean" ? req.body.debugSseEnabled : current.debugSseEnabled;
   const keepExistingToken = req.body?.keepExistingToken !== false;
 
   const next: RuntimeSettings = {
@@ -250,7 +322,10 @@ app.post("/api/settings", async (req, res) => {
     baseUrl: baseUrl || current.baseUrl,
     authToken: tokenInput ? tokenInput : keepExistingToken ? current.authToken : "",
     mcpEnabled,
-    speedModeEnabled
+    speedModeEnabled,
+    toolGateEnabled,
+    debugEnabled,
+    debugSseEnabled
   };
 
   await writeSettings(next);
@@ -260,57 +335,26 @@ app.post("/api/settings", async (req, res) => {
     baseUrl: next.baseUrl,
     mcpEnabled: next.mcpEnabled,
     speedModeEnabled: next.speedModeEnabled,
+    toolGateEnabled: next.toolGateEnabled,
+    debugEnabled: next.debugEnabled,
+    debugSseEnabled: next.debugSseEnabled,
     hasToken: Boolean(next.authToken),
     tokenPreview: maskToken(next.authToken)
   });
 });
 
-app.post("/api/chat", async (req, res) => {
-  const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
-  const sessionId = typeof req.body?.sessionId === "string" && req.body.sessionId ? req.body.sessionId : randomUUID();
+app.post("/api/chat/ui", async (req, res) => {
+  const traceId = randomUUID();
+  const message = extractPrompt(req.body?.messages);
+  const sessionId = typeof req.body?.id === "string" && req.body.id ? req.body.id : randomUUID();
   const sdkSessionId = sessionMap.get(sessionId);
-
-  if (!message) {
-    res.status(400).json({ error: "message is required" });
-    return;
+  const seededSdkSessionId = sessionSeedMap.get(sessionId) || randomUUID();
+  if (!sessionSeedMap.has(sessionId)) {
+    sessionSeedMap.set(sessionId, seededSdkSessionId);
   }
 
-  try {
-    const settings = await readSettings();
-    const events: NormalizedEvent[] = [];
-    const queryInstance = query({
-      prompt: message,
-      options: buildQueryOptions(settings, sessionId, sdkSessionId)
-    });
-    if (!settings.speedModeEnabled) {
-      await applyMcpToggle(queryInstance, settings.mcpEnabled);
-    }
-    for await (const event of queryInstance) {
-      const normalized = normalizeSdkEvent(event);
-      events.push(normalized);
-      if (normalized.sessionId) {
-        sessionMap.set(sessionId, normalized.sessionId);
-      }
-    }
-
-    res.json({
-      sessionId,
-      reply: collectReply(events),
-      events
-    });
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : "Unknown error";
-    res.status(500).json({ error: msg });
-  }
-});
-
-app.post("/api/chat/sse", async (req, res) => {
-  const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
-  const sessionId = typeof req.body?.sessionId === "string" && req.body.sessionId ? req.body.sessionId : randomUUID();
-  const sdkSessionId = sessionMap.get(sessionId);
-
   if (!message) {
-    res.status(400).json({ error: "message is required" });
+    res.status(400).json({ error: "user message is required" });
     return;
   }
 
@@ -318,73 +362,211 @@ app.post("/api/chat/sse", async (req, res) => {
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
+  res.setHeader("x-vercel-ai-ui-message-stream", "v1");
   res.flushHeaders();
-  writeSse(res, "session", { sessionId });
+
+  const settings = await readSettings();
+  const debugSseEnabled = settings.debugEnabled && settings.debugSseEnabled;
+  const partId = `text-${randomUUID()}`;
+  writeSseData(res, { type: "start" });
+  writeSseData(res, { type: "text-start", id: partId });
+  writeSseData(res, { type: "data-session", data: { sessionId } });
+  writeDebugSse(res, false, debugSseEnabled, traceId, "request_started", {
+    sessionId,
+    hasResume: Boolean(sdkSessionId),
+    seededSdkSessionId,
+    speedModeEnabled: settings.speedModeEnabled,
+    mcpEnabled: settings.mcpEnabled,
+    toolGateEnabled: settings.toolGateEnabled
+  });
+
+  let closed = false;
+  let streamEventCount = 0;
+  let deltaCount = 0;
+  let doneSent = false;
   const heartbeat = setInterval(() => {
     if (!closed) {
       res.write(": heartbeat\n\n");
     }
   }, 15000);
 
-  let closed = false;
   req.on("close", () => {
     closed = true;
     clearInterval(heartbeat);
+    logTrace(traceId, "client_closed", { sessionId, streamEventCount, deltaCount });
   });
 
   try {
-    const settings = await readSettings();
-    const queryInstance = query({
-      prompt: message,
-      options: buildQueryOptions(settings, sessionId, sdkSessionId, {
-        includePartialMessages: true,
-        canUseTool: async (toolName, input, options) => {
-          const inputObj = (input ?? {}) as Record<string, unknown>;
-          const { requestId, decisionPromise } = createPendingRequest(sessionId, toolName, inputObj, options?.suggestions);
+    const options = buildQueryOptions(settings, sessionId, sdkSessionId, {
+      includePartialMessages: true
+    });
+    if (!sdkSessionId) {
+      options.sessionId = seededSdkSessionId;
+      delete options.resume;
+    }
+    options.debug = settings.debugEnabled;
+    options.stderr = (data) => {
+      logTrace(traceId, "sdk_stderr", { chunk: data.slice(0, 2000) });
+      if (!closed && debugSseEnabled) {
+        writeSseData(res, {
+          type: "data-debug",
+          data: { traceId, phase: "sdk_stderr", chunk: data.slice(0, 1200) }
+        });
+      }
+    };
 
-          if (!closed) {
-            writeSse(res, toolName === "AskUserQuestion" ? "ask_user_question" : "permission_request", {
+    if (settings.toolGateEnabled) {
+      options.canUseTool = async (toolName, input, hookOptions) => {
+        const inputObj = (input ?? {}) as Record<string, unknown>;
+        const isAskUserQuestion = toolName === "AskUserQuestion";
+        const { requestId, decisionPromise } = createPendingRequest(sessionId, toolName, inputObj, hookOptions?.suggestions);
+        writeDebugSse(res, closed, debugSseEnabled, traceId, "tool_permission_requested", {
+          requestId,
+          toolName,
+          hasSuggestions: Array.isArray(hookOptions?.suggestions) && hookOptions.suggestions.length > 0,
+          toolUseID: hookOptions?.toolUseID
+        });
+
+        if (!closed) {
+          writeSseData(res, {
+            type: isAskUserQuestion ? "data-ask-user-question" : "data-permission-request",
+            data: {
               requestId,
               sessionId,
               toolName,
               input: inputObj,
-              suggestions: options?.suggestions,
-              toolUseID: options?.toolUseID
-            });
-          }
-
-          return decisionPromise;
+              suggestions: hookOptions?.suggestions,
+              toolUseID: hookOptions?.toolUseID
+            }
+          });
         }
-      })
+
+        return decisionPromise;
+      };
+    }
+
+    const queryInstance = query({ prompt: message, options });
+    writeDebugSse(res, closed, debugSseEnabled, traceId, "query_created", {
+      sessionId,
+      hasResume: Boolean(sdkSessionId)
     });
+
+    if (settings.debugEnabled) {
+      const [initProbe, accountProbe, mcpProbe, modelProbe] = await Promise.allSettled([
+        withTimeout(queryInstance.initializationResult(), 5000, "initializationResult"),
+        withTimeout(queryInstance.accountInfo(), 3000, "accountInfo"),
+        withTimeout(queryInstance.mcpServerStatus(), 3000, "mcpServerStatus"),
+        withTimeout(queryInstance.supportedModels(), 3000, "supportedModels")
+      ]);
+
+      if (initProbe.status === "fulfilled") {
+        writeDebugSse(res, closed, debugSseEnabled, traceId, "probe_initialization", {
+          hasCommands: Array.isArray(initProbe.value.commands),
+          hasModels: Array.isArray(initProbe.value.models)
+        });
+      } else {
+        writeDebugSse(res, closed, debugSseEnabled, traceId, "probe_initialization_error", {
+          error: initProbe.reason instanceof Error ? initProbe.reason.message : String(initProbe.reason)
+        });
+      }
+
+      if (accountProbe.status === "fulfilled") {
+        writeDebugSse(res, closed, debugSseEnabled, traceId, "probe_account", {
+          email: accountProbe.value.email || "",
+          organization: accountProbe.value.organization || ""
+        });
+      } else {
+        writeDebugSse(res, closed, debugSseEnabled, traceId, "probe_account_error", {
+          error: accountProbe.reason instanceof Error ? accountProbe.reason.message : String(accountProbe.reason)
+        });
+      }
+
+      if (mcpProbe.status === "fulfilled") {
+        writeDebugSse(res, closed, debugSseEnabled, traceId, "probe_mcp_status", {
+          count: mcpProbe.value.length
+        });
+      } else {
+        writeDebugSse(res, closed, debugSseEnabled, traceId, "probe_mcp_status_error", {
+          error: mcpProbe.reason instanceof Error ? mcpProbe.reason.message : String(mcpProbe.reason)
+        });
+      }
+
+      if (modelProbe.status === "fulfilled") {
+        writeDebugSse(res, closed, debugSseEnabled, traceId, "probe_supported_models", {
+          count: modelProbe.value.length
+        });
+      } else {
+        writeDebugSse(res, closed, debugSseEnabled, traceId, "probe_supported_models_error", {
+          error: modelProbe.reason instanceof Error ? modelProbe.reason.message : String(modelProbe.reason)
+        });
+      }
+    }
+
     if (!settings.speedModeEnabled) {
       await applyMcpToggle(queryInstance, settings.mcpEnabled);
+      writeDebugSse(res, closed, debugSseEnabled, traceId, "mcp_toggled", { enabled: settings.mcpEnabled });
     }
+
     for await (const event of queryInstance) {
       if (closed) break;
-      const normalized = normalizeSdkEvent(event);
-      if (normalized.sessionId) {
-        sessionMap.set(sessionId, normalized.sessionId);
+      streamEventCount += 1;
+
+      if (typeof event.session_id === "string") {
+        sessionMap.set(sessionId, event.session_id);
+        sessionSeedMap.delete(sessionId);
       }
+
       const deltaText = extractDeltaText(event);
       if (deltaText) {
-        writeSse(res, "delta", { sessionId, text: deltaText });
+        deltaCount += 1;
+        writeSseData(res, { type: "text-delta", id: partId, delta: deltaText });
       }
-      writeSse(res, "message", normalized);
+
+      if (settings.debugEnabled && debugSseEnabled && streamEventCount <= 30) {
+        writeSseData(res, {
+          type: "data-debug",
+          data: {
+            traceId,
+            phase: "sdk_event",
+            eventType: event.type,
+            hasSession: typeof event.session_id === "string"
+          }
+        });
+      }
     }
 
     if (!closed) {
-      writeSse(res, "done", { sessionId });
+      writeSseData(res, { type: "text-end", id: partId });
+      writeSseData(res, { type: "finish" });
+      writeSseDone(res);
+      doneSent = true;
       clearInterval(heartbeat);
+      writeDebugSse(res, closed, debugSseEnabled, traceId, "stream_completed", {
+        sessionId,
+        streamEventCount,
+        deltaCount
+      });
       res.end();
     }
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
+    logTrace(traceId, "stream_error", { sessionId, error: msg, streamEventCount, deltaCount });
     if (!closed) {
-      writeSse(res, "error", { sessionId, error: msg });
+      writeSseData(res, { type: "error", error: msg });
+      writeSseData(res, { type: "finish" });
+      writeSseDone(res);
+      doneSent = true;
       clearInterval(heartbeat);
       res.end();
     }
+  } finally {
+    logTrace(traceId, "request_finished", {
+      sessionId,
+      closed,
+      doneSent,
+      streamEventCount,
+      deltaCount
+    });
   }
 });
 
@@ -421,7 +603,7 @@ app.post("/api/input", (req, res) => {
         updatedInput && typeof updatedInput === "object"
           ? (updatedInput as Record<string, unknown>)
           : pending.input,
-      updatedPermissions: alwaysAllow && Array.isArray(pending.suggestions) ? (pending.suggestions as never[]) : undefined
+      updatedPermissions: alwaysAllow && Array.isArray(pending.suggestions) ? pending.suggestions : undefined
     });
   }
 

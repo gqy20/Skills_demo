@@ -16,6 +16,9 @@ const settingBaseUrlInput = document.getElementById("setting-base-url");
 const settingAuthTokenInput = document.getElementById("setting-auth-token");
 const settingMcpEnabledInput = document.getElementById("setting-mcp-enabled");
 const settingSpeedEnabledInput = document.getElementById("setting-speed-enabled");
+const settingToolGateEnabledInput = document.getElementById("setting-tool-gate-enabled");
+const settingDebugEnabledInput = document.getElementById("setting-debug-enabled");
+const settingDebugSseEnabledInput = document.getElementById("setting-debug-sse-enabled");
 const tokenPreviewEl = document.getElementById("token-preview");
 
 let currentSessionId = null;
@@ -92,6 +95,9 @@ async function loadSettings() {
   settingAuthTokenInput.value = "";
   setMcpEnabled(data.mcpEnabled !== false);
   setSpeedModeEnabled(data.speedModeEnabled === true);
+  settingToolGateEnabledInput.checked = data.toolGateEnabled !== false;
+  settingDebugEnabledInput.checked = data.debugEnabled === true;
+  settingDebugSseEnabledInput.checked = data.debugSseEnabled === true;
   tokenPreviewEl.textContent = data.hasToken
     ? `已配置 token: ${data.tokenPreview || "********"}`
     : "当前未配置 token";
@@ -104,6 +110,9 @@ async function saveSettings() {
     authToken: settingAuthTokenInput.value.trim(),
     mcpEnabled: settingMcpEnabledInput.checked,
     speedModeEnabled: settingSpeedEnabledInput.checked,
+    toolGateEnabled: settingToolGateEnabledInput.checked,
+    debugEnabled: settingDebugEnabledInput.checked,
+    debugSseEnabled: settingDebugSseEnabledInput.checked,
     keepExistingToken: true
   };
   const response = await fetch("/api/settings", {
@@ -267,29 +276,30 @@ function enqueuePending(evt) {
   if (!activePending) shiftPending();
 }
 
-function parseSseChunk(chunk, state, onEvent) {
+function parseSseChunk(chunk, state, onPayload) {
   state.buffer += chunk;
   const parts = state.buffer.split("\n\n");
   state.buffer = parts.pop() || "";
 
   for (const part of parts) {
     const lines = part.split("\n");
-    let eventName = "message";
     const dataLines = [];
 
     for (const line of lines) {
-      if (line.startsWith("event:")) {
-        eventName = line.slice(6).trim();
-      } else if (line.startsWith("data:")) {
+      if (line.startsWith("data:")) {
         dataLines.push(line.slice(5).trim());
       }
     }
 
     const rawData = dataLines.join("\n");
     if (!rawData) continue;
+    if (rawData === "[DONE]") {
+      onPayload({ type: "done" });
+      continue;
+    }
 
     try {
-      onEvent(eventName, JSON.parse(rawData));
+      onPayload(JSON.parse(rawData));
     } catch {
       // ignore malformed event
     }
@@ -311,6 +321,9 @@ toggleMcpBtn.addEventListener("click", async () => {
       authToken: "",
       mcpEnabled: next,
       speedModeEnabled: currentSpeedModeEnabled,
+      toolGateEnabled: settingToolGateEnabledInput.checked,
+      debugEnabled: settingDebugEnabledInput.checked,
+      debugSseEnabled: settingDebugSseEnabledInput.checked,
       keepExistingToken: true
     };
     const response = await fetch("/api/settings", {
@@ -337,6 +350,9 @@ toggleSpeedBtn.addEventListener("click", async () => {
       authToken: "",
       mcpEnabled: currentMcpEnabled,
       speedModeEnabled: next,
+      toolGateEnabled: settingToolGateEnabledInput.checked,
+      debugEnabled: settingDebugEnabledInput.checked,
+      debugSseEnabled: settingDebugSseEnabledInput.checked,
       keepExistingToken: true
     };
     const response = await fetch("/api/settings", {
@@ -394,12 +410,12 @@ form.addEventListener("submit", async (event) => {
   renderPendingEmpty();
 
   try {
-    const response = await fetch("/api/chat/sse", {
+    const response = await fetch("/api/chat/ui", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        message,
-        sessionId: currentSessionId
+        id: currentSessionId || undefined,
+        messages: [{ role: "user", content: message }]
       })
     });
 
@@ -421,67 +437,60 @@ form.addEventListener("submit", async (event) => {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     const events = [];
-    const replyParts = [];
-    let receivedDelta = false;
-
-    const onEvent = (eventName, data) => {
-      events.push({ event: eventName, data });
+    const onPayload = (payload) => {
+      events.push(payload);
       eventsEl.textContent = JSON.stringify(events, null, 2);
 
-      if (eventName === "session" && data?.sessionId) {
-        setSession(data.sessionId);
+      const type = String(payload?.type || "");
+      if (!type) return;
+
+      if (type === "data-session" && payload?.data?.sessionId) {
+        setSession(payload.data.sessionId);
         return;
       }
 
-      if (eventName === "permission_request" || eventName === "ask_user_question") {
-        enqueuePending({ event: eventName, data });
+      if (type === "data-permission-request") {
+        enqueuePending({ event: "permission_request", data: payload?.data || {} });
         return;
       }
 
-      if (eventName === "delta") {
-        const delta = typeof data?.text === "string" ? data.text : "";
-        if (delta) {
-          receivedDelta = true;
-          if (assistantTextNode.textContent === "处理中...") {
-            assistantTextNode.textContent = "";
-          }
-          assistantTextNode.textContent += delta;
-          scrollTimelineBottom();
+      if (type === "data-ask-user-question") {
+        enqueuePending({ event: "ask_user_question", data: payload?.data || {} });
+        return;
+      }
+
+      if (type === "text-delta") {
+        const delta = typeof payload?.delta === "string" ? payload.delta : "";
+        if (!delta) return;
+        if (assistantTextNode.textContent === "处理中...") {
+          assistantTextNode.textContent = "";
         }
+        assistantTextNode.textContent += delta;
+        scrollTimelineBottom();
         return;
       }
 
-      if (eventName === "error") {
+      if (type === "error") {
         assistantTextNode.parentElement.classList.remove("bubble-streaming");
         assistantTextNode.parentElement.classList.add("bubble-error");
-        assistantTextNode.textContent = `请求异常: ${data?.error || "unknown error"}`;
+        assistantTextNode.textContent = `请求异常: ${payload?.error || "unknown error"}`;
         return;
       }
 
-      if (receivedDelta) {
+      if (type === "done" || type === "finish") {
         return;
-      }
-
-      const text = typeof data?.text === "string" ? data.text.trim() : "";
-      const type = String(data?.type || "");
-      if (!text) return;
-
-      if (type.includes("assistant") || type.includes("result") || type.includes("message")) {
-        replyParts.push(text);
-        assistantTextNode.textContent = replyParts.join("\n\n");
-        scrollTimelineBottom();
       }
     };
 
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
-      parseSseChunk(decoder.decode(value, { stream: true }), state, onEvent);
+      parseSseChunk(decoder.decode(value, { stream: true }), state, onPayload);
     }
 
     assistantTextNode.parentElement.classList.remove("bubble-streaming");
 
-    if (!replyParts.length && !assistantTextNode.textContent.trim()) {
+    if (!assistantTextNode.textContent.trim() || assistantTextNode.textContent === "处理中...") {
       assistantTextNode.textContent = "(流式完成，但没有提取到文本回复，请查看 Events)";
     }
   } catch (error) {

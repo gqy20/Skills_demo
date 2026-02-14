@@ -82,6 +82,18 @@
             <input id="setting-speed-enabled" type="checkbox" />
             启用性能模式（禁 project settings/hook + 关闭思考）
           </label>
+          <label class="pending-option">
+            <input id="setting-tool-gate-enabled" type="checkbox" />
+            启用交互网关（canUseTool + AskUserQuestion 回传）
+          </label>
+          <label class="pending-option">
+            <input id="setting-debug-enabled" type="checkbox" />
+            启用 SDK Debug（stderr + 原生控制探针）
+          </label>
+          <label class="pending-option">
+            <input id="setting-debug-sse-enabled" type="checkbox" />
+            下发 Debug 事件到流（data-debug）
+          </label>
 
           <div class="pending-actions">
             <button id="save-settings" type="submit">保存配置</button>
