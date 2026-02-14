@@ -5,6 +5,7 @@ import {
   showSettingsModal as toggleSettingsModal,
   setMcpEnabled as applyMcpToggle,
   setSpeedModeEnabled as applySpeedToggle,
+  setToolGateEnabled as applyToolGateToggle,
   applySettingsToForm,
   buildSettingsPayload as buildSettingsPayloadFromForm,
   applySavedSettings
@@ -33,6 +34,7 @@ const openSettingsBtn = document.getElementById("open-settings");
 const closeSettingsBtn = document.getElementById("close-settings");
 const toggleMcpBtn = document.getElementById("toggle-mcp");
 const toggleSpeedBtn = document.getElementById("toggle-speed");
+const toggleGateBtn = document.getElementById("toggle-gate");
 const settingsModal = document.getElementById("settings-modal");
 const settingsForm = document.getElementById("settings-form");
 const settingModelInput = document.getElementById("setting-model");
@@ -50,6 +52,7 @@ const state = {
   currentSessionId: null,
   currentMcpEnabled: true,
   currentSpeedModeEnabled: false,
+  currentToolGateEnabled: true,
   pendingById: new Map(),
   pendingOrder: [],
   pendingHistory: [],
@@ -60,7 +63,18 @@ const state = {
   fileTree: new Map(),
   fileExpanded: new Set([""]),
   fileLoading: new Set(),
-  workspaces: []
+  workspaces: [],
+  askDiagnostics: {
+    toolGateEnabled: true,
+    gateHits: 0,
+    askCreated: 0,
+    askResolved: 0,
+    lastToolName: "",
+    lastEvent: "",
+    sdkToolCount: null,
+    sdkHasAskTool: null,
+    sdkPermissionMode: ""
+  }
 };
 let isComposing = false;
 const MAX_EVENT_LOG = 120;
@@ -93,6 +107,10 @@ function setMcpEnabled(enabled) {
 
 function setSpeedModeEnabled(enabled) {
   applySpeedToggle(enabled, { state, toggleSpeedBtn, settingSpeedEnabledInput });
+}
+
+function setToolGateEnabled(enabled) {
+  applyToolGateToggle(enabled, { state, toggleGateBtn, settingToolGateEnabledInput });
 }
 
 function setStreamingState(streaming) {
@@ -134,6 +152,7 @@ const dataLoader = createDataLoader({
     }),
   setMcpEnabled,
   setSpeedModeEnabled,
+  setToolGateEnabled,
   renderSkills: (items) => renderSkillsList(items, skillsListEl),
   renderFilesPanel: () =>
     renderFilesTree({
@@ -165,8 +184,8 @@ async function switchWorkspace(workspaceId) {
   await Promise.allSettled([dataLoader.loadSettings(), dataLoader.loadSkills(), dataLoader.loadFiles()]);
 }
 
-function buildSettingsPayload({ mcpEnabled, speedModeEnabled }) {
-  return buildSettingsPayloadFromForm(
+function buildSettingsPayload({ mcpEnabled, speedModeEnabled, toolGateEnabled }) {
+  const payload = buildSettingsPayloadFromForm(
     {
       settingModelInput,
       settingBaseUrlInput,
@@ -177,13 +196,20 @@ function buildSettingsPayload({ mcpEnabled, speedModeEnabled }) {
     },
     { mcpEnabled, speedModeEnabled }
   );
+  if (typeof toolGateEnabled === "boolean") {
+    payload.toolGateEnabled = toolGateEnabled;
+  }
+  return payload;
 }
 
 async function saveSettingsWithPayload(payload) {
   const data = await apiPostJson("/api/settings", payload);
   setMcpEnabled(data.mcpEnabled !== false);
   setSpeedModeEnabled(data.speedModeEnabled === true);
+  setToolGateEnabled(data.toolGateEnabled !== false);
+  state.askDiagnostics.toolGateEnabled = data.toolGateEnabled !== false;
   applySavedSettings(data, { settingAuthTokenInput, tokenPreviewEl });
+  renderPendingPanel();
   await dataLoader.loadSkills();
   return data;
 }
@@ -195,6 +221,7 @@ function renderPendingPanel() {
     active,
     activeList: pendingController.getActivePendingList(),
     history: pendingController.getHistory(),
+    diagnostics: state.askDiagnostics,
     activePendingId: pendingController.getActivePendingId(),
     onPermissionAllow: async (requestId, alwaysAllow) => {
       await pendingController.submitDecision(requestId, { behavior: "allow", alwaysAllow }, "allow", "提交失败");
@@ -340,6 +367,20 @@ toggleSpeedBtn.addEventListener("click", async () => {
   }
 });
 
+toggleGateBtn.addEventListener("click", async () => {
+  try {
+    await saveSettingsWithPayload(
+      buildSettingsPayload({
+        mcpEnabled: state.currentMcpEnabled,
+        speedModeEnabled: state.currentSpeedModeEnabled,
+        toolGateEnabled: !state.currentToolGateEnabled
+      })
+    );
+  } catch (error) {
+    alert(`切换交互网关失败: ${error instanceof Error ? error.message : String(error)}`);
+  }
+});
+
 openSettingsBtn.addEventListener("click", () => {
   dataLoader
     .loadSettings()
@@ -419,6 +460,18 @@ async function sendMessage(message, isRetry) {
   const assistantMessageId = createMessage("assistant", "处理中...", "streaming");
   eventsEl.textContent = "[]";
   pendingController.reset();
+  state.askDiagnostics = {
+    toolGateEnabled: state.currentToolGateEnabled,
+    gateHits: 0,
+    askCreated: 0,
+    askResolved: 0,
+    lastToolName: "",
+    lastEvent: "",
+    sdkToolCount: null,
+    sdkHasAskTool: null,
+    sdkPermissionMode: ""
+  };
+  renderPendingPanel();
   let pendingDelta = "";
   let rafId = 0;
 
@@ -460,7 +513,45 @@ async function sendMessage(message, isRetry) {
         return;
       }
 
+      if (type === "data-tool-gate-status") {
+        state.askDiagnostics.toolGateEnabled = payload?.data?.enabled !== false;
+        state.askDiagnostics.lastEvent = `tool-gate-status:${state.askDiagnostics.toolGateEnabled ? "on" : "off"}`;
+        renderPendingPanel();
+        return;
+      }
+
+      if (type === "data-tool-gate-hit") {
+        state.askDiagnostics.gateHits += 1;
+        state.askDiagnostics.lastToolName = String(payload?.data?.toolName || "");
+        state.askDiagnostics.lastEvent = `gate-hit:${state.askDiagnostics.lastToolName || "unknown"}`;
+        renderPendingPanel();
+        return;
+      }
+
+      if (type === "data-sdk-init") {
+        state.askDiagnostics.sdkToolCount = Number(payload?.data?.toolCount ?? 0);
+        state.askDiagnostics.sdkHasAskTool = payload?.data?.hasAskUserQuestionTool === true;
+        state.askDiagnostics.sdkPermissionMode = String(payload?.data?.permissionMode || "");
+        state.askDiagnostics.lastEvent = "sdk-init";
+        renderPendingPanel();
+        return;
+      }
+
+      if (type === `${ASK_EVENT_PREFIX}created`) {
+        state.askDiagnostics.askCreated += 1;
+        state.askDiagnostics.lastEvent = "ask-created";
+      }
+      if (
+        type === `${ASK_EVENT_PREFIX}resolved` ||
+        type === `${ASK_EVENT_PREFIX}timeout` ||
+        type === `${ASK_EVENT_PREFIX}canceled`
+      ) {
+        state.askDiagnostics.askResolved += 1;
+        state.askDiagnostics.lastEvent = `ask-${type.slice(ASK_EVENT_PREFIX.length)}`;
+      }
+
       if (routeLifecycleEvent(type, payload?.data)) {
+        renderPendingPanel();
         return;
       }
 

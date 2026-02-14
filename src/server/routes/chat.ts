@@ -96,6 +96,7 @@ export function registerChatRoutes({
     writeSseData(res, { type: "start" });
     writeSseData(res, { type: "text-start", id: partId });
     writeSseData(res, { type: "data-session", data: { sessionId } });
+    writeSseData(res, { type: "data-tool-gate-status", data: { enabled: settings.toolGateEnabled } });
     writeDebugSse(res, false, debugSseEnabled, traceId, "request_started", {
       workspaceId: workspace.id,
       sessionId,
@@ -152,6 +153,17 @@ export function registerChatRoutes({
         options.canUseTool = async (toolName, input, hookOptions) => {
           const inputObj = (input ?? {}) as Record<string, unknown>;
           const isAskUserQuestion = isAskUserQuestionTool(toolName);
+          if (!closed) {
+            writeSseData(res, {
+              type: "data-tool-gate-hit",
+              data: {
+                sessionId,
+                toolName,
+                isAskUserQuestion,
+                toolUseID: hookOptions?.toolUseID
+              }
+            });
+          }
           const kind: PendingRequestKind = isAskUserQuestion ? "ask_user_question" : "permission_request";
           const notify: PendingNotify = (eventType, data) => {
             if (closed) return;
@@ -260,6 +272,19 @@ export function registerChatRoutes({
         if (typeof event.session_id === "string") {
           sessionMap.set(key, event.session_id);
           sessionSeedMap.delete(key);
+        }
+
+        if (event.type === "system" && event.subtype === "init" && !closed) {
+          const tools = Array.isArray(event.tools) ? event.tools : [];
+          writeSseData(res, {
+            type: "data-sdk-init",
+            data: {
+              model: event.model || "",
+              permissionMode: event.permissionMode || "",
+              toolCount: tools.length,
+              hasAskUserQuestionTool: tools.some((tool) => tool.trim().toLowerCase() === "askuserquestion")
+            }
+          });
         }
 
         const deltaText = extractDeltaText(event);

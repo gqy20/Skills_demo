@@ -44,11 +44,40 @@ function collectAskAnswers(form, questions) {
   return answers;
 }
 
+function renderDiagnostics(diagnostics) {
+  const toolGateEnabled = diagnostics?.toolGateEnabled !== false;
+  const gateHits = Number(diagnostics?.gateHits || 0);
+  const askCreated = Number(diagnostics?.askCreated || 0);
+  const askResolved = Number(diagnostics?.askResolved || 0);
+  const lastToolName = escapeHtml(diagnostics?.lastToolName || "-");
+  const lastEvent = escapeHtml(diagnostics?.lastEvent || "-");
+  const sdkToolCount = diagnostics?.sdkToolCount;
+  const sdkHasAskTool = diagnostics?.sdkHasAskTool;
+  const sdkPermissionMode = escapeHtml(diagnostics?.sdkPermissionMode || "-");
+  const gateStatus = toolGateEnabled ? "ON" : "OFF";
+  const warning = toolGateEnabled
+    ? ""
+    : '<p class="pending-warning">交互网关已关闭：AskUserQuestion 不会触发。</p>';
+  const sdkSummary =
+    typeof sdkHasAskTool === "boolean"
+      ? `sdkAskTool=${sdkHasAskTool ? "yes" : "no"} · sdkTools=${Number(sdkToolCount || 0)} · sdkMode=${sdkPermissionMode}`
+      : "sdk init 未收到";
+  return `
+    <div class="pending-debug">
+      <p><strong>Debug</strong> Gate=${gateStatus} | Hits=${gateHits} | Ask=${askCreated}/${askResolved}</p>
+      <p class="hint">lastTool=${lastToolName} · lastEvent=${lastEvent}</p>
+      <p class="hint">${sdkSummary}</p>
+      ${warning}
+    </div>
+  `;
+}
+
 export function renderPendingPanel({
   pendingEl,
   active,
   activeList,
   history,
+  diagnostics,
   activePendingId,
   onPermissionAllow,
   onPermissionDeny,
@@ -59,10 +88,11 @@ export function renderPendingPanel({
 }) {
   const queueList = renderPendingQueue(activeList, activePendingId);
   const historyList = renderPendingHistory(history);
+  const diagnosticsHtml = renderDiagnostics(diagnostics);
 
   if (!active) {
     pendingEl.className = "pending-empty";
-    pendingEl.innerHTML = `<p>当前没有待处理交互</p><h3>最近状态</h3>${historyList}`;
+    pendingEl.innerHTML = `${diagnosticsHtml}<p>当前没有待处理交互</p><h3>最近状态</h3>${historyList}`;
     return;
   }
   const queueBadge = `<h3>待处理队列</h3>${queueList}`;
@@ -72,6 +102,7 @@ export function renderPendingPanel({
     const input = escapeHtml(JSON.stringify(active.input || {}, null, 2));
     pendingEl.className = "";
     pendingEl.innerHTML = `
+      ${diagnosticsHtml}
       <p><strong>Tool Permission Request</strong></p>
       ${queueBadge}
       <p>tool: <code>${tool}</code></p>
@@ -125,6 +156,7 @@ export function renderPendingPanel({
 
   pendingEl.className = "";
   pendingEl.innerHTML = `
+    ${diagnosticsHtml}
     <p><strong>AskUserQuestion</strong></p>
     ${queueBadge}
     <form id="ask-form">

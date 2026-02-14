@@ -17,6 +17,13 @@ export function setSpeedModeEnabled(enabled, { state, toggleSpeedBtn, settingSpe
   settingSpeedEnabledInput.checked = state.currentSpeedModeEnabled;
 }
 
+export function setToolGateEnabled(enabled, { state, toggleGateBtn, settingToolGateEnabledInput }) {
+  state.currentToolGateEnabled = Boolean(enabled);
+  toggleGateBtn.textContent = `Gate: ${state.currentToolGateEnabled ? "ON" : "OFF"}`;
+  toggleGateBtn.classList.toggle("is-off", !state.currentToolGateEnabled);
+  settingToolGateEnabledInput.checked = state.currentToolGateEnabled;
+}
+
 export function applySettingsToForm(data, elements) {
   const {
     settingModelInput,

@@ -11,6 +11,7 @@ export function createDataLoader({
   applySettingsToForm,
   setMcpEnabled,
   setSpeedModeEnabled,
+  setToolGateEnabled,
   renderSkills,
   renderFilesPanel
 }) {
@@ -34,6 +35,7 @@ export function createDataLoader({
     applySettingsToForm(data);
     setMcpEnabled(data.mcpEnabled !== false);
     setSpeedModeEnabled(data.speedModeEnabled === true);
+    setToolGateEnabled(data.toolGateEnabled !== false);
   }
 
   async function loadFiles(path = "", depth = 1) {
