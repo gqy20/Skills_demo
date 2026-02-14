@@ -1,11 +1,12 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
-import { query, type PermissionResult, type SDKMessage, type PermissionUpdate } from "@anthropic-ai/claude-agent-sdk";
+import { query, type PermissionResult, type SDKMessage, type PermissionUpdate, type SlashCommand } from "@anthropic-ai/claude-agent-sdk";
 import type { Response } from "express";
 
 const app = express();
@@ -60,11 +61,25 @@ type ChatMessage = {
   parts?: Array<{ type?: string; text?: string }>;
 };
 
+type SkillItem = {
+  name: string;
+  description: string;
+  argumentHint: string;
+  source: "project" | "user";
+};
+
 const pendingRequests = new Map<string, PendingRequest>();
 const resolvedRequests = new Map<string, RequestResolutionRecord>();
 const sessionMap = new Map<string, string>();
 const sessionSeedMap = new Map<string, string>();
 const activeQueries = new Map<string, ReturnType<typeof query>>();
+let skillsCache:
+  | {
+      key: string;
+      expiresAt: number;
+      items: SkillItem[];
+    }
+  | null = null;
 
 const DEFAULT_SETTINGS: RuntimeSettings = {
   model: process.env.ANTHROPIC_MODEL || "glm-5",
@@ -344,6 +359,127 @@ function maskToken(token: string): string {
   return `${token.slice(0, 4)}...${token.slice(-4)}`;
 }
 
+function skillsCacheKey(settings: RuntimeSettings): string {
+  return JSON.stringify({
+    speedModeEnabled: settings.speedModeEnabled,
+    mcpEnabled: settings.mcpEnabled,
+    toolGateEnabled: settings.toolGateEnabled
+  });
+}
+
+function normalizeSkillName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function summarizeSkillMarkdown(raw: string): string {
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  for (const line of lines) {
+    if (line.startsWith("#")) continue;
+    if (line.startsWith("```")) continue;
+    return line.replace(/^[-*]\s+/, "").slice(0, 220);
+  }
+  return "";
+}
+
+async function collectLocalSkills(baseDir: string, source: SkillItem["source"]): Promise<SkillItem[]> {
+  const items: SkillItem[] = [];
+  try {
+    const entries = await fs.readdir(baseDir, { withFileTypes: true });
+    await Promise.all(
+      entries.map(async (entry) => {
+        if (!entry.isDirectory()) return;
+        const skillFile = path.join(baseDir, entry.name, "SKILL.md");
+        try {
+          const raw = await fs.readFile(skillFile, "utf-8");
+          items.push({
+            name: normalizeSkillName(entry.name),
+            description: summarizeSkillMarkdown(raw),
+            argumentHint: "",
+            source
+          });
+        } catch {
+          // Ignore folders without SKILL.md
+        }
+      })
+    );
+  } catch {
+    // Ignore missing or unreadable skill directory.
+  }
+  return items;
+}
+
+async function collectOwnedSkills(): Promise<SkillItem[]> {
+  const projectDir = path.join(PROJECT_ROOT, ".claude", "skills");
+  const userDir = path.join(os.homedir(), ".claude", "skills");
+  const [projectItems, userItems] = await Promise.all([
+    collectLocalSkills(projectDir, "project"),
+    collectLocalSkills(userDir, "user")
+  ]);
+  const map = new Map<string, SkillItem>();
+  for (const item of userItems) map.set(item.name, item);
+  for (const item of projectItems) map.set(item.name, item);
+  return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function normalizeSkills(commands: SlashCommand[], owned: SkillItem[]): SkillItem[] {
+  const ownedMap = new Map<string, SkillItem>(owned.map((item) => [item.name, item]));
+  return commands
+    .map((c) => {
+      const name = c.name || "";
+      const normalized = normalizeSkillName(name);
+      const ownedItem = ownedMap.get(normalized);
+      if (!ownedItem) return null;
+      return {
+        name,
+        description: c.description || ownedItem.description || "",
+        argumentHint: c.argumentHint || "",
+        source: ownedItem.source
+      };
+    })
+    .filter((c): c is SkillItem => Boolean(c?.name))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function fetchSkills(settings: RuntimeSettings): Promise<SkillItem[]> {
+  const key = skillsCacheKey(settings);
+  const now = Date.now();
+  if (skillsCache && skillsCache.key === key && skillsCache.expiresAt > now) {
+    return skillsCache.items;
+  }
+
+  const sessionId = randomUUID();
+  const options = buildQueryOptions(settings, sessionId, undefined);
+  const queryInstance = query({
+    prompt: "List available slash commands.",
+    options
+  });
+
+  try {
+    const owned = await collectOwnedSkills();
+    if (owned.length === 0) {
+      skillsCache = { key, items: [], expiresAt: now + 30_000 };
+      return [];
+    }
+    const commands = await withTimeout(queryInstance.supportedCommands(), 5000, "supportedCommands");
+    const items = normalizeSkills(commands, owned);
+    skillsCache = { key, items, expiresAt: now + 30_000 };
+    return items;
+  } catch {
+    const fallback = await collectOwnedSkills();
+    skillsCache = { key, items: fallback, expiresAt: now + 30_000 };
+    return fallback;
+  } finally {
+    try {
+      queryInstance.close();
+    } catch {
+      // ignore close errors
+    }
+  }
+}
+
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, transport: "ui-message-stream", askQuestion: true });
 });
@@ -361,6 +497,22 @@ app.get("/api/settings", async (_req, res) => {
     hasToken: Boolean(settings.authToken),
     tokenPreview: maskToken(settings.authToken)
   });
+});
+
+app.get("/api/skills", async (_req, res) => {
+  try {
+    const settings = await readSettings();
+    const items = await fetchSkills(settings);
+    res.json({
+      ok: true,
+      count: items.length,
+      source: "claude-agent-sdk-supportedCommands+local-owned-filter",
+      items
+    });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ ok: false, error: msg, items: [] });
+  }
 });
 
 app.post("/api/settings", async (req, res) => {

@@ -6,6 +6,8 @@ const retryBtn = document.getElementById("retry-btn");
 const timelineEl = document.getElementById("timeline");
 const eventsEl = document.getElementById("events");
 const sessionMetaEl = document.getElementById("session-meta");
+const skillsMetaEl = document.getElementById("skills-meta");
+const skillsListEl = document.getElementById("skills-list");
 const pendingEl = document.getElementById("pending");
 const openSettingsBtn = document.getElementById("open-settings");
 const closeSettingsBtn = document.getElementById("close-settings");
@@ -36,6 +38,7 @@ const state = {
   isStreaming: false,
   currentAbortController: null
 };
+let skillsLoading = false;
 
 function setSession(sessionId) {
   state.currentSessionId = sessionId || null;
@@ -97,6 +100,8 @@ function updateMessage(id, updater) {
 
 function renderTimeline() {
   timelineEl.innerHTML = "";
+  const inner = document.createElement("div");
+  inner.className = "timeline-inner";
   for (const msg of state.messages) {
     const article = document.createElement("article");
     article.className = `bubble ${msg.role === "user" ? "bubble-user" : "bubble-assistant"}`.trim();
@@ -107,8 +112,9 @@ function renderTimeline() {
     const p = document.createElement("p");
     p.textContent = msg.text;
     article.appendChild(p);
-    timelineEl.appendChild(article);
+    inner.appendChild(article);
   }
+  timelineEl.appendChild(inner);
   scrollTimelineBottom();
 }
 
@@ -148,6 +154,55 @@ async function loadSettings() {
   tokenPreviewEl.textContent = data.hasToken ? `已配置 token: ${data.tokenPreview || "********"}` : "当前未配置 token";
 }
 
+function renderSkills(items) {
+  skillsListEl.innerHTML = "";
+  for (const item of items) {
+    const li = document.createElement("li");
+    li.className = "skills-item";
+    const head = document.createElement("div");
+    head.className = "skills-head";
+    const title = document.createElement("p");
+    title.className = "skills-name";
+    title.textContent = `/${item.name}`;
+    const source = document.createElement("span");
+    source.className = "skills-source";
+    source.textContent = item.source === "user" ? "user" : "project";
+    head.appendChild(title);
+    head.appendChild(source);
+    const desc = document.createElement("p");
+    desc.className = "skills-desc";
+    desc.textContent = item.description || "无描述";
+    li.appendChild(head);
+    li.appendChild(desc);
+    if (item.argumentHint) {
+      const hint = document.createElement("code");
+      hint.className = "skills-arg";
+      hint.textContent = item.argumentHint;
+      li.appendChild(hint);
+    }
+    skillsListEl.appendChild(li);
+  }
+}
+
+async function loadSkills() {
+  if (skillsLoading) return;
+  skillsLoading = true;
+  skillsMetaEl.textContent = "加载中...";
+  try {
+    const response = await fetch("/api/skills");
+    if (!response.ok) throw new Error((await response.text()) || response.statusText);
+    const data = await response.json();
+    const items = Array.isArray(data.items) ? data.items : [];
+    skillsMetaEl.textContent = `仅显示用户/项目 skills，共 ${items.length} 个`;
+    renderSkills(items);
+  } catch (error) {
+    skillsMetaEl.textContent = `加载失败: ${error instanceof Error ? error.message : String(error)}`;
+    skillsListEl.innerHTML = "";
+  } finally {
+    skillsLoading = false;
+  }
+}
+
 function buildSettingsPayload({ mcpEnabled, speedModeEnabled }) {
   return {
     model: settingModelInput.value.trim(),
@@ -175,6 +230,7 @@ async function saveSettingsWithPayload(payload) {
   setSpeedModeEnabled(data.speedModeEnabled === true);
   tokenPreviewEl.textContent = data.hasToken ? `已配置 token: ${data.tokenPreview || "********"}` : "当前未配置 token";
   settingAuthTokenInput.value = "";
+  await loadSkills();
   return data;
 }
 
@@ -461,6 +517,8 @@ setStreamingState(false);
 loadSettings().catch(() => {
   tokenPreviewEl.textContent = "配置读取失败，请稍后重试。";
 });
+loadSkills();
+setInterval(loadSkills, 3000);
 
 toggleMcpBtn.addEventListener("click", async () => {
   try {

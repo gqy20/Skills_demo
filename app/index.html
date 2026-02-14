@@ -24,11 +24,7 @@
           <p>流式响应 + AskUserQuestion 交互闭环</p>
         </header>
 
-        <section id="timeline" class="timeline" aria-live="polite">
-          <article class="bubble bubble-assistant">
-            <p>准备就绪。输入任务后将实时显示回复。</p>
-          </article>
-        </section>
+        <section id="timeline" class="timeline" aria-live="polite"></section>
 
         <form id="chat-form" class="composer">
           <label for="message">Prompt</label>
@@ -45,6 +41,12 @@
         <section class="panel">
           <h2>Session</h2>
           <p id="session-meta" class="session-tag">Session: (new)</p>
+        </section>
+
+        <section class="panel">
+          <h2>Skills</h2>
+          <div id="skills-meta" class="session-tag">加载中...</div>
+          <ul id="skills-list" class="skills-list"></ul>
         </section>
 
         <section class="panel">

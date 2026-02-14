@@ -8,6 +8,7 @@
 - 支持 `AskUserQuestion`/权限请求回传：前端通过 `POST /api/input` 响应
 - 支持请求取消：前端通过 `POST /api/input/cancel` 中止待处理请求
 - 支持流式停止：前端通过 `POST /api/chat/stop` 中止当前流
+- 支持技能列表读取：前端通过 `GET /api/skills` 展示可用 skills
 - 提供设置界面，可配置并持久化：
   - `ANTHROPIC_MODEL`
   - `ANTHROPIC_BASE_URL`
@@ -46,6 +47,7 @@ http://localhost:3000
 
 - 当前为 SSE (`text/event-stream`) + AI SDK UI Message Stream 协议（`x-vercel-ai-ui-message-stream: v1`）
 - 请求体对齐 AI SDK：`{ id, messages }`
+- Skills 列表基于 Claude Agent SDK 原生 `supportedCommands()` 获取并缓存（30s）
 - 完整流式开启方式：
   - `query(..., { includePartialMessages: true })`
   - 后端将 `stream_event/content_block_delta/text_delta` 转换为 `text-delta` 协议块
