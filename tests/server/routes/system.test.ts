@@ -158,4 +158,58 @@ describe("registerSystemRoutes", () => {
       depth: 3
     });
   });
+
+  it("merges and persists settings in POST /api/settings", async () => {
+    const ws = await makeWorkspace();
+    process.env.AGENT_WORKSPACE_ROOT = ws;
+    process.env.AGENT_WORKSPACES = "";
+    await writeSettings(ws, {
+      ...defaults,
+      authToken: "old-token",
+      mineruApiKey: "old-mineru",
+      speedModeEnabled: false
+    });
+
+    const registry = new WorkspaceRegistry();
+    const { app, posts, gets } = makeApp();
+    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults });
+
+    const postRes = makeMockRes();
+    await posts.get("/api/settings")!(
+      {
+        body: {
+          model: "  next-model  ",
+          baseUrl: "  https://next.example  ",
+          authToken: "",
+          mineruApiKey: "",
+          keepExistingToken: true,
+          keepExistingMineruKey: false,
+          speedModeEnabled: true
+        },
+        query: {}
+      } as Request,
+      postRes
+    );
+
+    expect(postRes.statusCode).toBe(200);
+    expect(postRes.body).toMatchObject({
+      ok: true,
+      model: "next-model",
+      baseUrl: "https://next.example",
+      speedModeEnabled: true,
+      hasToken: true,
+      hasMineruKey: false
+    });
+
+    const getRes = makeMockRes();
+    await gets.get("/api/settings")!({ body: {}, query: {} } as Request, getRes);
+    expect(getRes.statusCode).toBe(200);
+    expect(getRes.body).toMatchObject({
+      model: "next-model",
+      baseUrl: "https://next.example",
+      speedModeEnabled: true,
+      hasToken: true,
+      hasMineruKey: false
+    });
+  });
 });
