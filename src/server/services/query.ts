@@ -46,7 +46,8 @@ function buildQueryEnv(settings: RuntimeSettings): Record<string, string | undef
     ...process.env,
     ANTHROPIC_MODEL: settings.model,
     ANTHROPIC_BASE_URL: settings.baseUrl,
-    ANTHROPIC_AUTH_TOKEN: settings.authToken
+    ANTHROPIC_AUTH_TOKEN: settings.authToken,
+    MINERU_API_KEY: settings.mineruApiKey
   };
 }
 

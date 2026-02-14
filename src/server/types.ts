@@ -2,6 +2,7 @@ export type RuntimeSettings = {
   model: string;
   baseUrl: string;
   authToken: string;
+  mineruApiKey: string;
   mcpEnabled: boolean;
   speedModeEnabled: boolean;
   toolGateEnabled: boolean;

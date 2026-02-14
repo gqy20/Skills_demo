@@ -262,6 +262,9 @@ export function registerChatRoutes({
 
       if (!settings.speedModeEnabled) {
         await applyMcpToggle(queryInstance, workspace.root, settings.mcpEnabled);
+        if (!closed) {
+          writeSseData(res, { type: "data-mcp-toggled", data: { enabled: settings.mcpEnabled } });
+        }
         writeDebugSse(res, closed, debugSseEnabled, traceId, "mcp_toggled", { enabled: settings.mcpEnabled });
       }
 
@@ -282,6 +285,7 @@ export function registerChatRoutes({
               model: event.model || "",
               permissionMode: event.permissionMode || "",
               toolCount: tools.length,
+              tools: tools.slice(0, 80),
               hasAskUserQuestionTool: tools.some((tool) => tool.trim().toLowerCase() === "askuserquestion")
             }
           });
@@ -301,6 +305,24 @@ export function registerChatRoutes({
 
         const lifecycle = extractSdkLifecycle(event);
         if (lifecycle) {
+          if (lifecycle.category === "tool_progress" && !closed) {
+            writeSseData(res, {
+              type: "data-tool-progress",
+              data: {
+                toolName: lifecycle.toolName || "",
+                toolUseId: lifecycle.toolUseId || "",
+                elapsedSeconds: lifecycle.elapsedSeconds ?? null
+              }
+            });
+          }
+          if (lifecycle.category === "tool_use_summary" && !closed) {
+            writeSseData(res, {
+              type: "data-tool-use-summary",
+              data: {
+                summary: lifecycle.summary || ""
+              }
+            });
+          }
           writeDebugSse(res, closed, debugSseEnabled, traceId, "sdk_lifecycle", lifecycle);
         }
 

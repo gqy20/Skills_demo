@@ -15,6 +15,7 @@ export async function readSettings(workspaceRoot: string, defaults: RuntimeSetti
       model: parsed.model || defaults.model,
       baseUrl: parsed.baseUrl || defaults.baseUrl,
       authToken: parsed.authToken || defaults.authToken,
+      mineruApiKey: parsed.mineruApiKey || defaults.mineruApiKey,
       mcpEnabled: typeof parsed.mcpEnabled === "boolean" ? parsed.mcpEnabled : defaults.mcpEnabled,
       speedModeEnabled:
         typeof parsed.speedModeEnabled === "boolean" ? parsed.speedModeEnabled : defaults.speedModeEnabled,

@@ -5,6 +5,11 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 const MAX_EVENT_LOG = 120;
+const MAX_ACTIVITY_LOG = 80;
+const QUICK_PROMPTS = [
+  { title: "文献综述分析", text: "请基于当前文献目录，提取研究问题、方法、结论并给出研究空白。" },
+  { title: "科研初稿生成", text: "请根据已有文献与项目背景，生成研究报告初稿（摘要、方法、实验设计、讨论）。" }
+];
 
 function createId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -22,6 +27,12 @@ function parseError(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
+function shortText(value, max = 120) {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text) return "";
+  return text.length > max ? `${text.slice(0, max)}...` : text;
+}
+
 export default function App() {
   const [workspaces, setWorkspaces] = useState([]);
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState("");
@@ -29,6 +40,12 @@ export default function App() {
   const [settings, setSettings] = useState({
     model: "",
     baseUrl: "",
+    authToken: "",
+    hasToken: false,
+    tokenPreview: "",
+    mineruApiKey: "",
+    hasMineruKey: false,
+    mineruKeyPreview: "",
     mcpEnabled: true,
     speedModeEnabled: false,
     toolGateEnabled: true,
@@ -36,6 +53,7 @@ export default function App() {
     debugSseEnabled: false
   });
   const [events, setEvents] = useState([]);
+  const [activityFeed, setActivityFeed] = useState([]);
   const [skills, setSkills] = useState([]);
   const [files, setFiles] = useState([]);
   const [controlsOpen, setControlsOpen] = useState(false);
@@ -59,6 +77,11 @@ export default function App() {
     lastEvent: ""
   });
   const controlsRef = useRef(null);
+  const timelineRef = useRef(null);
+
+  const pushActivity = useCallback((kind, text) => {
+    setActivityFeed((prev) => [{ id: createId(), kind, text, ts: Date.now() }, ...prev].slice(0, MAX_ACTIVITY_LOG));
+  }, []);
 
   const workspaceQuery = useCallback(
     (pathname) => {
@@ -129,10 +152,7 @@ export default function App() {
       const nextById = { ...prev.byId };
       delete nextById[requestId];
       const nextOrder = prev.order.filter((id) => id !== requestId);
-      const nextHistory = [{ requestId, kind: target.kind, toolName: target.toolName, status }, ...prev.history].slice(
-        0,
-        12
-      );
+      const nextHistory = [{ requestId, kind: target.kind, toolName: target.toolName, status }, ...prev.history].slice(0, 12);
       return {
         ...prev,
         byId: nextById,
@@ -164,10 +184,37 @@ export default function App() {
     transport,
     onData: (part) => {
       setEvents((prev) => [...prev.slice(-(MAX_EVENT_LOG - 1)), part]);
+
       if (part?.type === "data-session" && part?.data?.sessionId) {
         setCurrentSessionId(part.data.sessionId);
         return;
       }
+
+      if (part?.type === "data-sdk-init") {
+        const model = shortText(part?.data?.model || "-", 40);
+        const toolCount = Number(part?.data?.toolCount || 0);
+        pushActivity("sdk", `SDK 初始化 · model=${model} · tools=${toolCount}`);
+        return;
+      }
+
+      if (part?.type === "data-mcp-toggled") {
+        pushActivity("mcp", `MCP ${part?.data?.enabled ? "已启用" : "已禁用"}`);
+        return;
+      }
+
+      if (part?.type === "data-tool-progress") {
+        const name = shortText(String(part?.data?.toolName || "unknown"), 48);
+        const elapsed = typeof part?.data?.elapsedSeconds === "number" ? ` · ${part.data.elapsedSeconds}s` : "";
+        pushActivity("tool", `调用 ${name}${elapsed}`);
+        return;
+      }
+
+      if (part?.type === "data-tool-use-summary") {
+        const summary = shortText(String(part?.data?.summary || ""), 200);
+        if (summary) pushActivity("tool", summary);
+        return;
+      }
+
       if (part?.type === "data-tool-gate-status") {
         setDiagnostics((prev) => ({
           ...prev,
@@ -176,7 +223,9 @@ export default function App() {
         }));
         return;
       }
+
       if (part?.type === "data-tool-gate-hit") {
+        pushActivity("gate", `Tool Gate: ${String(part?.data?.toolName || "unknown")}`);
         setDiagnostics((prev) => ({
           ...prev,
           gateHits: prev.gateHits + 1,
@@ -185,15 +234,20 @@ export default function App() {
         }));
         return;
       }
+
       if (part?.type === "data-ask-user-question-created") {
+        pushActivity("ask", "AskUserQuestion 待处理");
         setDiagnostics((prev) => ({ ...prev, askCreated: prev.askCreated + 1, lastEvent: "ask-created" }));
         upsertPending("ask_user_question", part.data || {});
         return;
       }
+
       if (part?.type === "data-permission-request-created") {
+        pushActivity("ask", `权限确认: ${String(part?.data?.toolName || "unknown")}`);
         upsertPending("permission_request", part.data || {});
         return;
       }
+
       if (
         part?.type === "data-ask-user-question-resolved" ||
         part?.type === "data-ask-user-question-timeout" ||
@@ -203,6 +257,7 @@ export default function App() {
         resolvePending(part.data || {}, part.type.split("-").slice(-1)[0]);
         return;
       }
+
       if (
         part?.type === "data-permission-request-resolved" ||
         part?.type === "data-permission-request-timeout" ||
@@ -218,6 +273,13 @@ export default function App() {
 
   const isStreaming = status === "submitted" || status === "streaming";
   const blockingPending = Boolean(activePending);
+  const runtimeStage = blockingPending
+    ? "等待用户输入"
+    : isStreaming
+      ? diagnostics.gateHits > 0
+        ? "工具执行中"
+        : "处理中"
+      : "空闲";
 
   const loadWorkspaces = useCallback(async () => {
     const data = await apiGetJson("/api/workspaces", { workspaceId: "" });
@@ -232,6 +294,12 @@ export default function App() {
     setSettings({
       model: data.model || "",
       baseUrl: data.baseUrl || "",
+      authToken: "",
+      hasToken: data.hasToken === true,
+      tokenPreview: data.tokenPreview || "",
+      mineruApiKey: "",
+      hasMineruKey: data.hasMineruKey === true,
+      mineruKeyPreview: data.mineruKeyPreview || "",
       mcpEnabled: data.mcpEnabled !== false,
       speedModeEnabled: data.speedModeEnabled === true,
       toolGateEnabled: data.toolGateEnabled !== false,
@@ -282,15 +350,31 @@ export default function App() {
     return () => document.removeEventListener("click", onDocClick);
   }, []);
 
+  useEffect(() => {
+    const el = timelineRef.current;
+    if (!el) return;
+    const raf = requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [messages, isStreaming, blockingPending]);
+
   const saveSettings = useCallback(
     async (next) => {
       const data = await apiPostJson("/api/settings", {
         ...next,
-        keepExistingToken: true
+        keepExistingToken: next.authToken ? false : true,
+        keepExistingMineruKey: next.mineruApiKey ? false : true
       });
       setSettings({
         model: data.model || "",
         baseUrl: data.baseUrl || "",
+        authToken: "",
+        hasToken: data.hasToken === true,
+        tokenPreview: data.tokenPreview || "",
+        mineruApiKey: "",
+        hasMineruKey: data.hasMineruKey === true,
+        mineruKeyPreview: data.mineruKeyPreview || "",
         mcpEnabled: data.mcpEnabled !== false,
         speedModeEnabled: data.speedModeEnabled === true,
         toolGateEnabled: data.toolGateEnabled !== false,
@@ -318,6 +402,7 @@ export default function App() {
       lastToolName: "",
       lastEvent: ""
     }));
+    setActivityFeed([]);
     await sendMessage({ id: createId(), text });
   };
 
@@ -369,6 +454,26 @@ export default function App() {
                 </button>
                 <div className={`controls-popover ${controlsOpen ? "" : "hidden"}`}>
                   <button
+                    className={`btn-secondary ${settings.hasToken ? "" : "is-off"}`}
+                    type="button"
+                    onClick={() => {
+                      setControlsOpen(false);
+                      setSettingsOpen(true);
+                    }}
+                  >
+                    API Key: {settings.hasToken ? "已配置" : "未配置"}
+                  </button>
+                  <button
+                    className={`btn-secondary ${settings.hasMineruKey ? "" : "is-off"}`}
+                    type="button"
+                    onClick={() => {
+                      setControlsOpen(false);
+                      setSettingsOpen(true);
+                    }}
+                  >
+                    MinerU: {settings.hasMineruKey ? "已配置" : "未配置"}
+                  </button>
+                  <button
                     className={`btn-secondary ${settings.mcpEnabled ? "" : "is-off"}`}
                     type="button"
                     onClick={async () => {
@@ -377,16 +482,6 @@ export default function App() {
                     }}
                   >
                     MCP: {settings.mcpEnabled ? "ON" : "OFF"}
-                  </button>
-                  <button
-                    className={`btn-secondary ${settings.speedModeEnabled ? "" : "is-off"}`}
-                    type="button"
-                    onClick={async () => {
-                      await saveSettings({ ...settings, speedModeEnabled: !settings.speedModeEnabled });
-                      setControlsOpen(false);
-                    }}
-                  >
-                    Speed: {settings.speedModeEnabled ? "ON" : "OFF"}
                   </button>
                   <button
                     className={`btn-secondary ${settings.toolGateEnabled ? "" : "is-off"}`}
@@ -411,36 +506,74 @@ export default function App() {
                 </div>
               </div>
             </div>
-            <p>AI SDK useChat + Claude Agent SDK</p>
+            <div className="runtime-meta">
+              <span className="meta-chip">Workspace: {currentWorkspaceId || "-"}</span>
+              <span className="meta-chip">Model: {settings.model || "-"}</span>
+              <span className="meta-chip">API Key: {settings.hasToken ? "已配置" : "未配置"}</span>
+              <span className="meta-chip">MinerU: {settings.hasMineruKey ? "已配置" : "未配置"}</span>
+              <span className="meta-chip">Gate: {settings.toolGateEnabled ? "ON" : "OFF"}</span>
+            </div>
+            <div className={`runtime-stage runtime-${blockingPending ? "pending" : isStreaming ? "streaming" : "idle"}`}>
+              当前阶段: {runtimeStage}
+            </div>
           </header>
 
           <section className="timeline-wrap">
-            <section className="timeline">
+            <section className="timeline" ref={timelineRef}>
               <div className="timeline-inner">
                 {messages.length === 0 && (
-                  <article className="bubble bubble-assistant">
-                    <p>准备就绪。输入任务后将实时显示回复。</p>
-                  </article>
+                  <div className="empty-actions">
+                    {QUICK_PROMPTS.map((item) => (
+                      <button
+                        key={item.title}
+                        type="button"
+                        className="empty-action-card"
+                        onClick={() => submitUserMessage(item.text).catch(() => {})}
+                      >
+                        <strong>{item.title}</strong>
+                        <span>{item.text}</span>
+                      </button>
+                    ))}
+                  </div>
                 )}
+
+                {activityFeed.length > 0 && (
+                  <section className="activity-strip">
+                    <strong>调用轨迹</strong>
+                    <ul>
+                      {activityFeed.slice(0, 6).map((item) => (
+                        <li key={item.id}>
+                          <span className={`activity-dot activity-${item.kind}`} />
+                          {item.text}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+
                 {(() => {
                   const lastAssistantId = messages
                     .slice()
                     .reverse()
                     .find((item) => item.role === "assistant")?.id;
+
                   return messages.map((msg) => {
                     const isLastAssistant = msg.role === "assistant" && lastAssistantId === msg.id;
                     const text = textFromMessage(msg);
+                    const hasVisibleText = text.trim().length > 0;
+                    const showProcessing = msg.role === "assistant" && isLastAssistant && isStreaming && !hasVisibleText;
+                    if (msg.role === "assistant" && !showProcessing && !hasVisibleText) return null;
                     return (
                       <article
                         key={msg.id}
                         className={`bubble ${msg.role === "user" ? "bubble-user" : "bubble-assistant"} ${
-                          isLastAssistant && isStreaming ? "bubble-streaming" : ""
-                        }`}
+                          isLastAssistant && isStreaming && !showProcessing ? "bubble-streaming" : ""
+                        } ${showProcessing ? "bubble-processing" : ""}`}
                       >
-                        {msg.role === "assistant" ? (
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{text || ""}</ReactMarkdown>
+                        {msg.role === "assistant" && !showProcessing ? (
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
                         ) : (
-                          <p>{text}</p>
+                          <p>处理中</p>
                         )}
                       </article>
                     );
@@ -456,6 +589,7 @@ export default function App() {
                 <p>
                   <strong>{activePending.kind === "ask_user_question" ? "AskUserQuestion" : "Tool Permission"}</strong>
                 </p>
+                <p className="pending-why">为了继续执行任务，需要你先确认本步骤输入。</p>
                 {activePending.kind === "permission_request" ? (
                   <>
                     <pre className="output">{JSON.stringify(activePending.input || {}, null, 2)}</pre>
@@ -469,9 +603,7 @@ export default function App() {
                       <button
                         type="button"
                         className="btn-secondary"
-                        onClick={() =>
-                          submitPending(activePending.requestId, { behavior: "deny", message: "User denied from web UI." })
-                        }
+                        onClick={() => submitPending(activePending.requestId, { behavior: "deny", message: "User denied from web UI." })}
                       >
                         拒绝
                       </button>
@@ -498,9 +630,7 @@ export default function App() {
                                 type="radio"
                                 name={`q_${draft.index}`}
                                 checked={checked}
-                                onChange={() =>
-                                  setAskDraft({ ...draft, answers: { ...draft.answers, [key]: label } })
-                                }
+                                onChange={() => setAskDraft({ ...draft, answers: { ...draft.answers, [key]: label } })}
                               />{" "}
                               {label}
                             </label>
@@ -518,9 +648,7 @@ export default function App() {
                       <button
                         type="button"
                         disabled={draft.index >= askQuestions.length - 1}
-                        onClick={() =>
-                          setAskDraft({ ...draft, index: Math.min(askQuestions.length - 1, draft.index + 1) })
-                        }
+                        onClick={() => setAskDraft({ ...draft, index: Math.min(askQuestions.length - 1, draft.index + 1) })}
                       >
                         下一题
                       </button>
@@ -538,12 +666,7 @@ export default function App() {
                       <button
                         type="button"
                         className="btn-secondary"
-                        onClick={() =>
-                          submitPending(activePending.requestId, {
-                            behavior: "deny",
-                            message: "User denied AskUserQuestion."
-                          })
-                        }
+                        onClick={() => submitPending(activePending.requestId, { behavior: "deny", message: "User denied AskUserQuestion." })}
                       >
                         拒绝
                       </button>
@@ -561,36 +684,37 @@ export default function App() {
               submitUserMessage().catch(() => {});
             }}
           >
-            <label htmlFor="message">Prompt</label>
-            <textarea
-              id="message"
-              rows={4}
-              value={inputText}
-              disabled={blockingPending}
-              placeholder="例如：/commander status"
-              onChange={(event) => setInputText(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  submitUserMessage().catch(() => {});
-                }
-              }}
-            />
-            <div className="composer-actions">
-              <button type="submit" disabled={isStreaming || blockingPending}>
-                发送
-              </button>
-              <button type="button" className="btn-secondary" disabled={!isStreaming} onClick={() => stop()}>
-                停止
-              </button>
-              <button
-                type="button"
-                className="btn-secondary"
-                disabled={isStreaming || !lastUserText || blockingPending}
-                onClick={() => submitUserMessage(lastUserText).catch(() => {})}
-              >
-                重试
-              </button>
+            <div className="composer-box">
+              <textarea
+                id="message"
+                rows={4}
+                value={inputText}
+                disabled={blockingPending}
+                placeholder="例如：/commander status"
+                onChange={(event) => setInputText(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    submitUserMessage().catch(() => {});
+                  }
+                }}
+              />
+              <div className="composer-actions composer-actions-inline">
+                <button type="submit" disabled={isStreaming || blockingPending}>
+                  发送
+                </button>
+                <button type="button" className="btn-secondary" disabled={!isStreaming} onClick={() => stop()}>
+                  停止
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={isStreaming || !lastUserText || blockingPending}
+                  onClick={() => submitUserMessage(lastUserText).catch(() => {})}
+                >
+                  重试
+                </button>
+              </div>
             </div>
           </form>
         </section>
@@ -606,11 +730,6 @@ export default function App() {
               ))}
             </select>
             <p className="session-tag">{workspaces.find((ws) => ws.id === currentWorkspaceId)?.root || ""}</p>
-          </section>
-
-          <section className="panel">
-            <h2>Session</h2>
-            <p className="session-tag">Session: {currentSessionId || "(new)"}</p>
           </section>
 
           <section className="panel">
@@ -684,30 +803,20 @@ export default function App() {
             <input value={settings.model} onChange={(e) => setSettings((s) => ({ ...s, model: e.target.value }))} />
             <label>ANTHROPIC_BASE_URL</label>
             <input value={settings.baseUrl} onChange={(e) => setSettings((s) => ({ ...s, baseUrl: e.target.value }))} />
-            <label className="pending-option">
-              <input
-                type="checkbox"
-                checked={settings.mcpEnabled}
-                onChange={(e) => setSettings((s) => ({ ...s, mcpEnabled: e.target.checked }))}
-              />
-              启用 MCP
-            </label>
-            <label className="pending-option">
-              <input
-                type="checkbox"
-                checked={settings.speedModeEnabled}
-                onChange={(e) => setSettings((s) => ({ ...s, speedModeEnabled: e.target.checked }))}
-              />
-              启用性能模式
-            </label>
-            <label className="pending-option">
-              <input
-                type="checkbox"
-                checked={settings.toolGateEnabled}
-                onChange={(e) => setSettings((s) => ({ ...s, toolGateEnabled: e.target.checked }))}
-              />
-              启用交互网关
-            </label>
+            <label>ANTHROPIC_AUTH_TOKEN (API Key)</label>
+            <input
+              type="password"
+              value={settings.authToken}
+              placeholder={settings.hasToken ? `已保存: ${settings.tokenPreview}` : "请输入 API Key"}
+              onChange={(e) => setSettings((s) => ({ ...s, authToken: e.target.value }))}
+            />
+            <label>MINERU_API_KEY</label>
+            <input
+              type="password"
+              value={settings.mineruApiKey}
+              placeholder={settings.hasMineruKey ? `已保存: ${settings.mineruKeyPreview}` : "请输入 MinerU API Key"}
+              onChange={(e) => setSettings((s) => ({ ...s, mineruApiKey: e.target.value }))}
+            />
             <div className="pending-actions">
               <button type="submit">保存配置</button>
             </div>

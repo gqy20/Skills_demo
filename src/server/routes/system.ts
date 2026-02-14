@@ -50,7 +50,9 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings }
       debugEnabled: settings.debugEnabled,
       debugSseEnabled: settings.debugSseEnabled,
       hasToken: Boolean(settings.authToken),
-      tokenPreview: maskToken(settings.authToken)
+      tokenPreview: maskToken(settings.authToken),
+      hasMineruKey: Boolean(settings.mineruApiKey),
+      mineruKeyPreview: maskToken(settings.mineruApiKey)
     });
   });
 
@@ -112,6 +114,7 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings }
     const model = typeof req.body?.model === "string" ? req.body.model.trim() : current.model;
     const baseUrl = typeof req.body?.baseUrl === "string" ? req.body.baseUrl.trim() : current.baseUrl;
     const tokenInput = typeof req.body?.authToken === "string" ? req.body.authToken.trim() : "";
+    const mineruKeyInput = typeof req.body?.mineruApiKey === "string" ? req.body.mineruApiKey.trim() : "";
     const mcpEnabled = typeof req.body?.mcpEnabled === "boolean" ? req.body.mcpEnabled : current.mcpEnabled;
     const speedModeEnabled =
       typeof req.body?.speedModeEnabled === "boolean" ? req.body.speedModeEnabled : current.speedModeEnabled;
@@ -121,11 +124,13 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings }
     const debugSseEnabled =
       typeof req.body?.debugSseEnabled === "boolean" ? req.body.debugSseEnabled : current.debugSseEnabled;
     const keepExistingToken = req.body?.keepExistingToken !== false;
+    const keepExistingMineruKey = req.body?.keepExistingMineruKey !== false;
 
     const next: RuntimeSettings = {
       model: model || current.model,
       baseUrl: baseUrl || current.baseUrl,
       authToken: tokenInput ? tokenInput : keepExistingToken ? current.authToken : "",
+      mineruApiKey: mineruKeyInput ? mineruKeyInput : keepExistingMineruKey ? current.mineruApiKey : "",
       mcpEnabled,
       speedModeEnabled,
       toolGateEnabled,
@@ -146,7 +151,9 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings }
       debugEnabled: next.debugEnabled,
       debugSseEnabled: next.debugSseEnabled,
       hasToken: Boolean(next.authToken),
-      tokenPreview: maskToken(next.authToken)
+      tokenPreview: maskToken(next.authToken),
+      hasMineruKey: Boolean(next.mineruApiKey),
+      mineruKeyPreview: maskToken(next.mineruApiKey)
     });
   });
 }
