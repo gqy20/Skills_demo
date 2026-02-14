@@ -1,3 +1,7 @@
+import { apiGetJson as requestGetJson, apiPostJson as requestPostJson } from "./api.js";
+import { streamChatUi } from "./chat.js";
+import { renderPendingPanel as renderPendingUi } from "./pending-ui.js";
+
 const form = document.getElementById("chat-form");
 const messageInput = document.getElementById("message");
 const sendBtn = document.getElementById("send-btn");
@@ -66,37 +70,12 @@ function setSession(sessionId) {
   sessionMetaEl.textContent = state.currentSessionId ? `Session: ${state.currentSessionId}` : "Session: (new)";
 }
 
-function apiUrl(pathname, params = {}) {
-  const url = new URL(pathname, window.location.origin);
-  const withWorkspace = { ...params };
-  if (state.currentWorkspaceId && withWorkspace.workspaceId === undefined) {
-    withWorkspace.workspaceId = state.currentWorkspaceId;
-  }
-  for (const [key, value] of Object.entries(withWorkspace)) {
-    if (value === undefined || value === null || value === "") continue;
-    url.searchParams.set(key, String(value));
-  }
-  return `${url.pathname}${url.search}`;
-}
-
 async function apiGetJson(pathname, params = {}) {
-  const response = await fetch(apiUrl(pathname, params));
-  if (!response.ok) throw new Error((await response.text()) || response.statusText);
-  return response.json();
+  return requestGetJson(pathname, params, state.currentWorkspaceId);
 }
 
 async function apiPostJson(pathname, body = {}) {
-  const payload = { ...body };
-  if (state.currentWorkspaceId && payload.workspaceId === undefined) {
-    payload.workspaceId = state.currentWorkspaceId;
-  }
-  const response = await fetch(pathname, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-  if (!response.ok) throw new Error((await response.text()) || response.statusText);
-  return response.json();
+  return requestPostJson(pathname, body, state.currentWorkspaceId);
 }
 
 function showSettingsModal(show) {
@@ -504,37 +483,10 @@ function resolvePendingLifecycle(data, status) {
   removePendingLocal(requestId);
 }
 
-function pendingLabel(kind, toolName) {
-  return kind === "ask_user_question" ? "AskUserQuestion" : toolName || "Permission";
-}
-
 function getActivePendingList() {
   return state.pendingOrder
     .map((id) => state.pendingById.get(id))
     .filter((item) => item?.status === "pending");
-}
-
-function renderPendingQueue(activeList) {
-  if (!activeList.length) return '<p class="hint">待处理队列: 0</p>';
-  return `<ul class="pending-queue">${activeList
-    .map((item) => {
-      const requestId = escapeHtml(item.requestId);
-      const label = escapeHtml(pendingLabel(item.kind, item.toolName));
-      return `<li class="${item.requestId === state.activePendingId ? "is-active" : ""}"><code>${requestId.slice(0, 8)}</code> ${label} <span class="pending-badge pending-badge-pending">pending</span></li>`;
-    })
-    .join("")}</ul>`;
-}
-
-function renderPendingHistory() {
-  if (!state.pendingHistory.length) return '<p class="hint">暂无历史状态</p>';
-  return `<ul class="pending-history">${state.pendingHistory
-    .map((item) => {
-      const label = escapeHtml(pendingLabel(item.kind, item.toolName));
-      const status = escapeHtml(item.status);
-      const badgeClass = `pending-badge-${status}`.replace(/[^a-z-]/g, "");
-      return `<li><span>${label}</span> <span class="pending-badge ${badgeClass}">${status}</span></li>`;
-    })
-    .join("")}</ul>`;
 }
 
 function recordAndRemovePending(requestId, status) {
@@ -561,173 +513,54 @@ async function submitPendingCancel(requestId) {
   }
 }
 
-function bindPermissionPendingHandlers(active) {
-  pendingEl.querySelector("#pending-allow").addEventListener("click", async () => {
-    const alwaysAllow = pendingEl.querySelector("#always-allow")?.checked === true;
-    await submitPendingDecision(active.requestId, { behavior: "allow", alwaysAllow }, "allow", "提交失败");
-  });
-
-  pendingEl.querySelector("#pending-deny").addEventListener("click", async () => {
-    await submitPendingDecision(
-      active.requestId,
-      { behavior: "deny", message: "User denied from web UI." },
-      "deny",
-      "提交失败"
-    );
-  });
-
-  pendingEl.querySelector("#pending-cancel").addEventListener("click", async () => {
-    await submitPendingCancel(active.requestId);
-  });
-}
-
-function bindAskPendingHandlers(active, questions) {
-  const askForm = pendingEl.querySelector("#ask-form");
-  const denyBtn = pendingEl.querySelector("#ask-deny");
-  const cancelBtn = pendingEl.querySelector("#ask-cancel");
-
-  askForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const answers = {};
-    questions.forEach((q, index) => {
-      const key = q?.id || q?.question || `q_${index}`;
-      const selected = askForm.querySelector(`input[name="q_${index}"]:checked`)?.value || "";
-      const custom = askForm.querySelector(`input[data-free-input="${index}"]`)?.value?.trim() || "";
-      const answer = custom || selected;
-      if (answer) answers[key] = answer;
-    });
-
-    await submitPendingDecision(
-      active.requestId,
-      {
-        behavior: "allow",
-        updatedInput: {
-          ...(active.input || {}),
-          answers
-        }
-      },
-      "allow",
-      "提交失败"
-    );
-  });
-
-  denyBtn.addEventListener("click", async () => {
-    await submitPendingDecision(
-      active.requestId,
-      { behavior: "deny", message: "User denied AskUserQuestion." },
-      "deny",
-      "提交失败"
-    );
-  });
-
-  cancelBtn.addEventListener("click", async () => {
-    await submitPendingCancel(active.requestId);
-  });
-}
-
 function renderPendingPanel() {
   const active = getActivePending();
-  const activeList = getActivePendingList();
-  const queueList = renderPendingQueue(activeList);
-  const historyList = renderPendingHistory();
-
-  if (!active) {
-    pendingEl.className = "pending-empty";
-    pendingEl.innerHTML = `<p>当前没有待处理交互</p><h3>最近状态</h3>${historyList}`;
-    return;
-  }
-  const queueBadge = `<h3>待处理队列</h3>${queueList}`;
-
-  if (active.kind === "permission_request") {
-    const tool = escapeHtml(active.toolName || "unknown");
-    const input = escapeHtml(JSON.stringify(active.input || {}, null, 2));
-    pendingEl.className = "";
-    pendingEl.innerHTML = `
-      <p><strong>Tool Permission Request</strong></p>
-      ${queueBadge}
-      <p>tool: <code>${tool}</code></p>
-      <pre class="output">${input}</pre>
-      <label class="pending-option">
-        <input id="always-allow" type="checkbox" />
-        同意并应用建议权限（always allow）
-      </label>
-      <div class="pending-actions">
-        <button id="pending-allow" type="button">允许</button>
-        <button id="pending-deny" type="button">拒绝</button>
-        <button id="pending-cancel" type="button">取消请求</button>
-      </div>
-      <h3>最近状态</h3>
-      ${historyList}
-    `;
-    bindPermissionPendingHandlers(active);
-    return;
-  }
-
-  const questions = Array.isArray(active.input?.questions) ? active.input.questions : [];
-  const formHtml = questions
-    .map((q, index) => {
-      const title = escapeHtml(q?.question || `Question ${index + 1}`);
-      const options = Array.isArray(q?.options) ? q.options : [];
-      const optionsHtml = options
-        .map((opt, i) => {
-          const label = escapeHtml(opt?.label || `Option ${i + 1}`);
-          return `<label class="pending-option"><input type="radio" name="q_${index}" value="${label}" /> ${label}</label>`;
-        })
-        .join("");
-      return `
-        <fieldset class="pending-fieldset">
-          <legend>${title}</legend>
-          ${optionsHtml || "<p>无预置选项，请填写文本答案。</p>"}
-          <input data-free-input="${index}" type="text" placeholder="可选：自定义答案" />
-        </fieldset>
-      `;
-    })
-    .join("");
-
-  pendingEl.className = "";
-  pendingEl.innerHTML = `
-    <p><strong>AskUserQuestion</strong></p>
-    ${queueBadge}
-    <form id="ask-form">
-      ${formHtml}
-      <div class="pending-actions">
-        <button type="submit">提交答案</button>
-        <button type="button" id="ask-deny">拒绝</button>
-        <button type="button" id="ask-cancel">取消请求</button>
-      </div>
-    </form>
-    <h3>最近状态</h3>
-    ${historyList}
-  `;
-  bindAskPendingHandlers(active, questions);
-}
-
-function parseSseChunk(chunk, stateRef, onPayload) {
-  stateRef.buffer += chunk;
-  const parts = stateRef.buffer.split("\n\n");
-  stateRef.buffer = parts.pop() || "";
-
-  for (const part of parts) {
-    const lines = part.split("\n");
-    const dataLines = [];
-
-    for (const line of lines) {
-      if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+  renderPendingUi({
+    pendingEl,
+    active,
+    activeList: getActivePendingList(),
+    history: state.pendingHistory,
+    activePendingId: state.activePendingId,
+    onPermissionAllow: async (requestId, alwaysAllow) => {
+      await submitPendingDecision(requestId, { behavior: "allow", alwaysAllow }, "allow", "提交失败");
+    },
+    onPermissionDeny: async (requestId) => {
+      await submitPendingDecision(
+        requestId,
+        { behavior: "deny", message: "User denied from web UI." },
+        "deny",
+        "提交失败"
+      );
+    },
+    onPermissionCancel: async (requestId) => {
+      await submitPendingCancel(requestId);
+    },
+    onAskSubmit: async (requestId, answers, input) => {
+      await submitPendingDecision(
+        requestId,
+        {
+          behavior: "allow",
+          updatedInput: {
+            ...(input || {}),
+            answers
+          }
+        },
+        "allow",
+        "提交失败"
+      );
+    },
+    onAskDeny: async (requestId) => {
+      await submitPendingDecision(
+        requestId,
+        { behavior: "deny", message: "User denied AskUserQuestion." },
+        "deny",
+        "提交失败"
+      );
+    },
+    onAskCancel: async (requestId) => {
+      await submitPendingCancel(requestId);
     }
-
-    const rawData = dataLines.join("\n");
-    if (!rawData) continue;
-    if (rawData === "[DONE]") {
-      onPayload({ type: "done" });
-      continue;
-    }
-
-    try {
-      onPayload(JSON.parse(rawData));
-    } catch {
-      // Ignore malformed frame.
-    }
-  }
+  });
 }
 
 function routeLifecycleEvent(type, data) {
@@ -908,36 +741,6 @@ async function sendMessage(message, isRetry) {
   const abortController = new AbortController();
   state.currentAbortController = abortController;
   try {
-    const response = await fetch("/api/chat/ui", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: abortController.signal,
-      body: JSON.stringify({
-        workspaceId: state.currentWorkspaceId || undefined,
-        id: state.currentSessionId || undefined,
-        messages: [{ role: "user", content: message }]
-      })
-    });
-
-    if (!response.ok) {
-      updateMessage(assistantMessageId, {
-        status: "error",
-        text: `请求失败: ${(await response.text()) || response.statusText}`
-      });
-      return;
-    }
-
-    if (!response.body) {
-      updateMessage(assistantMessageId, {
-        status: "error",
-        text: "请求失败: 浏览器不支持流式读取"
-      });
-      return;
-    }
-
-    const streamState = { buffer: "" };
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
     const payloadEvents = [];
 
     const onPayload = (payload) => {
@@ -978,11 +781,13 @@ async function sendMessage(message, isRetry) {
       }
     };
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      parseSseChunk(decoder.decode(value, { stream: true }), streamState, onPayload);
-    }
+    await streamChatUi({
+      message,
+      workspaceId: state.currentWorkspaceId,
+      sessionId: state.currentSessionId,
+      signal: abortController.signal,
+      onPayload
+    });
 
     updateMessage(assistantMessageId, (prev) => ({
       ...prev,
