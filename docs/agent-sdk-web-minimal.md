@@ -47,7 +47,7 @@ http://localhost:3000
 
 - 当前为 SSE (`text/event-stream`) + AI SDK UI Message Stream 协议（`x-vercel-ai-ui-message-stream: v1`）
 - 请求体对齐 AI SDK：`{ id, messages }`
-- Skills 列表基于 Claude Agent SDK 原生 `supportedCommands()` 获取并缓存（30s）
+- Skills 列表优先基于 Claude Agent SDK 原生 `supportedCommands()`，并按本地 user/project skills 过滤；失败时回退到本地 skills 列表（缓存 30s）
 - 完整流式开启方式：
   - `query(..., { includePartialMessages: true })`
   - 后端将 `stream_event/content_block_delta/text_delta` 转换为 `text-delta` 协议块

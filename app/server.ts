@@ -166,6 +166,13 @@ function upsertResolvedRequest(record: RequestResolutionRecord): void {
   }
 }
 
+function lookupRequestState(requestId: string): { pending: PendingRequest | null; resolved: RequestResolutionRecord | null } {
+  const pending = pendingRequests.get(requestId) || null;
+  if (pending) return { pending, resolved: null };
+  const resolved = resolvedRequests.get(requestId) || null;
+  return { pending: null, resolved };
+}
+
 function logTrace(traceId: string, phase: string, data: Record<string, unknown> = {}): void {
   const line = {
     ts: new Date().toISOString(),
@@ -449,6 +456,11 @@ async function fetchSkills(settings: RuntimeSettings): Promise<SkillItem[]> {
   if (skillsCache && skillsCache.key === key && skillsCache.expiresAt > now) {
     return skillsCache.items;
   }
+  const owned = await collectOwnedSkills();
+  if (owned.length === 0) {
+    skillsCache = { key, items: [], expiresAt: now + 30_000 };
+    return [];
+  }
 
   const sessionId = randomUUID();
   const options = buildQueryOptions(settings, sessionId, undefined);
@@ -458,19 +470,13 @@ async function fetchSkills(settings: RuntimeSettings): Promise<SkillItem[]> {
   });
 
   try {
-    const owned = await collectOwnedSkills();
-    if (owned.length === 0) {
-      skillsCache = { key, items: [], expiresAt: now + 30_000 };
-      return [];
-    }
     const commands = await withTimeout(queryInstance.supportedCommands(), 5000, "supportedCommands");
     const items = normalizeSkills(commands, owned);
     skillsCache = { key, items, expiresAt: now + 30_000 };
     return items;
   } catch {
-    const fallback = await collectOwnedSkills();
-    skillsCache = { key, items: fallback, expiresAt: now + 30_000 };
-    return fallback;
+    skillsCache = { key, items: owned, expiresAt: now + 30_000 };
+    return owned;
   } finally {
     try {
       queryInstance.close();
@@ -619,9 +625,7 @@ app.post("/api/chat/ui", async (req, res) => {
   });
 
   try {
-    const options = buildQueryOptions(settings, sessionId, sdkSessionId, {
-      includePartialMessages: true
-    });
+    const options = buildQueryOptions(settings, sessionId, sdkSessionId);
     if (!sdkSessionId) {
       options.sessionId = seededSdkSessionId;
       delete options.resume;
@@ -845,9 +849,8 @@ app.post("/api/input", (req, res) => {
     return;
   }
 
-  const pending = pendingRequests.get(requestId);
+  const { pending, resolved } = lookupRequestState(requestId);
   if (!pending) {
-    const resolved = resolvedRequests.get(requestId);
     if (resolved) {
       res.json({ ok: true, requestId, status: resolved.status, idempotent: true });
       return;
@@ -937,9 +940,8 @@ app.post("/api/input/cancel", (req, res) => {
     return;
   }
 
-  const pending = pendingRequests.get(requestId);
+  const { pending, resolved } = lookupRequestState(requestId);
   if (!pending) {
-    const resolved = resolvedRequests.get(requestId);
     if (resolved) {
       res.json({ ok: true, requestId, status: resolved.status, idempotent: true });
       return;

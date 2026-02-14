@@ -40,6 +40,14 @@ const state = {
 };
 let skillsLoading = false;
 let isComposing = false;
+const MAX_EVENT_LOG = 120;
+const ASK_EVENT_PREFIX = "data-ask-user-question-";
+const PERMISSION_EVENT_PREFIX = "data-permission-request-";
+
+const CREATED_EVENT_KIND = {
+  [`${ASK_EVENT_PREFIX}created`]: "ask_user_question",
+  [`${PERMISSION_EVENT_PREFIX}created`]: "permission_request"
+};
 
 function setSession(sessionId) {
   state.currentSessionId = sessionId || null;
@@ -303,30 +311,132 @@ function resolvePendingLifecycle(data, status) {
   removePendingLocal(requestId);
 }
 
-function renderPendingPanel() {
-  const active = getActivePending();
-  const activeList = state.pendingOrder
+function pendingLabel(kind, toolName) {
+  return kind === "ask_user_question" ? "AskUserQuestion" : toolName || "Permission";
+}
+
+function getActivePendingList() {
+  return state.pendingOrder
     .map((id) => state.pendingById.get(id))
     .filter((item) => item?.status === "pending");
-  const queueList = activeList.length
-    ? `<ul class="pending-queue">${activeList
-        .map((item) => {
-          const requestId = escapeHtml(item.requestId);
-          const label = escapeHtml(item.kind === "ask_user_question" ? "AskUserQuestion" : item.toolName || "Permission");
-          return `<li class="${item.requestId === state.activePendingId ? "is-active" : ""}"><code>${requestId.slice(0, 8)}</code> ${label} <span class="pending-badge pending-badge-pending">pending</span></li>`;
-        })
-        .join("")}</ul>`
-    : '<p class="hint">待处理队列: 0</p>';
-  const historyList = state.pendingHistory.length
-    ? `<ul class="pending-history">${state.pendingHistory
-        .map((item) => {
-          const label = escapeHtml(item.kind === "ask_user_question" ? "AskUserQuestion" : item.toolName || "Permission");
-          const status = escapeHtml(item.status);
-          const badgeClass = `pending-badge-${status}`.replace(/[^a-z-]/g, "");
-          return `<li><span>${label}</span> <span class="pending-badge ${badgeClass}">${status}</span></li>`;
-        })
-        .join("")}</ul>`
-    : '<p class="hint">暂无历史状态</p>';
+}
+
+function renderPendingQueue(activeList) {
+  if (!activeList.length) return '<p class="hint">待处理队列: 0</p>';
+  return `<ul class="pending-queue">${activeList
+    .map((item) => {
+      const requestId = escapeHtml(item.requestId);
+      const label = escapeHtml(pendingLabel(item.kind, item.toolName));
+      return `<li class="${item.requestId === state.activePendingId ? "is-active" : ""}"><code>${requestId.slice(0, 8)}</code> ${label} <span class="pending-badge pending-badge-pending">pending</span></li>`;
+    })
+    .join("")}</ul>`;
+}
+
+function renderPendingHistory() {
+  if (!state.pendingHistory.length) return '<p class="hint">暂无历史状态</p>';
+  return `<ul class="pending-history">${state.pendingHistory
+    .map((item) => {
+      const label = escapeHtml(pendingLabel(item.kind, item.toolName));
+      const status = escapeHtml(item.status);
+      const badgeClass = `pending-badge-${status}`.replace(/[^a-z-]/g, "");
+      return `<li><span>${label}</span> <span class="pending-badge ${badgeClass}">${status}</span></li>`;
+    })
+    .join("")}</ul>`;
+}
+
+function recordAndRemovePending(requestId, status) {
+  const item = state.pendingById.get(requestId);
+  if (item) addPendingHistory(item, status);
+  removePendingLocal(requestId);
+}
+
+async function submitPendingDecision(requestId, payload, status, errorPrefix) {
+  try {
+    await resolvePending({ requestId, ...payload });
+    recordAndRemovePending(requestId, status);
+  } catch (error) {
+    alert(`${errorPrefix}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+async function submitPendingCancel(requestId) {
+  try {
+    await cancelPending(requestId);
+    recordAndRemovePending(requestId, "canceled");
+  } catch (error) {
+    alert(`取消失败: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function bindPermissionPendingHandlers(active) {
+  pendingEl.querySelector("#pending-allow").addEventListener("click", async () => {
+    const alwaysAllow = pendingEl.querySelector("#always-allow")?.checked === true;
+    await submitPendingDecision(active.requestId, { behavior: "allow", alwaysAllow }, "allow", "提交失败");
+  });
+
+  pendingEl.querySelector("#pending-deny").addEventListener("click", async () => {
+    await submitPendingDecision(
+      active.requestId,
+      { behavior: "deny", message: "User denied from web UI." },
+      "deny",
+      "提交失败"
+    );
+  });
+
+  pendingEl.querySelector("#pending-cancel").addEventListener("click", async () => {
+    await submitPendingCancel(active.requestId);
+  });
+}
+
+function bindAskPendingHandlers(active, questions) {
+  const askForm = pendingEl.querySelector("#ask-form");
+  const denyBtn = pendingEl.querySelector("#ask-deny");
+  const cancelBtn = pendingEl.querySelector("#ask-cancel");
+
+  askForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const answers = {};
+    questions.forEach((q, index) => {
+      const key = q?.id || q?.question || `q_${index}`;
+      const selected = askForm.querySelector(`input[name="q_${index}"]:checked`)?.value || "";
+      const custom = askForm.querySelector(`input[data-free-input="${index}"]`)?.value?.trim() || "";
+      const answer = custom || selected;
+      if (answer) answers[key] = answer;
+    });
+
+    await submitPendingDecision(
+      active.requestId,
+      {
+        behavior: "allow",
+        updatedInput: {
+          ...(active.input || {}),
+          answers
+        }
+      },
+      "allow",
+      "提交失败"
+    );
+  });
+
+  denyBtn.addEventListener("click", async () => {
+    await submitPendingDecision(
+      active.requestId,
+      { behavior: "deny", message: "User denied AskUserQuestion." },
+      "deny",
+      "提交失败"
+    );
+  });
+
+  cancelBtn.addEventListener("click", async () => {
+    await submitPendingCancel(active.requestId);
+  });
+}
+
+function renderPendingPanel() {
+  const active = getActivePending();
+  const activeList = getActivePendingList();
+  const queueList = renderPendingQueue(activeList);
+  const historyList = renderPendingHistory();
 
   if (!active) {
     pendingEl.className = "pending-empty";
@@ -356,40 +466,7 @@ function renderPendingPanel() {
       <h3>最近状态</h3>
       ${historyList}
     `;
-
-    pendingEl.querySelector("#pending-allow").addEventListener("click", async () => {
-      try {
-        await resolvePending({
-          requestId: active.requestId,
-          behavior: "allow",
-          alwaysAllow: pendingEl.querySelector("#always-allow").checked
-        });
-        addPendingHistory(active, "allow");
-        removePendingLocal(active.requestId);
-      } catch (error) {
-        alert(`提交失败: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    });
-
-    pendingEl.querySelector("#pending-deny").addEventListener("click", async () => {
-      try {
-        await resolvePending({ requestId: active.requestId, behavior: "deny", message: "User denied from web UI." });
-        addPendingHistory(active, "deny");
-        removePendingLocal(active.requestId);
-      } catch (error) {
-        alert(`提交失败: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    });
-
-    pendingEl.querySelector("#pending-cancel").addEventListener("click", async () => {
-      try {
-        await cancelPending(active.requestId);
-        addPendingHistory(active, "canceled");
-        removePendingLocal(active.requestId);
-      } catch (error) {
-        alert(`取消失败: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    });
+    bindPermissionPendingHandlers(active);
     return;
   }
 
@@ -429,57 +506,7 @@ function renderPendingPanel() {
     <h3>最近状态</h3>
     ${historyList}
   `;
-
-  const askForm = pendingEl.querySelector("#ask-form");
-  const denyBtn = pendingEl.querySelector("#ask-deny");
-  const cancelBtn = pendingEl.querySelector("#ask-cancel");
-
-  askForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const answers = {};
-    questions.forEach((q, index) => {
-      const key = q?.id || q?.question || `q_${index}`;
-      const selected = askForm.querySelector(`input[name="q_${index}"]:checked`)?.value || "";
-      const custom = askForm.querySelector(`input[data-free-input="${index}"]`)?.value?.trim() || "";
-      const answer = custom || selected;
-      if (answer) answers[key] = answer;
-    });
-
-    try {
-      await resolvePending({
-        requestId: active.requestId,
-        behavior: "allow",
-        updatedInput: {
-          ...(active.input || {}),
-          answers
-        }
-      });
-      addPendingHistory(active, "allow");
-      removePendingLocal(active.requestId);
-    } catch (error) {
-      alert(`提交失败: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  });
-
-  denyBtn.addEventListener("click", async () => {
-    try {
-      await resolvePending({ requestId: active.requestId, behavior: "deny", message: "User denied AskUserQuestion." });
-      addPendingHistory(active, "deny");
-      removePendingLocal(active.requestId);
-    } catch (error) {
-      alert(`提交失败: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  });
-
-  cancelBtn.addEventListener("click", async () => {
-    try {
-      await cancelPending(active.requestId);
-      addPendingHistory(active, "canceled");
-      removePendingLocal(active.requestId);
-    } catch (error) {
-      alert(`取消失败: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  });
+  bindAskPendingHandlers(active, questions);
 }
 
 function parseSseChunk(chunk, stateRef, onPayload) {
@@ -510,6 +537,34 @@ function parseSseChunk(chunk, stateRef, onPayload) {
   }
 }
 
+function routeLifecycleEvent(type, data) {
+  const createdKind = CREATED_EVENT_KIND[type];
+  if (createdKind) {
+    upsertPendingFromLifecycle(createdKind, data || {});
+    return true;
+  }
+
+  if (type.startsWith(ASK_EVENT_PREFIX)) {
+    const status = type.slice(ASK_EVENT_PREFIX.length);
+    if (status === "resolved" || status === "timeout" || status === "canceled") {
+      resolvePendingLifecycle(data || {}, status);
+      return true;
+    }
+    return false;
+  }
+
+  if (type.startsWith(PERMISSION_EVENT_PREFIX)) {
+    const status = type.slice(PERMISSION_EVENT_PREFIX.length);
+    if (status === "resolved" || status === "timeout" || status === "canceled") {
+      resolvePendingLifecycle(data || {}, status);
+      return true;
+    }
+    return false;
+  }
+
+  return false;
+}
+
 setSession(null);
 state.messages = [{ id: "init", role: "assistant", text: "准备就绪。输入任务后将实时显示回复。", status: "complete" }];
 renderTimeline();
@@ -519,7 +574,10 @@ loadSettings().catch(() => {
   tokenPreviewEl.textContent = "配置读取失败，请稍后重试。";
 });
 loadSkills();
-setInterval(loadSkills, 3000);
+setInterval(() => {
+  if (document.hidden) return;
+  loadSkills();
+}, 3000);
 
 toggleMcpBtn.addEventListener("click", async () => {
   try {
@@ -670,6 +728,9 @@ async function sendMessage(message, isRetry) {
 
     const onPayload = (payload) => {
       payloadEvents.push(payload);
+      if (payloadEvents.length > MAX_EVENT_LOG) {
+        payloadEvents.splice(0, payloadEvents.length - MAX_EVENT_LOG);
+      }
       eventsEl.textContent = JSON.stringify(payloadEvents, null, 2);
 
       const type = String(payload?.type || "");
@@ -680,21 +741,7 @@ async function sendMessage(message, isRetry) {
         return;
       }
 
-      if (type === "data-ask-user-question-created") {
-        upsertPendingFromLifecycle("ask_user_question", payload.data || {});
-        return;
-      }
-      if (type === "data-permission-request-created") {
-        upsertPendingFromLifecycle("permission_request", payload.data || {});
-        return;
-      }
-
-      if (type === "data-ask-user-question-resolved" || type === "data-ask-user-question-timeout" || type === "data-ask-user-question-canceled") {
-        resolvePendingLifecycle(payload.data || {}, type.replace("data-ask-user-question-", ""));
-        return;
-      }
-      if (type === "data-permission-request-resolved" || type === "data-permission-request-timeout" || type === "data-permission-request-canceled") {
-        resolvePendingLifecycle(payload.data || {}, type.replace("data-permission-request-", ""));
+      if (routeLifecycleEvent(type, payload?.data)) {
         return;
       }
 
