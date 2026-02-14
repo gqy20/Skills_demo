@@ -21,6 +21,7 @@ const sendBtn = document.getElementById("send-btn");
 const stopBtn = document.getElementById("stop-btn");
 const retryBtn = document.getElementById("retry-btn");
 const timelineEl = document.getElementById("timeline");
+const timelineJumpBtn = document.getElementById("timeline-jump-btn");
 const eventsEl = document.getElementById("events");
 const workspaceSelectEl = document.getElementById("workspace-select");
 const workspaceMetaEl = document.getElementById("workspace-meta");
@@ -87,6 +88,7 @@ const CREATED_EVENT_KIND = {
 };
 const SCROLL_STICKY_THRESHOLD_PX = 80;
 const timeline = createTimelineController(timelineEl, SCROLL_STICKY_THRESHOLD_PX);
+timeline.bindScrollControls(timelineJumpBtn);
 
 function setSession(sessionId) {
   state.currentSessionId = sessionId || null;
