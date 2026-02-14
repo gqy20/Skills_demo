@@ -7,16 +7,25 @@ repos:
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
+        stages: [pre-commit]
       - id: end-of-file-fixer
+        stages: [pre-commit]
       - id: check-yaml
+        stages: [pre-commit]
       - id: check-added-large-files
         args: ["--maxkb=1500"]
+        stages: [pre-commit]
       - id: check-json
+        stages: [pre-commit]
       - id: check-toml
+        stages: [pre-commit]
       - id: check-merge-conflict
+        stages: [pre-commit]
       - id: debug-statements
+        stages: [pre-commit]
       - id: mixed-line-ending
         args: ["--fix=lf"]
+        stages: [pre-commit]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.14.10
@@ -24,8 +33,10 @@ repos:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
         files: \.py$
+        stages: [pre-commit]
       - id: ruff-format
         files: \.py$
+        stages: [pre-commit]
 
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.10
@@ -33,6 +44,7 @@ repos:
       - id: actionlint
         args: ["-shellcheck="]
         files: ^\.github/workflows/.*\.(yml|yaml)$
+        stages: [pre-commit]
 
   - repo: local
     hooks:
