@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import path from "node:path";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { RuntimeSettings } from "./types.js";
@@ -17,7 +18,11 @@ const host = process.env.HOST || "127.0.0.1";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const WEB_ROOT = path.resolve(__dirname, "../web");
+const WEB_ROOT_DIST = path.resolve(__dirname, "../../dist/web");
+if (!existsSync(path.join(WEB_ROOT_DIST, "index.html"))) {
+  throw new Error("Web assets not found in dist/web. Run `npm run build:web` first.");
+}
+const WEB_ROOT = WEB_ROOT_DIST;
 
 const workspaceRegistry = new WorkspaceRegistry();
 const pendingStore = new PendingRequestStore();
