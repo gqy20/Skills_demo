@@ -71,3 +71,6 @@ uv.lock
 01_articles/
 articles/
 references/
+
+# Local profile snapshot
+PROFILE

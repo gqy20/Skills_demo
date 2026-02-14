@@ -1,5 +1,5 @@
 function parseSseChunk(chunk, stateRef, onPayload) {
-  stateRef.buffer += chunk;
+  stateRef.buffer += chunk.replaceAll("\r\n", "\n");
   const parts = stateRef.buffer.split("\n\n");
   stateRef.buffer = parts.pop() || "";
 
@@ -24,6 +24,13 @@ function parseSseChunk(chunk, stateRef, onPayload) {
       // Ignore malformed frame.
     }
   }
+}
+
+function flushSseBuffer(stateRef, onPayload) {
+  const tail = stateRef.buffer.trim();
+  if (!tail) return;
+  stateRef.buffer = "";
+  parseSseChunk(`${tail}\n\n`, stateRef, onPayload);
 }
 
 export async function streamChatUi({ message, workspaceId, sessionId, signal, onPayload }) {
@@ -52,7 +59,10 @@ export async function streamChatUi({ message, workspaceId, sessionId, signal, on
 
   while (true) {
     const { value, done } = await reader.read();
-    if (done) break;
+    if (done) {
+      flushSseBuffer(streamState, onPayload);
+      break;
+    }
     parseSseChunk(decoder.decode(value, { stream: true }), streamState, onPayload);
   }
 }

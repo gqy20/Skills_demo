@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Express, Response } from "express";
 import type { RuntimeSettings } from "../types.js";
-import { extractDeltaText, extractPrompt, writeSseData, writeSseDone } from "../services/chat.js";
+import { extractDeltaText, extractPrompt, extractResultText, extractSdkLifecycle, writeSseData, writeSseDone } from "../services/chat.js";
 import { readSettings } from "../services/settings.js";
 import { type PendingNotify, type PendingRequestKind, PendingRequestStore } from "../services/pending.js";
 import { WorkspaceRegistry } from "../services/workspaces.js";
@@ -30,6 +30,10 @@ function logTrace(traceId: string, phase: string, data: Record<string, unknown> 
     ...data
   };
   console.log(JSON.stringify(line));
+}
+
+function isAskUserQuestionTool(toolName: string): boolean {
+  return toolName.trim().toLowerCase() === "askuserquestion";
 }
 
 function writeDebugSse(
@@ -147,7 +151,7 @@ export function registerChatRoutes({
       if (settings.toolGateEnabled) {
         options.canUseTool = async (toolName, input, hookOptions) => {
           const inputObj = (input ?? {}) as Record<string, unknown>;
-          const isAskUserQuestion = toolName === "AskUserQuestion";
+          const isAskUserQuestion = isAskUserQuestionTool(toolName);
           const kind: PendingRequestKind = isAskUserQuestion ? "ask_user_question" : "permission_request";
           const notify: PendingNotify = (eventType, data) => {
             if (closed) return;
@@ -262,6 +266,24 @@ export function registerChatRoutes({
         if (deltaText) {
           deltaCount += 1;
           writeSseData(res, { type: "text-delta", id: partId, delta: deltaText });
+        }
+
+        const resultText = extractResultText(event);
+        if (resultText && deltaCount === 0) {
+          deltaCount += 1;
+          writeSseData(res, { type: "text-delta", id: partId, delta: resultText });
+        }
+
+        const lifecycle = extractSdkLifecycle(event);
+        if (lifecycle) {
+          writeDebugSse(res, closed, debugSseEnabled, traceId, "sdk_lifecycle", lifecycle);
+        }
+
+        if (event.type === "result" && event.is_error) {
+          const maybeErrors = "errors" in event ? event.errors : undefined;
+          const firstError = Array.isArray(maybeErrors) && maybeErrors.length > 0 ? String(maybeErrors[0]) : "";
+          const message = firstError || `SDK result error: ${event.subtype}`;
+          writeSseData(res, { type: "error", error: message });
         }
 
         if (settings.debugEnabled && debugSseEnabled && streamEventCount <= 30) {

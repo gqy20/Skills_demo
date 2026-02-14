@@ -419,6 +419,26 @@ async function sendMessage(message, isRetry) {
   const assistantMessageId = createMessage("assistant", "处理中...", "streaming");
   eventsEl.textContent = "[]";
   pendingController.reset();
+  let pendingDelta = "";
+  let rafId = 0;
+
+  const flushDelta = () => {
+    rafId = 0;
+    if (!pendingDelta) return;
+    const chunk = pendingDelta;
+    pendingDelta = "";
+    updateMessage(assistantMessageId, (prev) => ({
+      ...prev,
+      status: "streaming",
+      text: prev.text === "处理中..." ? chunk : `${prev.text}${chunk}`
+    }));
+  };
+
+  const queueDelta = (delta) => {
+    pendingDelta += delta;
+    if (rafId) return;
+    rafId = requestAnimationFrame(flushDelta);
+  };
 
   const abortController = new AbortController();
   state.currentAbortController = abortController;
@@ -447,11 +467,7 @@ async function sendMessage(message, isRetry) {
       if (type === "text-delta") {
         const delta = typeof payload?.delta === "string" ? payload.delta : "";
         if (!delta) return;
-        updateMessage(assistantMessageId, (prev) => ({
-          ...prev,
-          status: "streaming",
-          text: prev.text === "处理中..." ? delta : `${prev.text}${delta}`
-        }));
+        queueDelta(delta);
         return;
       }
 
@@ -471,12 +487,17 @@ async function sendMessage(message, isRetry) {
       onPayload
     });
 
+    if (rafId) cancelAnimationFrame(rafId);
+    flushDelta();
+
     updateMessage(assistantMessageId, (prev) => ({
       ...prev,
       status: prev.status === "error" ? "error" : "complete",
       text: !prev.text.trim() || prev.text === "处理中..." ? "(流式完成，但没有提取到文本回复，请查看 Events)" : prev.text
     }));
   } catch (error) {
+    if (rafId) cancelAnimationFrame(rafId);
+    flushDelta();
     if (error instanceof Error && error.name === "AbortError") {
       updateMessage(assistantMessageId, { status: "stopped", text: "已停止生成" });
     } else {

@@ -40,7 +40,7 @@ http://localhost:3000
 
 ## 环境变量
 
-确保你本机已有可用的 Claude Code/Anthropic 环境变量（例如 `ANTHROPIC_AUTH_TOKEN`）。  
+确保你本机已有可用的 Claude Code/Anthropic 环境变量（例如 `ANTHROPIC_AUTH_TOKEN`）。
 该最小版本不额外封装鉴权，直接使用当前运行环境中的配置。
 
 可选：

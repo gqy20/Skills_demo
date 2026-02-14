@@ -57,6 +57,48 @@ export function extractDeltaText(event: SDKMessage): string {
   return typeof delta.text === "string" ? delta.text : "";
 }
 
+export function extractResultText(event: SDKMessage): string {
+  if (event.type !== "result") return "";
+  if (event.subtype !== "success") return "";
+  return typeof event.result === "string" ? event.result : "";
+}
+
+export function extractSdkLifecycle(event: SDKMessage): Record<string, unknown> | null {
+  if (event.type === "system") {
+    return {
+      category: "system",
+      subtype: event.subtype || "unknown"
+    };
+  }
+
+  if (event.type === "tool_progress") {
+    return {
+      category: "tool_progress",
+      toolName: event.tool_name,
+      toolUseId: event.tool_use_id,
+      elapsedSeconds: event.elapsed_time_seconds
+    };
+  }
+
+  if (event.type === "tool_use_summary") {
+    return {
+      category: "tool_use_summary",
+      summary: event.summary
+    };
+  }
+
+  if (event.type === "result") {
+    return {
+      category: "result",
+      subtype: event.subtype,
+      isError: event.is_error,
+      stopReason: event.stop_reason || null
+    };
+  }
+
+  return null;
+}
+
 export function writeSseData(res: Response, data: unknown): void {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
