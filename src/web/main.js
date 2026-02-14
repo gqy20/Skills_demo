@@ -10,6 +10,9 @@ import {
   applySavedSettings
 } from "./settings-ui.js";
 import { renderSkills as renderSkillsList, renderFilesPanel as renderFilesTree } from "./inspector-ui.js";
+import { createTimelineController } from "./timeline-ui.js";
+import { createDataLoader } from "./data-loader.js";
+import { createPendingController } from "./pending-controller.js";
 
 const form = document.getElementById("chat-form");
 const messageInput = document.getElementById("message");
@@ -47,7 +50,6 @@ const state = {
   currentSessionId: null,
   currentMcpEnabled: true,
   currentSpeedModeEnabled: false,
-  messages: [],
   pendingById: new Map(),
   pendingOrder: [],
   pendingHistory: [],
@@ -60,7 +62,6 @@ const state = {
   fileLoading: new Set(),
   workspaces: []
 };
-let skillsLoading = false;
 let isComposing = false;
 const MAX_EVENT_LOG = 120;
 const ASK_EVENT_PREFIX = "data-ask-user-question-";
@@ -71,8 +72,7 @@ const CREATED_EVENT_KIND = {
   [`${PERMISSION_EVENT_PREFIX}created`]: "permission_request"
 };
 const SCROLL_STICKY_THRESHOLD_PX = 80;
-const messageNodeMap = new Map();
-let timelineInnerEl = null;
+const timeline = createTimelineController(timelineEl, SCROLL_STICKY_THRESHOLD_PX);
 
 function setSession(sessionId) {
   state.currentSessionId = sessionId || null;
@@ -99,15 +99,6 @@ function setSpeedModeEnabled(enabled) {
   applySpeedToggle(enabled, { state, toggleSpeedBtn, settingSpeedEnabledInput });
 }
 
-function scrollTimelineBottom() {
-  timelineEl.scrollTop = timelineEl.scrollHeight;
-}
-
-function shouldStickToBottom() {
-  const remaining = timelineEl.scrollHeight - timelineEl.scrollTop - timelineEl.clientHeight;
-  return remaining <= SCROLL_STICKY_THRESHOLD_PX;
-}
-
 function setStreamingState(streaming) {
   state.isStreaming = Boolean(streaming);
   sendBtn.disabled = state.isStreaming;
@@ -116,73 +107,15 @@ function setStreamingState(streaming) {
 }
 
 function createMessage(role, text, status = "complete") {
-  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const next = { id, role, text, status };
-  state.messages.push(next);
-  appendMessageNode(next, true);
-  scrollTimelineBottom();
-  return id;
+  return timeline.createMessage(role, text, status);
 }
 
 function updateMessage(id, updater) {
-  const idx = state.messages.findIndex((item) => item.id === id);
-  if (idx < 0) return;
-  const prev = state.messages[idx];
-  const next = typeof updater === "function" ? updater(prev) : { ...prev, ...updater };
-  state.messages[idx] = next;
-  const cachedNode = messageNodeMap.get(id);
-  if (!cachedNode) {
-    renderTimeline();
-    return;
-  }
-  const stickToBottom = shouldStickToBottom();
-  applyMessageNodeState(cachedNode.article, cachedNode.textEl, next);
-  if (stickToBottom) scrollTimelineBottom();
-}
-
-function applyMessageNodeState(article, textEl, msg) {
-  article.className = `bubble ${msg.role === "user" ? "bubble-user" : "bubble-assistant"}`.trim();
-  if (msg.status === "streaming") article.classList.add("bubble-streaming");
-  if (msg.status === "streaming" && msg.text === "处理中...") article.classList.add("bubble-processing");
-  if (msg.status === "error") article.classList.add("bubble-error");
-  if (msg.status === "stopped") article.classList.add("bubble-stopped");
-  textEl.textContent = msg.text;
-}
-
-function appendMessageNode(msg, animate) {
-  if (!timelineInnerEl) {
-    timelineInnerEl = document.createElement("div");
-    timelineInnerEl.className = "timeline-inner";
-    timelineEl.appendChild(timelineInnerEl);
-  }
-  const article = document.createElement("article");
-  const textEl = document.createElement("p");
-  applyMessageNodeState(article, textEl, msg);
-  if (animate) {
-    article.classList.add("bubble-enter");
-    article.addEventListener(
-      "animationend",
-      () => {
-        article.classList.remove("bubble-enter");
-      },
-      { once: true }
-    );
-  }
-  article.appendChild(textEl);
-  timelineInnerEl.appendChild(article);
-  messageNodeMap.set(msg.id, { article, textEl });
+  timeline.updateMessage(id, updater);
 }
 
 function renderTimeline() {
-  timelineEl.innerHTML = "";
-  messageNodeMap.clear();
-  timelineInnerEl = document.createElement("div");
-  timelineInnerEl.className = "timeline-inner";
-  for (const msg of state.messages) {
-    appendMessageNode(msg, false);
-  }
-  timelineEl.appendChild(timelineInnerEl);
-  scrollTimelineBottom();
+  timeline.renderTimeline();
 }
 
 async function resolvePending(payload) {
@@ -191,25 +124,6 @@ async function resolvePending(payload) {
 
 async function cancelPending(requestId) {
   return apiPostJson("/api/input/cancel", { requestId });
-}
-
-async function loadSettings() {
-  const data = await apiGetJson("/api/settings");
-  if (data.workspaceId && data.workspaceId !== state.currentWorkspaceId) {
-    state.currentWorkspaceId = data.workspaceId;
-    renderWorkspaceOptions();
-  }
-  applySettingsToForm(data, {
-    settingModelInput,
-    settingBaseUrlInput,
-    settingAuthTokenInput,
-    settingToolGateEnabledInput,
-    settingDebugEnabledInput,
-    settingDebugSseEnabledInput,
-    tokenPreviewEl
-  });
-  setMcpEnabled(data.mcpEnabled !== false);
-  setSpeedModeEnabled(data.speedModeEnabled === true);
 }
 
 function renderSkills(items) {
@@ -226,82 +140,48 @@ function renderFilesPanel() {
   });
 }
 
-async function loadFiles(path = "", depth = 1) {
-  if (state.fileLoading.has(path)) return;
-  state.fileLoading.add(path);
-  if (!state.fileTree.has(path)) {
-    filesMetaEl.textContent = "加载中...";
-  }
-  try {
-    const data = await apiGetJson("/api/files", { path, depth });
-    const items = Array.isArray(data.items) ? data.items : [];
-    state.fileTree.set(path, items);
-    renderFilesPanel();
-  } catch (error) {
-    filesMetaEl.textContent = `加载失败: ${error instanceof Error ? error.message : String(error)}`;
-  } finally {
-    state.fileLoading.delete(path);
-    renderFilesPanel();
-  }
-}
-
-async function loadSkills() {
-  if (skillsLoading) return;
-  skillsLoading = true;
-  skillsMetaEl.textContent = "加载中...";
-  try {
-    const data = await apiGetJson("/api/skills");
-    const items = Array.isArray(data.items) ? data.items : [];
-    skillsMetaEl.textContent = `仅显示用户/项目 skills，共 ${items.length} 个`;
-    renderSkills(items);
-  } catch (error) {
-    skillsMetaEl.textContent = `加载失败: ${error instanceof Error ? error.message : String(error)}`;
-    skillsListEl.innerHTML = "";
-  } finally {
-    skillsLoading = false;
-  }
-}
-
-function renderWorkspaceOptions() {
-  workspaceSelectEl.innerHTML = "";
-  for (const item of state.workspaces) {
-    const option = document.createElement("option");
-    option.value = item.id;
-    option.textContent = item.label;
-    workspaceSelectEl.appendChild(option);
-  }
-  if (state.currentWorkspaceId) {
-    workspaceSelectEl.value = state.currentWorkspaceId;
-  }
-  const current = state.workspaces.find((item) => item.id === state.currentWorkspaceId);
-  workspaceMetaEl.textContent = current ? current.root : "";
-}
-
-async function loadWorkspaces() {
-  const data = await apiGetJson("/api/workspaces", { workspaceId: "" });
-  const items = Array.isArray(data.items) ? data.items : [];
-  state.workspaces = items;
-  if (!state.currentWorkspaceId) {
-    state.currentWorkspaceId = data.currentWorkspaceId || (items[0] ? items[0].id : "");
-  }
-  renderWorkspaceOptions();
-}
+const dataLoader = createDataLoader({
+  state,
+  workspaceSelectEl,
+  workspaceMetaEl,
+  skillsMetaEl,
+  skillsListEl,
+  filesMetaEl,
+  apiGetJson,
+  applySettingsToForm: (data) =>
+    applySettingsToForm(data, {
+      settingModelInput,
+      settingBaseUrlInput,
+      settingAuthTokenInput,
+      settingToolGateEnabledInput,
+      settingDebugEnabledInput,
+      settingDebugSseEnabledInput,
+      tokenPreviewEl
+    }),
+  setMcpEnabled,
+  setSpeedModeEnabled,
+  renderSkills,
+  renderFilesPanel
+});
+const pendingController = createPendingController({
+  state,
+  resolveRequest: (payload) => resolvePending(payload),
+  cancelRequest: (requestId) => cancelPending(requestId),
+  onChanged: () => renderPendingPanel(),
+  onError: (message) => alert(message)
+});
 
 async function switchWorkspace(workspaceId) {
   if (!workspaceId || workspaceId === state.currentWorkspaceId) return;
   state.currentWorkspaceId = workspaceId;
-  renderWorkspaceOptions();
+  dataLoader.renderWorkspaceOptions();
   setSession(null);
-  state.pendingById.clear();
-  state.pendingOrder = [];
-  state.activePendingId = null;
-  state.pendingHistory = [];
-  state.messages = [{ id: "init", role: "assistant", text: "准备就绪。输入任务后将实时显示回复。", status: "complete" }];
+  pendingController.reset();
+  timeline.setMessages([{ id: "init", role: "assistant", text: "准备就绪。输入任务后将实时显示回复。", status: "complete" }]);
   renderTimeline();
-  renderPendingPanel();
   state.fileTree.clear();
   state.fileExpanded = new Set([""]);
-  await Promise.allSettled([loadSettings(), loadSkills(), loadFiles()]);
+  await Promise.allSettled([dataLoader.loadSettings(), dataLoader.loadSkills(), dataLoader.loadFiles()]);
 }
 
 function buildSettingsPayload({ mcpEnabled, speedModeEnabled }) {
@@ -323,121 +203,23 @@ async function saveSettingsWithPayload(payload) {
   setMcpEnabled(data.mcpEnabled !== false);
   setSpeedModeEnabled(data.speedModeEnabled === true);
   applySavedSettings(data, { settingAuthTokenInput, tokenPreviewEl });
-  await loadSkills();
+  await dataLoader.loadSkills();
   return data;
 }
 
-function getActivePending() {
-  const direct = state.activePendingId ? state.pendingById.get(state.activePendingId) : null;
-  if (direct?.status === "pending") return direct;
-
-  state.activePendingId = null;
-  for (const requestId of state.pendingOrder) {
-    const item = state.pendingById.get(requestId);
-    if (item?.status === "pending") {
-      state.activePendingId = requestId;
-      return item;
-    }
-  }
-  return null;
-}
-
-function removePendingLocal(requestId) {
-  if (!requestId) return;
-  state.pendingById.delete(requestId);
-  state.pendingOrder = state.pendingOrder.filter((id) => id !== requestId);
-  if (state.activePendingId === requestId) state.activePendingId = null;
-  renderPendingPanel();
-}
-
-function addPendingHistory(item, status) {
-  state.pendingHistory.unshift({
-    requestId: item.requestId,
-    kind: item.kind,
-    toolName: item.toolName,
-    status,
-    at: Date.now()
-  });
-  if (state.pendingHistory.length > 12) {
-    state.pendingHistory = state.pendingHistory.slice(0, 12);
-  }
-}
-
-function upsertPendingFromLifecycle(kind, data) {
-  const requestId = data?.requestId;
-  if (!requestId) return;
-
-  const prev = state.pendingById.get(requestId);
-  const next = {
-    requestId,
-    kind,
-    toolName: data.toolName || prev?.toolName || "",
-    input: data.input || prev?.input || {},
-    suggestions: data.suggestions || prev?.suggestions || [],
-    createdAt: data.createdAt || prev?.createdAt || Date.now(),
-    expiresAt: data.expiresAt || prev?.expiresAt || null,
-    status: "pending"
-  };
-  state.pendingById.set(requestId, next);
-  if (!state.pendingOrder.includes(requestId)) state.pendingOrder.push(requestId);
-  if (!state.activePendingId) state.activePendingId = requestId;
-  renderPendingPanel();
-}
-
-function resolvePendingLifecycle(data, status) {
-  const requestId = data?.requestId;
-  if (!requestId) return;
-  const item = state.pendingById.get(requestId);
-  if (!item) return;
-  item.status = status;
-  state.pendingById.set(requestId, item);
-  addPendingHistory(item, status);
-  removePendingLocal(requestId);
-}
-
-function getActivePendingList() {
-  return state.pendingOrder
-    .map((id) => state.pendingById.get(id))
-    .filter((item) => item?.status === "pending");
-}
-
-function recordAndRemovePending(requestId, status) {
-  const item = state.pendingById.get(requestId);
-  if (item) addPendingHistory(item, status);
-  removePendingLocal(requestId);
-}
-
-async function submitPendingDecision(requestId, payload, status, errorPrefix) {
-  try {
-    await resolvePending({ requestId, ...payload });
-    recordAndRemovePending(requestId, status);
-  } catch (error) {
-    alert(`${errorPrefix}: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
-async function submitPendingCancel(requestId) {
-  try {
-    await cancelPending(requestId);
-    recordAndRemovePending(requestId, "canceled");
-  } catch (error) {
-    alert(`取消失败: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
 function renderPendingPanel() {
-  const active = getActivePending();
+  const active = pendingController.getActivePending();
   renderPendingUi({
     pendingEl,
     active,
-    activeList: getActivePendingList(),
-    history: state.pendingHistory,
-    activePendingId: state.activePendingId,
+    activeList: pendingController.getActivePendingList(),
+    history: pendingController.getHistory(),
+    activePendingId: pendingController.getActivePendingId(),
     onPermissionAllow: async (requestId, alwaysAllow) => {
-      await submitPendingDecision(requestId, { behavior: "allow", alwaysAllow }, "allow", "提交失败");
+      await pendingController.submitDecision(requestId, { behavior: "allow", alwaysAllow }, "allow", "提交失败");
     },
     onPermissionDeny: async (requestId) => {
-      await submitPendingDecision(
+      await pendingController.submitDecision(
         requestId,
         { behavior: "deny", message: "User denied from web UI." },
         "deny",
@@ -445,10 +227,10 @@ function renderPendingPanel() {
       );
     },
     onPermissionCancel: async (requestId) => {
-      await submitPendingCancel(requestId);
+      await pendingController.submitCancel(requestId);
     },
     onAskSubmit: async (requestId, answers, input) => {
-      await submitPendingDecision(
+      await pendingController.submitDecision(
         requestId,
         {
           behavior: "allow",
@@ -462,7 +244,7 @@ function renderPendingPanel() {
       );
     },
     onAskDeny: async (requestId) => {
-      await submitPendingDecision(
+      await pendingController.submitDecision(
         requestId,
         { behavior: "deny", message: "User denied AskUserQuestion." },
         "deny",
@@ -470,7 +252,7 @@ function renderPendingPanel() {
       );
     },
     onAskCancel: async (requestId) => {
-      await submitPendingCancel(requestId);
+      await pendingController.submitCancel(requestId);
     }
   });
 }
@@ -478,14 +260,14 @@ function renderPendingPanel() {
 function routeLifecycleEvent(type, data) {
   const createdKind = CREATED_EVENT_KIND[type];
   if (createdKind) {
-    upsertPendingFromLifecycle(createdKind, data || {});
+    pendingController.upsertFromLifecycle(createdKind, data || {});
     return true;
   }
 
   if (type.startsWith(ASK_EVENT_PREFIX)) {
     const status = type.slice(ASK_EVENT_PREFIX.length);
     if (status === "resolved" || status === "timeout" || status === "canceled") {
-      resolvePendingLifecycle(data || {}, status);
+      pendingController.resolveFromLifecycle(data || {}, status);
       return true;
     }
     return false;
@@ -494,7 +276,7 @@ function routeLifecycleEvent(type, data) {
   if (type.startsWith(PERMISSION_EVENT_PREFIX)) {
     const status = type.slice(PERMISSION_EVENT_PREFIX.length);
     if (status === "resolved" || status === "timeout" || status === "canceled") {
-      resolvePendingLifecycle(data || {}, status);
+      pendingController.resolveFromLifecycle(data || {}, status);
       return true;
     }
     return false;
@@ -504,20 +286,18 @@ function routeLifecycleEvent(type, data) {
 }
 
 setSession(null);
-state.messages = [{ id: "init", role: "assistant", text: "准备就绪。输入任务后将实时显示回复。", status: "complete" }];
+timeline.setMessages([{ id: "init", role: "assistant", text: "准备就绪。输入任务后将实时显示回复。", status: "complete" }]);
 renderTimeline();
 renderPendingPanel();
 setStreamingState(false);
-loadWorkspaces()
-  .then(() => Promise.all([loadSettings(), loadSkills(), loadFiles()]))
+dataLoader
+  .loadWorkspaces()
+  .then(() => Promise.all([dataLoader.loadSettings(), dataLoader.loadSkills(), dataLoader.loadFiles()]))
   .catch(() => {
     tokenPreviewEl.textContent = "配置读取失败，请稍后重试。";
     workspaceMetaEl.textContent = "工作区读取失败";
   });
-setInterval(() => {
-  if (document.hidden) return;
-  loadSkills();
-}, 3000);
+dataLoader.startSkillsPolling(3000);
 
 workspaceSelectEl.addEventListener("change", async () => {
   await switchWorkspace(workspaceSelectEl.value);
@@ -537,7 +317,7 @@ filesListEl.addEventListener("click", async (event) => {
   state.fileExpanded.add(itemPath);
   renderFilesPanel();
   if (!state.fileTree.has(itemPath)) {
-    await loadFiles(itemPath, 1);
+    await dataLoader.loadFiles(itemPath, 1);
   }
 });
 
@@ -568,7 +348,8 @@ toggleSpeedBtn.addEventListener("click", async () => {
 });
 
 openSettingsBtn.addEventListener("click", () => {
-  loadSettings()
+  dataLoader
+    .loadSettings()
     .then(() => showSettingsModal(true))
     .catch((error) => {
       alert(`读取配置失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -644,11 +425,7 @@ async function sendMessage(message, isRetry) {
   setStreamingState(true);
   const assistantMessageId = createMessage("assistant", "处理中...", "streaming");
   eventsEl.textContent = "[]";
-
-  state.pendingById.clear();
-  state.pendingOrder = [];
-  state.activePendingId = null;
-  renderPendingPanel();
+  pendingController.reset();
 
   const abortController = new AbortController();
   state.currentAbortController = abortController;
