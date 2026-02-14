@@ -12,6 +12,8 @@
   ],
   "scripts": {
     "dev": "npm run build:web && tsx src/server/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "check": "tsc --noEmit",
     "build": "npm run build:server && npm run build:web",
     "build:server": "tsc -p tsconfig.build.json",
@@ -28,8 +30,7 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1",
-    "vitest": "^4.0.18"
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
@@ -40,6 +41,7 @@
     "@vitejs/plugin-react": "^5.1.4",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "vitest": "^4.0.18"
   }
 }
