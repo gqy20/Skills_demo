@@ -1,0 +1,152 @@
+import type { Express } from "express";
+import type { RuntimeSettings } from "../types.js";
+import { fetchSkills } from "../services/skills.js";
+import { listWorkspaceFiles, loadIgnoreRules, normalizeRelativePath, resolveWorkspacePath } from "../services/files.js";
+import { maskToken, readSettings, writeSettings } from "../services/settings.js";
+import { WorkspaceRegistry } from "../services/workspaces.js";
+import { buildQueryOptions, withTimeout } from "../services/query.js";
+
+type SystemRoutesDeps = {
+  app: Express;
+  workspaceRegistry: WorkspaceRegistry;
+  defaultSettings: RuntimeSettings;
+};
+
+export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings }: SystemRoutesDeps): void {
+  app.get("/api/workspaces", (_req, res) => {
+    res.json({
+      ok: true,
+      currentWorkspaceId: workspaceRegistry.defaultWorkspace?.id || "",
+      items: Array.from(workspaceRegistry.map.values())
+    });
+  });
+
+  app.get("/api/health", async (req, res) => {
+    const workspace = workspaceRegistry.requireWorkspace(req, res);
+    if (!workspace) return;
+    const settings = await readSettings(workspace.root, defaultSettings);
+    res.json({
+      ok: true,
+      transport: "ui-message-stream",
+      askQuestion: true,
+      workspaceId: workspace.id,
+      workspaceRoot: workspace.root,
+      hooksMode: settings.speedModeEnabled ? "disabled-by-speed-mode" : "project-hooks-enabled"
+    });
+  });
+
+  app.get("/api/settings", async (req, res) => {
+    const workspace = workspaceRegistry.requireWorkspace(req, res);
+    if (!workspace) return;
+    const settings = await readSettings(workspace.root, defaultSettings);
+    res.json({
+      workspaceId: workspace.id,
+      workspaceRoot: workspace.root,
+      model: settings.model,
+      baseUrl: settings.baseUrl,
+      mcpEnabled: settings.mcpEnabled,
+      speedModeEnabled: settings.speedModeEnabled,
+      toolGateEnabled: settings.toolGateEnabled,
+      debugEnabled: settings.debugEnabled,
+      debugSseEnabled: settings.debugSseEnabled,
+      hasToken: Boolean(settings.authToken),
+      tokenPreview: maskToken(settings.authToken)
+    });
+  });
+
+  app.get("/api/skills", async (req, res) => {
+    try {
+      const workspace = workspaceRegistry.requireWorkspace(req, res);
+      if (!workspace) return;
+      const settings = await readSettings(workspace.root, defaultSettings);
+      const items = await fetchSkills(workspace.root, settings, { buildQueryOptions, withTimeout });
+      res.json({
+        ok: true,
+        workspaceId: workspace.id,
+        count: items.length,
+        source: "claude-agent-sdk-supportedCommands+local-owned-filter",
+        items
+      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).json({ ok: false, error: msg, items: [] });
+    }
+  });
+
+  app.get("/api/files", async (req, res) => {
+    try {
+      const workspace = workspaceRegistry.requireWorkspace(req, res);
+      if (!workspace) return;
+      const relativePath = normalizeRelativePath(req.query?.path);
+      const depthRaw = Number(req.query?.depth ?? 1);
+      const depth = Number.isFinite(depthRaw) ? Math.min(Math.max(Math.floor(depthRaw), 1), 3) : 1;
+
+      const abs = resolveWorkspacePath(workspace.root, relativePath);
+      if (!abs) {
+        res.status(400).json({ ok: false, error: "invalid path" });
+        return;
+      }
+
+      const rules = await loadIgnoreRules(workspace.root);
+      const items = await listWorkspaceFiles(workspace.root, relativePath, depth, rules);
+      res.json({
+        ok: true,
+        workspaceId: workspace.id,
+        root: workspace.root,
+        path: relativePath,
+        depth,
+        count: items.length,
+        items
+      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "unknown error";
+      res.status(500).json({ ok: false, error: msg, items: [] });
+    }
+  });
+
+  app.post("/api/settings", async (req, res) => {
+    const workspace = workspaceRegistry.requireWorkspace(req, res);
+    if (!workspace) return;
+
+    const current = await readSettings(workspace.root, defaultSettings);
+    const model = typeof req.body?.model === "string" ? req.body.model.trim() : current.model;
+    const baseUrl = typeof req.body?.baseUrl === "string" ? req.body.baseUrl.trim() : current.baseUrl;
+    const tokenInput = typeof req.body?.authToken === "string" ? req.body.authToken.trim() : "";
+    const mcpEnabled = typeof req.body?.mcpEnabled === "boolean" ? req.body.mcpEnabled : current.mcpEnabled;
+    const speedModeEnabled =
+      typeof req.body?.speedModeEnabled === "boolean" ? req.body.speedModeEnabled : current.speedModeEnabled;
+    const toolGateEnabled =
+      typeof req.body?.toolGateEnabled === "boolean" ? req.body.toolGateEnabled : current.toolGateEnabled;
+    const debugEnabled = typeof req.body?.debugEnabled === "boolean" ? req.body.debugEnabled : current.debugEnabled;
+    const debugSseEnabled =
+      typeof req.body?.debugSseEnabled === "boolean" ? req.body.debugSseEnabled : current.debugSseEnabled;
+    const keepExistingToken = req.body?.keepExistingToken !== false;
+
+    const next: RuntimeSettings = {
+      model: model || current.model,
+      baseUrl: baseUrl || current.baseUrl,
+      authToken: tokenInput ? tokenInput : keepExistingToken ? current.authToken : "",
+      mcpEnabled,
+      speedModeEnabled,
+      toolGateEnabled,
+      debugEnabled,
+      debugSseEnabled
+    };
+
+    await writeSettings(workspace.root, next);
+    res.json({
+      ok: true,
+      workspaceId: workspace.id,
+      workspaceRoot: workspace.root,
+      model: next.model,
+      baseUrl: next.baseUrl,
+      mcpEnabled: next.mcpEnabled,
+      speedModeEnabled: next.speedModeEnabled,
+      toolGateEnabled: next.toolGateEnabled,
+      debugEnabled: next.debugEnabled,
+      debugSseEnabled: next.debugSseEnabled,
+      hasToken: Boolean(next.authToken),
+      tokenPreview: maskToken(next.authToken)
+    });
+  });
+}
