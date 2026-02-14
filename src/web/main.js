@@ -5,6 +5,8 @@ const stopBtn = document.getElementById("stop-btn");
 const retryBtn = document.getElementById("retry-btn");
 const timelineEl = document.getElementById("timeline");
 const eventsEl = document.getElementById("events");
+const workspaceSelectEl = document.getElementById("workspace-select");
+const workspaceMetaEl = document.getElementById("workspace-meta");
 const sessionMetaEl = document.getElementById("session-meta");
 const skillsMetaEl = document.getElementById("skills-meta");
 const skillsListEl = document.getElementById("skills-list");
@@ -28,6 +30,7 @@ const settingDebugSseEnabledInput = document.getElementById("setting-debug-sse-e
 const tokenPreviewEl = document.getElementById("token-preview");
 
 const state = {
+  currentWorkspaceId: "",
   currentSessionId: null,
   currentMcpEnabled: true,
   currentSpeedModeEnabled: false,
@@ -41,7 +44,8 @@ const state = {
   currentAbortController: null,
   fileTree: new Map(),
   fileExpanded: new Set([""]),
-  fileLoading: new Set()
+  fileLoading: new Set(),
+  workspaces: []
 };
 let skillsLoading = false;
 let isComposing = false;
@@ -60,6 +64,39 @@ let timelineInnerEl = null;
 function setSession(sessionId) {
   state.currentSessionId = sessionId || null;
   sessionMetaEl.textContent = state.currentSessionId ? `Session: ${state.currentSessionId}` : "Session: (new)";
+}
+
+function apiUrl(pathname, params = {}) {
+  const url = new URL(pathname, window.location.origin);
+  const withWorkspace = { ...params };
+  if (state.currentWorkspaceId && withWorkspace.workspaceId === undefined) {
+    withWorkspace.workspaceId = state.currentWorkspaceId;
+  }
+  for (const [key, value] of Object.entries(withWorkspace)) {
+    if (value === undefined || value === null || value === "") continue;
+    url.searchParams.set(key, String(value));
+  }
+  return `${url.pathname}${url.search}`;
+}
+
+async function apiGetJson(pathname, params = {}) {
+  const response = await fetch(apiUrl(pathname, params));
+  if (!response.ok) throw new Error((await response.text()) || response.statusText);
+  return response.json();
+}
+
+async function apiPostJson(pathname, body = {}) {
+  const payload = { ...body };
+  if (state.currentWorkspaceId && payload.workspaceId === undefined) {
+    payload.workspaceId = state.currentWorkspaceId;
+  }
+  const response = await fetch(pathname, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) throw new Error((await response.text()) || response.statusText);
+  return response.json();
 }
 
 function showSettingsModal(show) {
@@ -175,30 +212,19 @@ function renderTimeline() {
 }
 
 async function resolvePending(payload) {
-  const response = await fetch("/api/input", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-  if (!response.ok) throw new Error((await response.text()) || response.statusText);
-  return response.json();
+  return apiPostJson("/api/input", payload);
 }
 
 async function cancelPending(requestId) {
-  const response = await fetch("/api/input/cancel", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ requestId })
-  });
-  if (!response.ok) throw new Error((await response.text()) || response.statusText);
-  return response.json();
+  return apiPostJson("/api/input/cancel", { requestId });
 }
 
 async function loadSettings() {
-  const response = await fetch("/api/settings");
-  if (!response.ok) throw new Error((await response.text()) || response.statusText);
-
-  const data = await response.json();
+  const data = await apiGetJson("/api/settings");
+  if (data.workspaceId && data.workspaceId !== state.currentWorkspaceId) {
+    state.currentWorkspaceId = data.workspaceId;
+    renderWorkspaceOptions();
+  }
   settingModelInput.value = data.model || "";
   settingBaseUrlInput.value = data.baseUrl || "";
   settingAuthTokenInput.value = "";
@@ -310,9 +336,7 @@ async function loadFiles(path = "", depth = 1) {
     filesMetaEl.textContent = "加载中...";
   }
   try {
-    const response = await fetch(`/api/files?path=${encodeURIComponent(path)}&depth=${depth}`);
-    if (!response.ok) throw new Error((await response.text()) || response.statusText);
-    const data = await response.json();
+    const data = await apiGetJson("/api/files", { path, depth });
     const items = Array.isArray(data.items) ? data.items : [];
     state.fileTree.set(path, items);
     renderFilesPanel();
@@ -329,9 +353,7 @@ async function loadSkills() {
   skillsLoading = true;
   skillsMetaEl.textContent = "加载中...";
   try {
-    const response = await fetch("/api/skills");
-    if (!response.ok) throw new Error((await response.text()) || response.statusText);
-    const data = await response.json();
+    const data = await apiGetJson("/api/skills");
     const items = Array.isArray(data.items) ? data.items : [];
     skillsMetaEl.textContent = `仅显示用户/项目 skills，共 ${items.length} 个`;
     renderSkills(items);
@@ -341,6 +363,48 @@ async function loadSkills() {
   } finally {
     skillsLoading = false;
   }
+}
+
+function renderWorkspaceOptions() {
+  workspaceSelectEl.innerHTML = "";
+  for (const item of state.workspaces) {
+    const option = document.createElement("option");
+    option.value = item.id;
+    option.textContent = item.label;
+    workspaceSelectEl.appendChild(option);
+  }
+  if (state.currentWorkspaceId) {
+    workspaceSelectEl.value = state.currentWorkspaceId;
+  }
+  const current = state.workspaces.find((item) => item.id === state.currentWorkspaceId);
+  workspaceMetaEl.textContent = current ? current.root : "";
+}
+
+async function loadWorkspaces() {
+  const data = await apiGetJson("/api/workspaces", { workspaceId: "" });
+  const items = Array.isArray(data.items) ? data.items : [];
+  state.workspaces = items;
+  if (!state.currentWorkspaceId) {
+    state.currentWorkspaceId = data.currentWorkspaceId || (items[0] ? items[0].id : "");
+  }
+  renderWorkspaceOptions();
+}
+
+async function switchWorkspace(workspaceId) {
+  if (!workspaceId || workspaceId === state.currentWorkspaceId) return;
+  state.currentWorkspaceId = workspaceId;
+  renderWorkspaceOptions();
+  setSession(null);
+  state.pendingById.clear();
+  state.pendingOrder = [];
+  state.activePendingId = null;
+  state.pendingHistory = [];
+  state.messages = [{ id: "init", role: "assistant", text: "准备就绪。输入任务后将实时显示回复。", status: "complete" }];
+  renderTimeline();
+  renderPendingPanel();
+  state.fileTree.clear();
+  state.fileExpanded = new Set([""]);
+  await Promise.allSettled([loadSettings(), loadSkills(), loadFiles()]);
 }
 
 function buildSettingsPayload({ mcpEnabled, speedModeEnabled }) {
@@ -358,14 +422,7 @@ function buildSettingsPayload({ mcpEnabled, speedModeEnabled }) {
 }
 
 async function saveSettingsWithPayload(payload) {
-  const response = await fetch("/api/settings", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-  if (!response.ok) throw new Error((await response.text()) || response.statusText);
-
-  const data = await response.json();
+  const data = await apiPostJson("/api/settings", payload);
   setMcpEnabled(data.mcpEnabled !== false);
   setSpeedModeEnabled(data.speedModeEnabled === true);
   tokenPreviewEl.textContent = data.hasToken ? `已配置 token: ${data.tokenPreview || "********"}` : "当前未配置 token";
@@ -701,15 +758,20 @@ state.messages = [{ id: "init", role: "assistant", text: "准备就绪。输入�
 renderTimeline();
 renderPendingPanel();
 setStreamingState(false);
-loadSettings().catch(() => {
-  tokenPreviewEl.textContent = "配置读取失败，请稍后重试。";
-});
-loadSkills();
-loadFiles();
+loadWorkspaces()
+  .then(() => Promise.all([loadSettings(), loadSkills(), loadFiles()]))
+  .catch(() => {
+    tokenPreviewEl.textContent = "配置读取失败，请稍后重试。";
+    workspaceMetaEl.textContent = "工作区读取失败";
+  });
 setInterval(() => {
   if (document.hidden) return;
   loadSkills();
 }, 3000);
+
+workspaceSelectEl.addEventListener("change", async () => {
+  await switchWorkspace(workspaceSelectEl.value);
+});
 
 filesListEl.addEventListener("click", async (event) => {
   const target = event.target instanceof Element ? event.target.closest(".files-row") : null;
@@ -815,11 +877,7 @@ async function stopCurrentStream() {
   }
   if (sessionId) {
     try {
-      await fetch("/api/chat/stop", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: sessionId })
-      });
+      await apiPostJson("/api/chat/stop", { id: sessionId });
     } catch {
       // best effort stop
     }
@@ -850,6 +908,7 @@ async function sendMessage(message, isRetry) {
       headers: { "Content-Type": "application/json" },
       signal: abortController.signal,
       body: JSON.stringify({
+        workspaceId: state.currentWorkspaceId || undefined,
         id: state.currentSessionId || undefined,
         messages: [{ role: "user", content: message }]
       })

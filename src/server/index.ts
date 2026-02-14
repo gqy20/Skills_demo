@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { query, type PermissionResult, type SDKMessage, type PermissionUpdate, type SlashCommand } from "@anthropic-ai/claude-agent-sdk";
-import type { Response } from "express";
+import type { Request, Response } from "express";
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -15,9 +15,7 @@ const host = process.env.HOST || "127.0.0.1";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const WORKSPACE_ROOT = path.resolve(process.env.AGENT_WORKSPACE_ROOT || process.cwd());
 const WEB_ROOT = path.resolve(__dirname, "../web");
-const SETTINGS_FILE = path.join(WORKSPACE_ROOT, ".info", "agent-web-settings.json");
 
 type PendingRequest = {
   requestId: string;
@@ -84,6 +82,12 @@ type IgnoreRuleSet = {
   names: Set<string>;
 };
 
+type WorkspaceInfo = {
+  id: string;
+  label: string;
+  root: string;
+};
+
 const pendingRequests = new Map<string, PendingRequest>();
 const resolvedRequests = new Map<string, RequestResolutionRecord>();
 const sessionMap = new Map<string, string>();
@@ -107,11 +111,51 @@ const DEFAULT_FILE_EXCLUDES = new Set([
   ".vscode"
 ]);
 let ignoreCache:
-  | {
-      loadedAt: number;
-      rules: IgnoreRuleSet;
-    }
+  | Map<
+      string,
+      {
+        loadedAt: number;
+        rules: IgnoreRuleSet;
+      }
+    >
   | null = null;
+
+function sanitizeWorkspaceId(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "") || "workspace";
+}
+
+function collectWorkspaceRoots(): string[] {
+  const raw = String(process.env.AGENT_WORKSPACES || "").trim();
+  const fromEnv = raw
+    ? raw
+        .split(/[,\n]/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : [];
+  const roots = [process.env.AGENT_WORKSPACE_ROOT || process.cwd(), ...fromEnv].map((item) => path.resolve(item));
+  return Array.from(new Set(roots));
+}
+
+function buildWorkspaceMap(): Map<string, WorkspaceInfo> {
+  const roots = collectWorkspaceRoots();
+  const map = new Map<string, WorkspaceInfo>();
+  const idCount = new Map<string, number>();
+  for (const root of roots) {
+    const base = sanitizeWorkspaceId(path.basename(root));
+    const count = (idCount.get(base) || 0) + 1;
+    idCount.set(base, count);
+    const id = count === 1 ? base : `${base}-${count}`;
+    map.set(id, { id, label: path.basename(root) || id, root });
+  }
+  return map;
+}
+
+const WORKSPACES = buildWorkspaceMap();
+const DEFAULT_WORKSPACE = (WORKSPACES.values().next().value || null) as WorkspaceInfo | null;
 
 const DEFAULT_SETTINGS: RuntimeSettings = {
   model: process.env.ANTHROPIC_MODEL || "glm-5",
@@ -127,6 +171,34 @@ const DEFAULT_SETTINGS: RuntimeSettings = {
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 app.use(express.static(WEB_ROOT));
+
+function sessionKey(workspaceId: string, sessionId: string): string {
+  return `${workspaceId}:${sessionId}`;
+}
+
+function normalizeWorkspaceId(input: unknown): string {
+  return typeof input === "string" ? input.trim() : "";
+}
+
+function getWorkspaceById(workspaceId: string): WorkspaceInfo | null {
+  if (!workspaceId) return DEFAULT_WORKSPACE || null;
+  return WORKSPACES.get(workspaceId) || null;
+}
+
+function resolveWorkspaceFromRequest(req: Request): WorkspaceInfo | null {
+  const fromBody = normalizeWorkspaceId(req.body?.workspaceId);
+  const fromQuery = normalizeWorkspaceId(req.query?.workspaceId);
+  return getWorkspaceById(fromBody || fromQuery || DEFAULT_WORKSPACE?.id || "");
+}
+
+function requireWorkspace(req: Request, res: Response): WorkspaceInfo | null {
+  const workspace = resolveWorkspaceFromRequest(req);
+  if (!workspace) {
+    res.status(400).json({ ok: false, error: "workspace not found" });
+    return null;
+  }
+  return workspace;
+}
 
 function extractText(value: unknown): string[] {
   if (typeof value === "string") {
@@ -310,9 +382,14 @@ function createPendingRequest(
   return { requestId, decisionPromise };
 }
 
-async function readSettings(): Promise<RuntimeSettings> {
+function settingsFileFor(workspaceRoot: string): string {
+  return path.join(workspaceRoot, ".info", "agent-web-settings.json");
+}
+
+async function readSettings(workspaceRoot: string): Promise<RuntimeSettings> {
+  const settingsFile = settingsFileFor(workspaceRoot);
   try {
-    const raw = await fs.readFile(SETTINGS_FILE, "utf-8");
+    const raw = await fs.readFile(settingsFile, "utf-8");
     const parsed = JSON.parse(raw) as Partial<RuntimeSettings>;
     return {
       model: parsed.model || DEFAULT_SETTINGS.model,
@@ -333,14 +410,15 @@ async function readSettings(): Promise<RuntimeSettings> {
   }
 }
 
-async function writeSettings(settings: RuntimeSettings): Promise<void> {
-  await fs.mkdir(path.dirname(SETTINGS_FILE), { recursive: true });
-  await fs.writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 2), "utf-8");
+async function writeSettings(workspaceRoot: string, settings: RuntimeSettings): Promise<void> {
+  const settingsFile = settingsFileFor(workspaceRoot);
+  await fs.mkdir(path.dirname(settingsFile), { recursive: true });
+  await fs.writeFile(settingsFile, JSON.stringify(settings, null, 2), "utf-8");
 }
 
-async function getMcpServerNames(): Promise<string[]> {
+async function getMcpServerNames(workspaceRoot: string): Promise<string[]> {
   try {
-    const raw = await fs.readFile(path.join(WORKSPACE_ROOT, ".mcp.json"), "utf-8");
+    const raw = await fs.readFile(path.join(workspaceRoot, ".mcp.json"), "utf-8");
     const parsed = JSON.parse(raw) as { mcpServers?: Record<string, unknown> };
     return Object.keys(parsed.mcpServers || {});
   } catch {
@@ -348,8 +426,12 @@ async function getMcpServerNames(): Promise<string[]> {
   }
 }
 
-async function applyMcpToggle(queryInstance: ReturnType<typeof query>, enabled: boolean): Promise<void> {
-  const names = await getMcpServerNames();
+async function applyMcpToggle(
+  queryInstance: ReturnType<typeof query>,
+  workspaceRoot: string,
+  enabled: boolean
+): Promise<void> {
+  const names = await getMcpServerNames(workspaceRoot);
   for (const name of names) {
     try {
       await queryInstance.toggleMcpServer(name, enabled);
@@ -369,13 +451,14 @@ function buildQueryEnv(settings: RuntimeSettings): Record<string, string | undef
 }
 
 function buildQueryOptions(
+  workspaceRoot: string,
   settings: RuntimeSettings,
   sessionId: string,
   sdkSessionId: string | undefined,
   extra: Partial<Parameters<typeof query>[0]["options"]> = {}
 ): NonNullable<Parameters<typeof query>[0]["options"]> {
   const base: NonNullable<Parameters<typeof query>[0]["options"]> = {
-    cwd: WORKSPACE_ROOT,
+    cwd: workspaceRoot,
     env: buildQueryEnv(settings),
     includePartialMessages: true,
     ...(sdkSessionId ? { resume: sdkSessionId } : { sessionId }),
@@ -424,14 +507,16 @@ function makeDefaultIgnoreRules(): IgnoreRuleSet {
   return rules;
 }
 
-async function loadIgnoreRules(): Promise<IgnoreRuleSet> {
+async function loadIgnoreRules(workspaceRoot: string): Promise<IgnoreRuleSet> {
   const now = Date.now();
-  if (ignoreCache && now - ignoreCache.loadedAt < 15_000) {
-    return ignoreCache.rules;
+  if (!ignoreCache) ignoreCache = new Map();
+  const cached = ignoreCache.get(workspaceRoot);
+  if (cached && now - cached.loadedAt < 15_000) {
+    return cached.rules;
   }
 
   const rules = makeDefaultIgnoreRules();
-  const gitignoreFile = path.join(WORKSPACE_ROOT, ".gitignore");
+  const gitignoreFile = path.join(workspaceRoot, ".gitignore");
 
   try {
     const raw = await fs.readFile(gitignoreFile, "utf-8");
@@ -449,14 +534,14 @@ async function loadIgnoreRules(): Promise<IgnoreRuleSet> {
     // ignore missing or unreadable .gitignore
   }
 
-  ignoreCache = { loadedAt: now, rules };
+  ignoreCache.set(workspaceRoot, { loadedAt: now, rules });
   return rules;
 }
 
-function resolveWorkspacePath(relativePath: string): string | null {
-  const abs = path.resolve(WORKSPACE_ROOT, relativePath || ".");
-  if (abs === WORKSPACE_ROOT) return abs;
-  if (!abs.startsWith(`${WORKSPACE_ROOT}${path.sep}`)) return null;
+function resolveWorkspacePath(workspaceRoot: string, relativePath: string): string | null {
+  const abs = path.resolve(workspaceRoot, relativePath || ".");
+  if (abs === workspaceRoot) return abs;
+  if (!abs.startsWith(`${workspaceRoot}${path.sep}`)) return null;
   return abs;
 }
 
@@ -473,8 +558,8 @@ function shouldExcludeEntry(relativePath: string, name: string, rules: IgnoreRul
   return false;
 }
 
-async function directoryHasChildren(relativePath: string, rules: IgnoreRuleSet): Promise<boolean> {
-  const abs = resolveWorkspacePath(relativePath);
+async function directoryHasChildren(workspaceRoot: string, relativePath: string, rules: IgnoreRuleSet): Promise<boolean> {
+  const abs = resolveWorkspacePath(workspaceRoot, relativePath);
   if (!abs) return false;
   try {
     const entries = await fs.readdir(abs, { withFileTypes: true });
@@ -484,8 +569,13 @@ async function directoryHasChildren(relativePath: string, rules: IgnoreRuleSet):
   }
 }
 
-async function listWorkspaceFiles(relativePath: string, depth: number, rules: IgnoreRuleSet): Promise<FileTreeItem[]> {
-  const abs = resolveWorkspacePath(relativePath);
+async function listWorkspaceFiles(
+  workspaceRoot: string,
+  relativePath: string,
+  depth: number,
+  rules: IgnoreRuleSet
+): Promise<FileTreeItem[]> {
+  const abs = resolveWorkspacePath(workspaceRoot, relativePath);
   if (!abs) throw new Error("invalid path");
 
   const stat = await fs.stat(abs);
@@ -502,11 +592,11 @@ async function listWorkspaceFiles(relativePath: string, depth: number, rules: Ig
   const items: FileTreeItem[] = [];
   for (const entry of sorted) {
     const itemPath = normalizeRelativePath(relativePath ? `${relativePath}/${entry.name}` : entry.name);
-    const itemAbs = resolveWorkspacePath(itemPath);
+    const itemAbs = resolveWorkspacePath(workspaceRoot, itemPath);
     if (!itemAbs) continue;
     const itemStat = await fs.stat(itemAbs);
     if (entry.isDirectory()) {
-      const hasChildren = await directoryHasChildren(itemPath, rules);
+      const hasChildren = await directoryHasChildren(workspaceRoot, itemPath, rules);
       const item: FileTreeItem = {
         name: entry.name,
         path: itemPath,
@@ -516,7 +606,7 @@ async function listWorkspaceFiles(relativePath: string, depth: number, rules: Ig
         hasChildren
       };
       if (depth > 1 && hasChildren) {
-        item.children = await listWorkspaceFiles(itemPath, depth - 1, rules);
+        item.children = await listWorkspaceFiles(workspaceRoot, itemPath, depth - 1, rules);
       }
       items.push(item);
     } else {
@@ -532,8 +622,9 @@ async function listWorkspaceFiles(relativePath: string, depth: number, rules: Ig
   return items;
 }
 
-function skillsCacheKey(settings: RuntimeSettings): string {
+function skillsCacheKey(workspaceRoot: string, settings: RuntimeSettings): string {
   return JSON.stringify({
+    workspaceRoot,
     speedModeEnabled: settings.speedModeEnabled,
     mcpEnabled: settings.mcpEnabled,
     toolGateEnabled: settings.toolGateEnabled
@@ -584,8 +675,8 @@ async function collectLocalSkills(baseDir: string, source: SkillItem["source"]):
   return items;
 }
 
-async function collectOwnedSkills(): Promise<SkillItem[]> {
-  const projectDir = path.join(WORKSPACE_ROOT, ".claude", "skills");
+async function collectOwnedSkills(workspaceRoot: string): Promise<SkillItem[]> {
+  const projectDir = path.join(workspaceRoot, ".claude", "skills");
   const userDir = path.join(os.homedir(), ".claude", "skills");
   const [projectItems, userItems] = await Promise.all([
     collectLocalSkills(projectDir, "project"),
@@ -616,20 +707,20 @@ function normalizeSkills(commands: SlashCommand[], owned: SkillItem[]): SkillIte
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-async function fetchSkills(settings: RuntimeSettings): Promise<SkillItem[]> {
-  const key = skillsCacheKey(settings);
+async function fetchSkills(workspaceRoot: string, settings: RuntimeSettings): Promise<SkillItem[]> {
+  const key = skillsCacheKey(workspaceRoot, settings);
   const now = Date.now();
   if (skillsCache && skillsCache.key === key && skillsCache.expiresAt > now) {
     return skillsCache.items;
   }
-  const owned = await collectOwnedSkills();
+  const owned = await collectOwnedSkills(workspaceRoot);
   if (owned.length === 0) {
     skillsCache = { key, items: [], expiresAt: now + 30_000 };
     return [];
   }
 
   const sessionId = randomUUID();
-  const options = buildQueryOptions(settings, sessionId, undefined);
+  const options = buildQueryOptions(workspaceRoot, settings, sessionId, undefined);
   const queryInstance = query({
     prompt: "List available slash commands.",
     options
@@ -652,20 +743,35 @@ async function fetchSkills(settings: RuntimeSettings): Promise<SkillItem[]> {
   }
 }
 
-app.get("/api/health", async (_req, res) => {
-  const settings = await readSettings();
+app.get("/api/workspaces", (_req, res) => {
+  res.json({
+    ok: true,
+    currentWorkspaceId: DEFAULT_WORKSPACE?.id || "",
+    items: Array.from(WORKSPACES.values())
+  });
+});
+
+app.get("/api/health", async (req, res) => {
+  const workspace = requireWorkspace(req, res);
+  if (!workspace) return;
+  const settings = await readSettings(workspace.root);
   res.json({
     ok: true,
     transport: "ui-message-stream",
     askQuestion: true,
-    workspaceRoot: WORKSPACE_ROOT,
+    workspaceId: workspace.id,
+    workspaceRoot: workspace.root,
     hooksMode: settings.speedModeEnabled ? "disabled-by-speed-mode" : "project-hooks-enabled"
   });
 });
 
-app.get("/api/settings", async (_req, res) => {
-  const settings = await readSettings();
+app.get("/api/settings", async (req, res) => {
+  const workspace = requireWorkspace(req, res);
+  if (!workspace) return;
+  const settings = await readSettings(workspace.root);
   res.json({
+    workspaceId: workspace.id,
+    workspaceRoot: workspace.root,
     model: settings.model,
     baseUrl: settings.baseUrl,
     mcpEnabled: settings.mcpEnabled,
@@ -678,12 +784,15 @@ app.get("/api/settings", async (_req, res) => {
   });
 });
 
-app.get("/api/skills", async (_req, res) => {
+app.get("/api/skills", async (req, res) => {
   try {
-    const settings = await readSettings();
-    const items = await fetchSkills(settings);
+    const workspace = requireWorkspace(req, res);
+    if (!workspace) return;
+    const settings = await readSettings(workspace.root);
+    const items = await fetchSkills(workspace.root, settings);
     res.json({
       ok: true,
+      workspaceId: workspace.id,
       count: items.length,
       source: "claude-agent-sdk-supportedCommands+local-owned-filter",
       items
@@ -696,21 +805,24 @@ app.get("/api/skills", async (_req, res) => {
 
 app.get("/api/files", async (req, res) => {
   try {
+    const workspace = requireWorkspace(req, res);
+    if (!workspace) return;
     const relativePath = normalizeRelativePath(req.query?.path);
     const depthRaw = Number(req.query?.depth ?? 1);
     const depth = Number.isFinite(depthRaw) ? Math.min(Math.max(Math.floor(depthRaw), 1), 3) : 1;
 
-    const abs = resolveWorkspacePath(relativePath);
+    const abs = resolveWorkspacePath(workspace.root, relativePath);
     if (!abs) {
       res.status(400).json({ ok: false, error: "invalid path" });
       return;
     }
 
-    const rules = await loadIgnoreRules();
-    const items = await listWorkspaceFiles(relativePath, depth, rules);
+    const rules = await loadIgnoreRules(workspace.root);
+    const items = await listWorkspaceFiles(workspace.root, relativePath, depth, rules);
     res.json({
       ok: true,
-      root: WORKSPACE_ROOT,
+      workspaceId: workspace.id,
+      root: workspace.root,
       path: relativePath,
       depth,
       count: items.length,
@@ -723,7 +835,10 @@ app.get("/api/files", async (req, res) => {
 });
 
 app.post("/api/settings", async (req, res) => {
-  const current = await readSettings();
+  const workspace = requireWorkspace(req, res);
+  if (!workspace) return;
+
+  const current = await readSettings(workspace.root);
   const model = typeof req.body?.model === "string" ? req.body.model.trim() : current.model;
   const baseUrl = typeof req.body?.baseUrl === "string" ? req.body.baseUrl.trim() : current.baseUrl;
   const tokenInput = typeof req.body?.authToken === "string" ? req.body.authToken.trim() : "";
@@ -748,9 +863,11 @@ app.post("/api/settings", async (req, res) => {
     debugSseEnabled
   };
 
-  await writeSettings(next);
+  await writeSettings(workspace.root, next);
   res.json({
     ok: true,
+    workspaceId: workspace.id,
+    workspaceRoot: workspace.root,
     model: next.model,
     baseUrl: next.baseUrl,
     mcpEnabled: next.mcpEnabled,
@@ -764,13 +881,16 @@ app.post("/api/settings", async (req, res) => {
 });
 
 app.post("/api/chat/ui", async (req, res) => {
+  const workspace = requireWorkspace(req, res);
+  if (!workspace) return;
   const traceId = randomUUID();
   const message = extractPrompt(req.body?.messages);
   const sessionId = typeof req.body?.id === "string" && req.body.id ? req.body.id : randomUUID();
-  const sdkSessionId = sessionMap.get(sessionId);
-  const seededSdkSessionId = sessionSeedMap.get(sessionId) || randomUUID();
-  if (!sessionSeedMap.has(sessionId)) {
-    sessionSeedMap.set(sessionId, seededSdkSessionId);
+  const key = sessionKey(workspace.id, sessionId);
+  const sdkSessionId = sessionMap.get(key);
+  const seededSdkSessionId = sessionSeedMap.get(key) || randomUUID();
+  if (!sessionSeedMap.has(key)) {
+    sessionSeedMap.set(key, seededSdkSessionId);
   }
 
   if (!message) {
@@ -785,13 +905,14 @@ app.post("/api/chat/ui", async (req, res) => {
   res.setHeader("x-vercel-ai-ui-message-stream", "v1");
   res.flushHeaders();
 
-  const settings = await readSettings();
+  const settings = await readSettings(workspace.root);
   const debugSseEnabled = settings.debugEnabled && settings.debugSseEnabled;
   const partId = `text-${randomUUID()}`;
   writeSseData(res, { type: "start" });
   writeSseData(res, { type: "text-start", id: partId });
   writeSseData(res, { type: "data-session", data: { sessionId } });
   writeDebugSse(res, false, debugSseEnabled, traceId, "request_started", {
+    workspaceId: workspace.id,
     sessionId,
     hasResume: Boolean(sdkSessionId),
     seededSdkSessionId,
@@ -821,12 +942,12 @@ app.post("/api/chat/ui", async (req, res) => {
         // ignore close errors on disconnect
       }
     }
-    activeQueries.delete(sessionId);
-    logTrace(traceId, "client_closed", { sessionId, streamEventCount, deltaCount });
+    activeQueries.delete(key);
+    logTrace(traceId, "client_closed", { workspaceId: workspace.id, sessionId, streamEventCount, deltaCount });
   });
 
   try {
-    const options = buildQueryOptions(settings, sessionId, sdkSessionId);
+    const options = buildQueryOptions(workspace.root, settings, sessionId, sdkSessionId);
     if (!sdkSessionId) {
       options.sessionId = seededSdkSessionId;
       delete options.resume;
@@ -884,8 +1005,9 @@ app.post("/api/chat/ui", async (req, res) => {
     }
 
     queryInstance = query({ prompt: message, options });
-    activeQueries.set(sessionId, queryInstance);
+    activeQueries.set(key, queryInstance);
     writeDebugSse(res, closed, debugSseEnabled, traceId, "query_created", {
+      workspaceId: workspace.id,
       sessionId,
       hasResume: Boolean(sdkSessionId)
     });
@@ -942,7 +1064,7 @@ app.post("/api/chat/ui", async (req, res) => {
     }
 
     if (!settings.speedModeEnabled) {
-      await applyMcpToggle(queryInstance, settings.mcpEnabled);
+      await applyMcpToggle(queryInstance, workspace.root, settings.mcpEnabled);
       writeDebugSse(res, closed, debugSseEnabled, traceId, "mcp_toggled", { enabled: settings.mcpEnabled });
     }
 
@@ -951,8 +1073,8 @@ app.post("/api/chat/ui", async (req, res) => {
       streamEventCount += 1;
 
       if (typeof event.session_id === "string") {
-        sessionMap.set(sessionId, event.session_id);
-        sessionSeedMap.delete(sessionId);
+        sessionMap.set(key, event.session_id);
+        sessionSeedMap.delete(key);
       }
 
       const deltaText = extractDeltaText(event);
@@ -976,6 +1098,7 @@ app.post("/api/chat/ui", async (req, res) => {
 
     if (!closed) {
       logTrace(traceId, "stream_completed", {
+        workspaceId: workspace.id,
         sessionId,
         streamEventCount,
         deltaCount
@@ -989,7 +1112,7 @@ app.post("/api/chat/ui", async (req, res) => {
     }
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
-    logTrace(traceId, "stream_error", { sessionId, error: msg, streamEventCount, deltaCount });
+    logTrace(traceId, "stream_error", { workspaceId: workspace.id, sessionId, error: msg, streamEventCount, deltaCount });
     if (!closed) {
       writeSseData(res, { type: "error", error: msg });
       writeSseData(res, { type: "finish" });
@@ -999,8 +1122,9 @@ app.post("/api/chat/ui", async (req, res) => {
       res.end();
     }
   } finally {
-    activeQueries.delete(sessionId);
+    activeQueries.delete(key);
     logTrace(traceId, "request_finished", {
+      workspaceId: workspace.id,
       sessionId,
       closed,
       doneSent,
@@ -1011,15 +1135,18 @@ app.post("/api/chat/ui", async (req, res) => {
 });
 
 app.post("/api/chat/stop", async (req, res) => {
+  const workspace = requireWorkspace(req, res);
+  if (!workspace) return;
   const sessionId = typeof req.body?.id === "string" ? req.body.id : "";
   if (!sessionId) {
     res.status(400).json({ error: "id is required" });
     return;
   }
 
-  const queryInstance = activeQueries.get(sessionId);
+  const key = sessionKey(workspace.id, sessionId);
+  const queryInstance = activeQueries.get(key);
   if (!queryInstance) {
-    res.json({ ok: true, id: sessionId, stopped: false, reason: "no_active_query" });
+    res.json({ ok: true, workspaceId: workspace.id, id: sessionId, stopped: false, reason: "no_active_query" });
     return;
   }
 
@@ -1034,8 +1161,8 @@ app.post("/api/chat/stop", async (req, res) => {
   } catch {
     // ignore close errors
   }
-  activeQueries.delete(sessionId);
-  res.json({ ok: true, id: sessionId, stopped: true });
+  activeQueries.delete(key);
+  res.json({ ok: true, workspaceId: workspace.id, id: sessionId, stopped: true });
 });
 
 app.post("/api/input", (req, res) => {
