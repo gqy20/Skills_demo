@@ -73,5 +73,14 @@ export function buildQueryOptions(
     base.settingSources = ["project"];
   }
 
+  if (settings.permissionProfile === "accept_edits") {
+    base.permissionMode = "acceptEdits";
+  } else if (settings.permissionProfile === "full_auto") {
+    base.permissionMode = "bypassPermissions";
+    base.allowDangerouslySkipPermissions = true;
+  } else {
+    base.permissionMode = "default";
+  }
+
   return base;
 }

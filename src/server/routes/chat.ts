@@ -112,12 +112,13 @@ export function registerChatRoutes({
       }
     }
     const enhanced = await enhancePromptWithDirectives(workspace.root, rawMessage, availableSlashNames);
+    const gateEnabled = settings.permissionProfile === "standard" && settings.toolGateEnabled;
     const debugSseEnabled = settings.debugEnabled && settings.debugSseEnabled;
     const partId = `text-${randomUUID()}`;
     writeSseData(res, { type: "start" });
     writeSseData(res, { type: "text-start", id: partId });
     writeSseData(res, { type: "data-session", data: { sessionId } });
-    writeSseData(res, { type: "data-tool-gate-status", data: { enabled: settings.toolGateEnabled } });
+    writeSseData(res, { type: "data-tool-gate-status", data: { enabled: gateEnabled } });
     writeSseData(res, {
       type: "data-input-directives",
       data: {
@@ -135,7 +136,8 @@ export function registerChatRoutes({
       seededSdkSessionId,
       speedModeEnabled: settings.speedModeEnabled,
       mcpEnabled: settings.mcpEnabled,
-      toolGateEnabled: settings.toolGateEnabled,
+      toolGateEnabled: gateEnabled,
+      permissionProfile: settings.permissionProfile,
       hasSlash: Boolean(enhanced.directives.slash),
       unknownSlash: enhanced.unknownSlash || "",
       mentionCount: enhanced.directives.mentionTokens.length,
@@ -184,7 +186,7 @@ export function registerChatRoutes({
         }
       };
 
-      if (settings.toolGateEnabled) {
+      if (gateEnabled) {
         options.canUseTool = async (toolName, input, hookOptions) => {
           const inputObj = (input ?? {}) as Record<string, unknown>;
           const isAskUserQuestion = isAskUserQuestionTool(toolName);

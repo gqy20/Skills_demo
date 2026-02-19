@@ -67,13 +67,6 @@ export default function Composer({
   setInputText,
   submitUserMessage,
   stop,
-  lastUserText,
-  composerToolsOpen,
-  setComposerToolsOpen,
-  composerMoreOpen,
-  setComposerMoreOpen,
-  composerToolsRef,
-  composerMoreRef,
   textareaRef,
   skills,
   files,
@@ -82,8 +75,11 @@ export default function Composer({
   const [caretPos, setCaretPos] = useState(0);
   const [activeIndex, setActiveIndex] = useState(0);
   const [remoteFileCandidates, setRemoteFileCandidates] = useState([]);
+  const [dismissedTokenKey, setDismissedTokenKey] = useState("");
+  const [insertedHint, setInsertedHint] = useState("");
   const fileCandidates = useMemo(() => flattenFiles(files || []), [files]);
   const activeToken = useMemo(() => detectActiveToken(inputText, caretPos), [inputText, caretPos]);
+  const tokenKey = activeToken ? `${activeToken.trigger}:${activeToken.start}:${activeToken.query}` : "";
 
   useEffect(() => {
     if (!activeToken || activeToken.trigger !== "@") {
@@ -182,7 +178,13 @@ export default function Composer({
 
   useEffect(() => {
     setActiveIndex(0);
-  }, [suggestOpen, inputText]);
+  }, [suggestOpen, inputText, tokenKey]);
+
+  useEffect(() => {
+    if (!insertedHint) return undefined;
+    const timer = setTimeout(() => setInsertedHint(""), 1200);
+    return () => clearTimeout(timer);
+  }, [insertedHint]);
 
   const applySuggestion = (index) => {
     if (!activeToken) return;
@@ -200,7 +202,21 @@ export default function Composer({
       el.selectionEnd = nextCaret;
       setCaretPos(nextCaret);
     });
+    setDismissedTokenKey("");
+    setInsertedHint(`${activeToken.trigger}${item.value}`);
   };
+
+  const showEmptySuggest = Boolean(activeToken && !blockingPending && !suggestions.length && activeToken.query.length > 0);
+  const showSuggest = Boolean((suggestOpen || showEmptySuggest) && tokenKey !== dismissedTokenKey);
+  const composerStatus = blockingPending
+    ? "等待确认输入"
+    : showSuggest && suggestions.length > 0
+      ? "↑↓ 选择 · Enter 确认"
+      : insertedHint
+        ? `已插入 ${insertedHint}`
+        : inputText.trim()
+          ? "Enter 发送 · Shift+Enter 换行"
+          : "输入 / 或 @ 获取推荐";
 
   return (
     <form
@@ -216,38 +232,6 @@ export default function Composer({
     >
       <div className="composer-shell">
         <div className="composer-box">
-          <div className="composer-prefix" ref={composerToolsRef}>
-            <button
-              type="button"
-              className="btn-secondary composer-icon-btn"
-              aria-label="打开快捷操作"
-              onClick={() => setComposerToolsOpen((v) => !v)}
-            >
-              +
-            </button>
-            <div className={`composer-popover ${composerToolsOpen ? "" : "hidden"}`}>
-              <button
-                type="button"
-                className="composer-popover-item"
-                onClick={() => {
-                  setInputText((prev) => `${prev}${prev ? "\n" : ""}/文献综述分析 `);
-                  setComposerToolsOpen(false);
-                }}
-              >
-                文献综述分析模板
-              </button>
-              <button
-                type="button"
-                className="composer-popover-item"
-                onClick={() => {
-                  setInputText((prev) => `${prev}${prev ? "\n" : ""}@01_articles `);
-                  setComposerToolsOpen(false);
-                }}
-              >
-                引用文献目录
-              </button>
-            </div>
-          </div>
           <textarea
             ref={textareaRef}
             id="message"
@@ -262,7 +246,7 @@ export default function Composer({
             onClick={(event) => setCaretPos(event.currentTarget.selectionStart ?? 0)}
             onKeyUp={(event) => setCaretPos(event.currentTarget.selectionStart ?? 0)}
             onKeyDown={(event) => {
-              if (suggestOpen) {
+              if (showSuggest && suggestions.length > 0) {
                 if (event.key === "ArrowDown") {
                   event.preventDefault();
                   setActiveIndex((prev) => (prev + 1) % suggestions.length);
@@ -280,9 +264,13 @@ export default function Composer({
                 }
                 if (event.key === "Escape") {
                   event.preventDefault();
-                  setCaretPos(-1);
+                  setDismissedTokenKey(tokenKey);
                   return;
                 }
+              } else if (showSuggest && event.key === "Escape") {
+                event.preventDefault();
+                setDismissedTokenKey(tokenKey);
+                return;
               }
 
               if (event.key === "Enter" && !event.shiftKey) {
@@ -295,36 +283,27 @@ export default function Composer({
               }
             }}
           />
-          <div className={`composer-suggest ${suggestOpen ? "" : "hidden"}`}>
-            {suggestions.map((item, idx) => (
-              <button
-                key={`${item.kind}-${item.key}`}
-                type="button"
-                className={`composer-suggest-item ${idx === activeIndex ? "is-active" : ""}`}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  applySuggestion(idx);
-                }}
-              >
-                <span className="composer-suggest-main">{item.title}</span>
-                <span className="composer-suggest-sub">{item.desc || ""}</span>
-              </button>
-            ))}
+          <div className={`composer-suggest ${showSuggest ? "" : "hidden"}`}>
+            {suggestions.length > 0 ? (
+              suggestions.map((item, idx) => (
+                <button
+                  key={`${item.kind}-${item.key}`}
+                  type="button"
+                  className={`composer-suggest-item ${idx === activeIndex ? "is-active" : ""}`}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    applySuggestion(idx);
+                  }}
+                >
+                  <span className="composer-suggest-main">{item.title}</span>
+                  <span className="composer-suggest-sub">{item.desc || ""}</span>
+                </button>
+              ))
+            ) : (
+              <div className="composer-suggest-empty">无匹配项，按 Enter 可直接发送当前内容</div>
+            )}
           </div>
-          <div className="composer-right" ref={composerMoreRef}>
-            <button type="button" className="btn-secondary composer-icon-btn" onClick={() => setComposerMoreOpen((v) => !v)}>
-              ⋯
-            </button>
-            <div className={`composer-popover composer-more ${composerMoreOpen ? "" : "hidden"}`}>
-              <button
-                type="button"
-                className="composer-popover-item"
-                disabled={isStreaming || !lastUserText || blockingPending}
-                onClick={() => submitUserMessage(lastUserText).catch(() => {})}
-              >
-                重新生成
-              </button>
-            </div>
+          <div className="composer-right">
             <button
               type="submit"
               className={`btn-primary composer-send-btn ${isStreaming ? "is-stop" : ""}`}
@@ -337,6 +316,7 @@ export default function Composer({
         </div>
         <div className="composer-foot">
           <span className="composer-shortcut">`/` 快捷指令 · `@` 引用文件 · Enter 发送</span>
+          <span className="composer-status">{composerStatus}</span>
         </div>
       </div>
     </form>

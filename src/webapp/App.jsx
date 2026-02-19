@@ -39,6 +39,18 @@ function shortText(value, max = 120) {
   return text.length > max ? `${text.slice(0, max)}...` : text;
 }
 
+function isErrorLikeText(text) {
+  const t = String(text || "").toLowerCase();
+  if (!t) return false;
+  return t.includes("error") || t.includes("failed") || t.includes("失败") || t.includes("异常");
+}
+
+function permissionProfileLabel(mode) {
+  if (mode === "full_auto") return "全部允许";
+  if (mode === "accept_edits") return "自动接受编辑";
+  return "标准";
+}
+
 function extractSlashCommand(text) {
   const m = String(text || "").trim().match(/^\/([a-zA-Z0-9_-]+)/);
   return m ? m[1].toLowerCase() : "";
@@ -70,6 +82,10 @@ function normalizeSettings(data) {
     mineruApiKey: "",
     hasMineruKey: data?.hasMineruKey === true,
     mineruKeyPreview: data?.mineruKeyPreview || "",
+    permissionProfile:
+      data?.permissionProfile === "full_auto" || data?.permissionProfile === "accept_edits"
+        ? data.permissionProfile
+        : "standard",
     mcpEnabled: data?.mcpEnabled !== false,
     speedModeEnabled: data?.speedModeEnabled === true,
     toolGateEnabled: data?.toolGateEnabled !== false,
@@ -82,7 +98,6 @@ export default function App() {
   const [workspaces, setWorkspaces] = useState([]);
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState("");
   const [currentSessionId, setCurrentSessionId] = useState(null);
-  const [runtimeModel, setRuntimeModel] = useState("");
   const [settings, setSettings] = useState({
     model: "",
     baseUrl: "",
@@ -92,6 +107,7 @@ export default function App() {
     mineruApiKey: "",
     hasMineruKey: false,
     mineruKeyPreview: "",
+    permissionProfile: "standard",
     mcpEnabled: true,
     speedModeEnabled: false,
     toolGateEnabled: true,
@@ -105,9 +121,8 @@ export default function App() {
   const [skills, setSkills] = useState([]);
   const [files, setFiles] = useState([]);
   const [controlsOpen, setControlsOpen] = useState(false);
-  const [composerToolsOpen, setComposerToolsOpen] = useState(false);
-  const [composerMoreOpen, setComposerMoreOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [dangerConfirmText, setDangerConfirmText] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarSections, setSidebarSections] = useState({
     files: false,
@@ -133,8 +148,6 @@ export default function App() {
     askResolved: 0
   });
   const controlsRef = useRef(null);
-  const composerToolsRef = useRef(null);
-  const composerMoreRef = useRef(null);
   const textareaRef = useRef(null);
   const timelineRef = useRef(null);
 
@@ -278,11 +291,6 @@ export default function App() {
         return;
       }
 
-      if (part?.type === "data-sdk-init") {
-        setRuntimeModel(String(part?.data?.model || ""));
-        return;
-      }
-
       if (part?.type === "data-tool-progress") {
         trackMcpUsage(part?.data?.toolName, part?.data?.elapsedSeconds ?? null);
         return;
@@ -352,14 +360,6 @@ export default function App() {
   const isStreaming = status === "submitted" || status === "streaming";
   const blockingPending = Boolean(activePending);
   const showPreflight = messages.length === 0 && !isStreaming && !lastUserText;
-  const runtimeDisplay = runtimeModel && runtimeModel !== settings.model ? runtimeModel : "Agent SDK";
-  const runtimeStage = blockingPending
-    ? "等待用户输入"
-    : isStreaming
-      ? diagnostics.gateHits > 0
-        ? "工具执行中"
-        : "处理中"
-      : "空闲";
 
   const loadWorkspaces = useCallback(async () => {
     const data = await apiGetJson("/api/workspaces", { workspaceId: "" });
@@ -426,11 +426,7 @@ export default function App() {
       const target = event.target;
       if (!(target instanceof Element)) return;
       if (controlsRef.current && controlsRef.current.contains(target)) return;
-      if (composerToolsRef.current && composerToolsRef.current.contains(target)) return;
-      if (composerMoreRef.current && composerMoreRef.current.contains(target)) return;
       setControlsOpen(false);
-      setComposerToolsOpen(false);
-      setComposerMoreOpen(false);
     };
     document.addEventListener("click", onDocClick);
     return () => document.removeEventListener("click", onDocClick);
@@ -454,7 +450,6 @@ export default function App() {
       });
       setSettings(normalizeSettings(data));
       setCurrentSessionId(null);
-      setRuntimeModel("");
       setDiagnostics((prev) => ({ ...prev, toolGateEnabled: data.toolGateEnabled !== false }));
       return data;
     },
@@ -482,6 +477,16 @@ export default function App() {
     setRuntimeUsage({ skills: initialSkillsState, mcps: {} });
     setUsageExpanded({ skills: false, mcps: false });
     await sendMessage({ id: createId(), text });
+  };
+
+  const retryLast = () => submitUserMessage(lastUserText).catch(() => {});
+  const copyText = async (text) => {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // ignore clipboard failures in unsupported environments
+    }
   };
 
   const autoResizeTextarea = useCallback(() => {
@@ -569,10 +574,6 @@ export default function App() {
     autoResizeTextarea();
   }, [inputText, autoResizeTextarea]);
 
-  useEffect(() => {
-    if (isStreaming) setComposerMoreOpen(false);
-  }, [isStreaming]);
-
   const toggleSidebarSection = (key) =>
     setSidebarSections((prev) => ({
       ...prev,
@@ -625,16 +626,6 @@ export default function App() {
                     MCP: {settings.mcpEnabled ? "ON" : "OFF"}
                   </button>
                   <button
-                    className={`btn-secondary ${settings.toolGateEnabled ? "" : "is-off"}`}
-                    type="button"
-                    onClick={async () => {
-                      await saveSettings({ ...settings, toolGateEnabled: !settings.toolGateEnabled });
-                      setControlsOpen(false);
-                    }}
-                  >
-                    Gate: {settings.toolGateEnabled ? "ON" : "OFF"}
-                  </button>
-                  <button
                     className="btn-secondary"
                     type="button"
                     onClick={() => {
@@ -642,7 +633,7 @@ export default function App() {
                       setSettingsOpen(true);
                     }}
                   >
-                    设置
+                    权限: {permissionProfileLabel(settings.permissionProfile)}
                   </button>
                 </div>
               </div>
@@ -650,7 +641,7 @@ export default function App() {
             <div className="runtime-meta">
               <span className="meta-chip">Workspace: {currentWorkspaceId || "-"}</span>
               <span className="meta-chip">Model: {settings.model || "-"}</span>
-              <span className="meta-chip">Runtime: {runtimeDisplay}</span>
+              <span className="meta-chip">权限: {permissionProfileLabel(settings.permissionProfile)}</span>
             </div>
           </header>
 
@@ -765,7 +756,7 @@ export default function App() {
                           showProcessing ? (
                             <div className="processing-card">
                               <p className="processing-title">处理中</p>
-                              <p className="processing-subtitle">当前阶段：{runtimeStage}</p>
+                              <p className="processing-subtitle">正在整理结果，请稍候...</p>
                               <div className="processing-skeleton">
                                 <span />
                                 <span />
@@ -773,7 +764,19 @@ export default function App() {
                               </div>
                             </div>
                           ) : (
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+                            <div className="assistant-content bubble-enter">
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+                              {isLastAssistant && isErrorLikeText(text) && (
+                                <div className="bubble-actions">
+                                  <button type="button" className="btn-secondary" onClick={retryLast} disabled={!lastUserText || isStreaming}>
+                                    重试
+                                  </button>
+                                  <button type="button" className="btn-secondary" onClick={() => copyText(text)}>
+                                    复制错误
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           )
                         ) : (
                           <p>{text}</p>
@@ -887,13 +890,6 @@ export default function App() {
             setInputText={setInputText}
             submitUserMessage={submitUserMessage}
             stop={stop}
-            lastUserText={lastUserText}
-            composerToolsOpen={composerToolsOpen}
-            setComposerToolsOpen={setComposerToolsOpen}
-            composerMoreOpen={composerMoreOpen}
-            setComposerMoreOpen={setComposerMoreOpen}
-            composerToolsRef={composerToolsRef}
-            composerMoreRef={composerMoreRef}
             textareaRef={textareaRef}
             skills={skills}
             files={files}
@@ -928,11 +924,24 @@ export default function App() {
         />
       </main>
 
-      <div className={`modal ${settingsOpen ? "" : "hidden"}`} onClick={() => setSettingsOpen(false)}>
+      <div
+        className={`modal ${settingsOpen ? "" : "hidden"}`}
+        onClick={() => {
+          setSettingsOpen(false);
+          setDangerConfirmText("");
+        }}
+      >
         <div className="modal-card" onClick={(e) => e.stopPropagation()}>
           <div className="modal-head">
             <h2>运行配置</h2>
-            <button className="btn-secondary" type="button" onClick={() => setSettingsOpen(false)}>
+            <button
+              className="btn-secondary"
+              type="button"
+              onClick={() => {
+                setSettingsOpen(false);
+                setDangerConfirmText("");
+              }}
+            >
               关闭
             </button>
           </div>
@@ -940,7 +949,12 @@ export default function App() {
             className="settings-form"
             onSubmit={async (event) => {
               event.preventDefault();
+              if (settings.permissionProfile === "full_auto" && dangerConfirmText.trim() !== "I UNDERSTAND") {
+                window.alert("启用“全部允许”前，请输入 I UNDERSTAND 进行确认。");
+                return;
+              }
               await saveSettings(settings);
+              setDangerConfirmText("");
               setSettingsOpen(false);
             }}
           >
@@ -962,6 +976,41 @@ export default function App() {
               placeholder={settings.hasMineruKey ? `已保存: ${settings.mineruKeyPreview}` : "请输入 MinerU API Key"}
               onChange={(e) => setSettings((s) => ({ ...s, mineruApiKey: e.target.value }))}
             />
+            <label>权限模式</label>
+            <select
+              value={settings.permissionProfile}
+              onChange={(e) => {
+                const nextMode = e.target.value;
+                setSettings((s) => ({
+                  ...s,
+                  permissionProfile: nextMode,
+                  toolGateEnabled: nextMode === "standard" ? s.toolGateEnabled : false
+                }));
+                if (nextMode !== "full_auto") setDangerConfirmText("");
+              }}
+            >
+              <option value="standard">标准（按需审批）</option>
+              <option value="accept_edits">自动接受编辑</option>
+              <option value="full_auto">全部允许（高风险）</option>
+            </select>
+            {settings.permissionProfile === "full_auto" && (
+              <>
+                <p className="settings-warning">
+                  该模式会跳过权限审批，工具可直接执行写文件/命令操作。请仅在可信环境使用。
+                </p>
+                <label>输入 I UNDERSTAND 以确认</label>
+                <input value={dangerConfirmText} onChange={(e) => setDangerConfirmText(e.target.value)} placeholder="I UNDERSTAND" />
+              </>
+            )}
+            <label>审批开关（仅标准模式）</label>
+            <select
+              value={settings.toolGateEnabled ? "on" : "off"}
+              disabled={settings.permissionProfile !== "standard"}
+              onChange={(e) => setSettings((s) => ({ ...s, toolGateEnabled: e.target.value === "on" }))}
+            >
+              <option value="on">ON</option>
+              <option value="off">OFF</option>
+            </select>
             <div className="pending-actions">
               <button type="submit">保存配置</button>
             </div>

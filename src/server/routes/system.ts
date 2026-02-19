@@ -44,6 +44,7 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings }
       workspaceRoot: workspace.root,
       model: settings.model,
       baseUrl: settings.baseUrl,
+      permissionProfile: settings.permissionProfile,
       mcpEnabled: settings.mcpEnabled,
       speedModeEnabled: settings.speedModeEnabled,
       toolGateEnabled: settings.toolGateEnabled,
@@ -115,11 +116,17 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings }
     const baseUrl = typeof req.body?.baseUrl === "string" ? req.body.baseUrl.trim() : current.baseUrl;
     const tokenInput = typeof req.body?.authToken === "string" ? req.body.authToken.trim() : "";
     const mineruKeyInput = typeof req.body?.mineruApiKey === "string" ? req.body.mineruApiKey.trim() : "";
+    const permissionProfileRaw = req.body?.permissionProfile;
+    const permissionProfile =
+      permissionProfileRaw === "standard" || permissionProfileRaw === "accept_edits" || permissionProfileRaw === "full_auto"
+        ? permissionProfileRaw
+        : current.permissionProfile;
     const mcpEnabled = typeof req.body?.mcpEnabled === "boolean" ? req.body.mcpEnabled : current.mcpEnabled;
     const speedModeEnabled =
       typeof req.body?.speedModeEnabled === "boolean" ? req.body.speedModeEnabled : current.speedModeEnabled;
-    const toolGateEnabled =
+    const requestedToolGateEnabled =
       typeof req.body?.toolGateEnabled === "boolean" ? req.body.toolGateEnabled : current.toolGateEnabled;
+    const toolGateEnabled = permissionProfile === "standard" ? requestedToolGateEnabled : false;
     const debugEnabled = typeof req.body?.debugEnabled === "boolean" ? req.body.debugEnabled : current.debugEnabled;
     const debugSseEnabled =
       typeof req.body?.debugSseEnabled === "boolean" ? req.body.debugSseEnabled : current.debugSseEnabled;
@@ -131,6 +138,7 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings }
       baseUrl: baseUrl || current.baseUrl,
       authToken: tokenInput ? tokenInput : keepExistingToken ? current.authToken : "",
       mineruApiKey: mineruKeyInput ? mineruKeyInput : keepExistingMineruKey ? current.mineruApiKey : "",
+      permissionProfile,
       mcpEnabled,
       speedModeEnabled,
       toolGateEnabled,
@@ -145,6 +153,7 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings }
       workspaceRoot: workspace.root,
       model: next.model,
       baseUrl: next.baseUrl,
+      permissionProfile: next.permissionProfile,
       mcpEnabled: next.mcpEnabled,
       speedModeEnabled: next.speedModeEnabled,
       toolGateEnabled: next.toolGateEnabled,

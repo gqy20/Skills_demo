@@ -11,16 +11,27 @@ export async function readSettings(workspaceRoot: string, defaults: RuntimeSetti
   try {
     const raw = await fs.readFile(settingsFile, "utf-8");
     const parsed = JSON.parse(raw) as Partial<RuntimeSettings>;
+    const permissionProfile =
+      parsed.permissionProfile === "standard" ||
+      parsed.permissionProfile === "accept_edits" ||
+      parsed.permissionProfile === "full_auto"
+        ? parsed.permissionProfile
+        : defaults.permissionProfile;
     return {
       model: parsed.model || defaults.model,
       baseUrl: parsed.baseUrl || defaults.baseUrl,
       authToken: parsed.authToken || defaults.authToken,
       mineruApiKey: parsed.mineruApiKey || defaults.mineruApiKey,
+      permissionProfile,
       mcpEnabled: typeof parsed.mcpEnabled === "boolean" ? parsed.mcpEnabled : defaults.mcpEnabled,
       speedModeEnabled:
         typeof parsed.speedModeEnabled === "boolean" ? parsed.speedModeEnabled : defaults.speedModeEnabled,
       toolGateEnabled:
-        typeof parsed.toolGateEnabled === "boolean" ? parsed.toolGateEnabled : defaults.toolGateEnabled,
+        permissionProfile === "standard"
+          ? typeof parsed.toolGateEnabled === "boolean"
+            ? parsed.toolGateEnabled
+            : defaults.toolGateEnabled
+          : false,
       debugEnabled: typeof parsed.debugEnabled === "boolean" ? parsed.debugEnabled : defaults.debugEnabled,
       debugSseEnabled: typeof parsed.debugSseEnabled === "boolean" ? parsed.debugSseEnabled : defaults.debugSseEnabled
     };

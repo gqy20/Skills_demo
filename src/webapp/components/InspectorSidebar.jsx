@@ -141,8 +141,8 @@ export default function InspectorSidebar({
               <strong>当前状态:</strong> {blockingPending ? "等待你的输入" : "空闲"}
             </p>
             <p className="hint">
-              Gate={diagnostics.toolGateEnabled ? "ON" : "OFF"} · Hits={diagnostics.gateHits} · Ask=
-              {diagnostics.askCreated}/{diagnostics.askResolved}
+              权限={settings.permissionProfile || "standard"} · Gate={diagnostics.toolGateEnabled ? "ON" : "OFF"} · Hits=
+              {diagnostics.gateHits} · Ask={diagnostics.askCreated}/{diagnostics.askResolved}
             </p>
           </div>
         )}

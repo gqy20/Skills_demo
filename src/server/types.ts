@@ -1,8 +1,11 @@
+export type PermissionProfile = "standard" | "accept_edits" | "full_auto";
+
 export type RuntimeSettings = {
   model: string;
   baseUrl: string;
   authToken: string;
   mineruApiKey: string;
+  permissionProfile: PermissionProfile;
   mcpEnabled: boolean;
   speedModeEnabled: boolean;
   toolGateEnabled: boolean;
