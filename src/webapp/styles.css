@@ -596,6 +596,63 @@ body {
   align-self: center;
 }
 
+.composer-suggest {
+  position: absolute;
+  left: 44px;
+  right: 44px;
+  bottom: calc(100% + 6px);
+  z-index: 24;
+  border: 1px solid var(--line);
+  border-radius: var(--r-12);
+  background: #ffffff;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.1);
+  padding: 6px;
+  display: grid;
+  gap: 4px;
+}
+
+.composer-suggest.hidden {
+  display: none;
+}
+
+.composer-suggest-item {
+  width: 100%;
+  display: grid;
+  gap: 2px;
+  border: 1px solid transparent;
+  border-radius: var(--r-10);
+  padding: 8px 10px 7px;
+  background: #ffffff;
+  color: #1f2937;
+  box-shadow: none;
+  text-align: left;
+}
+
+.composer-suggest-item:hover,
+.composer-suggest-item.is-active {
+  border-color: rgba(16, 163, 127, 0.32);
+  background: rgba(16, 163, 127, 0.08);
+}
+
+.composer-suggest-main {
+  font-size: var(--fs-14);
+  font-weight: 640;
+  color: #1e293b;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.35;
+}
+
+.composer-suggest-sub {
+  font-size: var(--fs-12);
+  color: #64748b;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .pending-overlay {
   position: absolute;
   left: 14px;

@@ -383,9 +383,25 @@ export default function App() {
 
   const loadFiles = useCallback(async () => {
     if (!currentWorkspaceId) return;
-    const data = await apiGetJson("/api/files", { depth: 1, path: "" });
+    const data = await apiGetJson("/api/files", { depth: 2, path: "" });
     setFiles(Array.isArray(data.items) ? data.items : []);
   }, [apiGetJson, currentWorkspaceId]);
+
+  const loadFileSuggestions = useCallback(
+    async (rawQuery) => {
+      if (!currentWorkspaceId) return [];
+      const query = String(rawQuery || "")
+        .trim()
+        .replaceAll("\\", "/")
+        .replace(/^\/+/, "");
+      const slash = query.lastIndexOf("/");
+      const basePath = slash >= 0 ? query.slice(0, slash + 1).replace(/\/+$/, "") : "";
+      const depth = basePath ? 2 : 3;
+      const data = await apiGetJson("/api/files", { path: basePath, depth });
+      return Array.isArray(data?.items) ? data.items : [];
+    },
+    [apiGetJson, currentWorkspaceId]
+  );
 
   useEffect(() => {
     loadWorkspaces().catch(() => {});
@@ -882,6 +898,9 @@ export default function App() {
             composerToolsRef={composerToolsRef}
             composerMoreRef={composerMoreRef}
             textareaRef={textareaRef}
+            skills={skills}
+            files={files}
+            loadFileSuggestions={loadFileSuggestions}
           />
         </section>
         <InspectorSidebar

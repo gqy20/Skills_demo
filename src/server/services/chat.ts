@@ -1,10 +1,39 @@
+import { promises as fs } from "node:fs";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Response } from "express";
+import { listWorkspaceFiles, loadIgnoreRules, normalizeRelativePath, resolveWorkspacePath } from "./files.js";
 
 type ChatMessage = {
   role?: string;
   content?: unknown;
   parts?: Array<{ type?: string; text?: string }>;
+};
+
+type SlashDirective = {
+  raw: string;
+  name: string;
+  args: string;
+};
+
+type MentionContext = {
+  token: string;
+  path: string;
+  type: "file" | "directory";
+  summary: string;
+  content?: string;
+};
+
+export type PromptDirectives = {
+  slash: SlashDirective | null;
+  mentionTokens: string[];
+};
+
+export type EnhancedPromptResult = {
+  prompt: string;
+  directives: PromptDirectives;
+  unknownSlash: string | null;
+  mentionResolved: string[];
+  mentionMissing: string[];
 };
 
 function extractText(value: unknown): string[] {
@@ -46,6 +75,174 @@ export function extractPrompt(messages: unknown): string {
   }
 
   return "";
+}
+
+function trimTrailingPunctuation(token: string): string {
+  return token.replace(/[)\]}>,.;:!?，。；：！？、]+$/g, "");
+}
+
+function parseSlashDirective(text: string): SlashDirective | null {
+  const trimmed = text.trimStart();
+  const m = trimmed.match(/^\/([a-zA-Z0-9_-]+)(?:\s+([\s\S]*))?$/);
+  if (!m) return null;
+  const name = (m[1] || "").trim().toLowerCase();
+  if (!name) return null;
+  return {
+    raw: m[0] || "",
+    name,
+    args: (m[2] || "").trim()
+  };
+}
+
+function parseMentionTokens(text: string): string[] {
+  const found = new Set<string>();
+  const re = /(^|\s)@([^\s@]+)/g;
+  let m: RegExpExecArray | null = re.exec(text);
+  while (m) {
+    const raw = trimTrailingPunctuation((m[2] || "").trim());
+    const normalized = normalizeRelativePath(raw);
+    if (normalized) found.add(normalized);
+    m = re.exec(text);
+  }
+  return Array.from(found).slice(0, 6);
+}
+
+async function safeReadFileSnippet(abs: string, limitBytes: number): Promise<string | null> {
+  try {
+    const buf = await fs.readFile(abs);
+    const slice = buf.subarray(0, limitBytes);
+    for (const b of slice) {
+      if (b === 0) return null;
+    }
+    return slice.toString("utf-8").trim();
+  } catch {
+    return null;
+  }
+}
+
+async function buildMentionContext(workspaceRoot: string, mentionTokens: string[]): Promise<{
+  resolved: MentionContext[];
+  missing: string[];
+}> {
+  if (mentionTokens.length === 0) {
+    return { resolved: [], missing: [] };
+  }
+
+  const rules = await loadIgnoreRules(workspaceRoot);
+  const resolved: MentionContext[] = [];
+  const missing: string[] = [];
+
+  for (const token of mentionTokens) {
+    const abs = resolveWorkspacePath(workspaceRoot, token);
+    if (!abs) {
+      missing.push(token);
+      continue;
+    }
+
+    try {
+      const stat = await fs.stat(abs);
+      if (stat.isDirectory()) {
+        const items = await listWorkspaceFiles(workspaceRoot, token, 1, rules);
+        const preview = items.slice(0, 12).map((item) => `${item.type === "directory" ? "[D]" : "[F]"} ${item.path}`);
+        resolved.push({
+          token,
+          path: token,
+          type: "directory",
+          summary: `目录，含 ${items.length} 项`,
+          content: preview.join("\n")
+        });
+        continue;
+      }
+
+      if (stat.isFile()) {
+        const snippet = await safeReadFileSnippet(abs, 4000);
+        const ext = token.includes(".") ? token.split(".").pop() || "" : "";
+        resolved.push({
+          token,
+          path: token,
+          type: "file",
+          summary: `文件，${Math.max(0, stat.size)} bytes${ext ? `，类型 ${ext}` : ""}`,
+          content: snippet || "(文件可能是二进制或不可读，未提取文本内容)"
+        });
+        continue;
+      }
+
+      missing.push(token);
+    } catch {
+      missing.push(token);
+    }
+  }
+
+  return { resolved, missing };
+}
+
+export function parsePromptDirectives(prompt: string): PromptDirectives {
+  const text = String(prompt || "");
+  return {
+    slash: parseSlashDirective(text),
+    mentionTokens: parseMentionTokens(text)
+  };
+}
+
+export async function enhancePromptWithDirectives(
+  workspaceRoot: string,
+  prompt: string,
+  availableSlashNames: Set<string> | null
+): Promise<EnhancedPromptResult> {
+  const directives = parsePromptDirectives(prompt);
+  const slashName = directives.slash?.name || "";
+  const unknownSlash =
+    slashName && availableSlashNames && availableSlashNames.size > 0 && !availableSlashNames.has(slashName)
+      ? slashName
+      : null;
+
+  const mentionResult = await buildMentionContext(workspaceRoot, directives.mentionTokens);
+  if (mentionResult.resolved.length === 0 && !unknownSlash) {
+    return {
+      prompt,
+      directives,
+      unknownSlash: null,
+      mentionResolved: [],
+      mentionMissing: mentionResult.missing
+    };
+  }
+
+  const chunks: string[] = [prompt.trim()];
+
+  if (unknownSlash) {
+    chunks.push(
+      [
+        "[系统提示]",
+        `你输入了 /${unknownSlash}，但它不在当前可用快捷指令列表中。`,
+        "请把它当作普通文本意图理解，并在回答里提醒用户可先查看 /api/skills。"
+      ].join("\n")
+    );
+  }
+
+  if (mentionResult.resolved.length > 0 || mentionResult.missing.length > 0) {
+    const lines: string[] = ["[引用上下文]"];
+    for (const item of mentionResult.resolved) {
+      lines.push(`- @${item.token} -> ${item.type} (${item.summary})`);
+      if (item.content) {
+        lines.push(item.type === "file" ? "```text" : "```");
+        lines.push(item.content);
+        lines.push("```");
+      }
+    }
+    for (const miss of mentionResult.missing) {
+      lines.push(`- @${miss} -> 未找到或不可访问`);
+    }
+    lines.push("请优先结合以上引用内容进行分析，并明确标注哪些结论来自引用上下文。");
+    chunks.push(lines.join("\n"));
+  }
+
+  return {
+    prompt: chunks.filter(Boolean).join("\n\n"),
+    directives,
+    unknownSlash,
+    mentionResolved: mentionResult.resolved.map((item) => item.path),
+    mentionMissing: mentionResult.missing
+  };
 }
 
 export function extractDeltaText(event: SDKMessage): string {

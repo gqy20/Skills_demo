@@ -2,11 +2,21 @@ import { randomUUID } from "node:crypto";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Express, Response } from "express";
 import type { RuntimeSettings } from "../types.js";
-import { extractDeltaText, extractPrompt, extractResultText, extractSdkLifecycle, writeSseData, writeSseDone } from "../services/chat.js";
+import {
+  enhancePromptWithDirectives,
+  extractDeltaText,
+  extractPrompt,
+  extractResultText,
+  extractSdkLifecycle,
+  parsePromptDirectives,
+  writeSseData,
+  writeSseDone
+} from "../services/chat.js";
 import { readSettings } from "../services/settings.js";
 import { type PendingNotify, type PendingRequestKind, PendingRequestStore } from "../services/pending.js";
 import { WorkspaceRegistry } from "../services/workspaces.js";
 import { applyMcpToggle, buildQueryOptions, withTimeout } from "../services/query.js";
+import { fetchSkills } from "../services/skills.js";
 
 type ChatRoutesDeps = {
   app: Express;
@@ -69,7 +79,7 @@ export function registerChatRoutes({
     const workspace = workspaceRegistry.requireWorkspace(req, res);
     if (!workspace) return;
     const traceId = randomUUID();
-    const message = extractPrompt(req.body?.messages);
+    const rawMessage = extractPrompt(req.body?.messages);
     const sessionId = typeof req.body?.id === "string" && req.body.id ? req.body.id : randomUUID();
     const key = sessionKey(workspace.id, sessionId);
     const sdkSessionId = sessionMap.get(key);
@@ -78,7 +88,7 @@ export function registerChatRoutes({
       sessionSeedMap.set(key, seededSdkSessionId);
     }
 
-    if (!message) {
+    if (!rawMessage) {
       res.status(400).json({ error: "user message is required" });
       return;
     }
@@ -91,12 +101,33 @@ export function registerChatRoutes({
     res.flushHeaders();
 
     const settings = await readSettings(workspace.root, defaultSettings);
+    const parsedDirectives = parsePromptDirectives(rawMessage);
+    let availableSlashNames: Set<string> | null = null;
+    if (parsedDirectives.slash) {
+      try {
+        const skills = await fetchSkills(workspace.root, settings, { buildQueryOptions, withTimeout });
+        availableSlashNames = new Set(skills.map((item) => String(item.name || "").trim().toLowerCase()).filter(Boolean));
+      } catch {
+        availableSlashNames = null;
+      }
+    }
+    const enhanced = await enhancePromptWithDirectives(workspace.root, rawMessage, availableSlashNames);
     const debugSseEnabled = settings.debugEnabled && settings.debugSseEnabled;
     const partId = `text-${randomUUID()}`;
     writeSseData(res, { type: "start" });
     writeSseData(res, { type: "text-start", id: partId });
     writeSseData(res, { type: "data-session", data: { sessionId } });
     writeSseData(res, { type: "data-tool-gate-status", data: { enabled: settings.toolGateEnabled } });
+    writeSseData(res, {
+      type: "data-input-directives",
+      data: {
+        slash: enhanced.directives.slash ? `/${enhanced.directives.slash.name}` : "",
+        unknownSlash: enhanced.unknownSlash || "",
+        mentionCount: enhanced.directives.mentionTokens.length,
+        mentionResolvedCount: enhanced.mentionResolved.length,
+        mentionMissing: enhanced.mentionMissing
+      }
+    });
     writeDebugSse(res, false, debugSseEnabled, traceId, "request_started", {
       workspaceId: workspace.id,
       sessionId,
@@ -104,7 +135,11 @@ export function registerChatRoutes({
       seededSdkSessionId,
       speedModeEnabled: settings.speedModeEnabled,
       mcpEnabled: settings.mcpEnabled,
-      toolGateEnabled: settings.toolGateEnabled
+      toolGateEnabled: settings.toolGateEnabled,
+      hasSlash: Boolean(enhanced.directives.slash),
+      unknownSlash: enhanced.unknownSlash || "",
+      mentionCount: enhanced.directives.mentionTokens.length,
+      mentionResolvedCount: enhanced.mentionResolved.length
     });
 
     let closed = false;
@@ -201,7 +236,7 @@ export function registerChatRoutes({
         };
       }
 
-      queryInstance = query({ prompt: message, options });
+      queryInstance = query({ prompt: enhanced.prompt, options });
       activeQueries.set(key, queryInstance);
       writeDebugSse(res, closed, debugSseEnabled, traceId, "query_created", {
         workspaceId: workspace.id,
