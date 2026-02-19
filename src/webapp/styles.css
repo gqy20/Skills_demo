@@ -346,6 +346,77 @@ body {
   border-color: #d1d5db;
 }
 
+.exec-panel {
+  border: 1px solid var(--line);
+  border-radius: var(--r-12);
+  background: #ffffff;
+  padding: 10px 12px;
+  display: grid;
+  gap: 7px;
+}
+
+.exec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.exec-head strong {
+  font-size: var(--fs-14);
+  color: #1f2937;
+}
+
+.exec-tool {
+  font-size: var(--fs-12);
+  color: #0f766e;
+  border: 1px solid rgba(15, 118, 110, 0.28);
+  background: rgba(15, 118, 110, 0.08);
+  border-radius: 999px;
+  padding: 2px 8px;
+  max-width: min(60%, 420px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exec-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  font-size: var(--fs-12);
+  color: #64748b;
+}
+
+.exec-actions {
+  margin: 0;
+  padding-left: 16px;
+  display: grid;
+  gap: 4px;
+}
+
+.exec-actions li {
+  font-size: var(--fs-12);
+  color: #334155;
+  line-height: 1.4;
+}
+
+.exec-hint {
+  border: 1px dashed rgba(251, 146, 60, 0.5);
+  border-radius: var(--r-10);
+  background: rgba(255, 247, 237, 0.85);
+  color: #9a3412;
+  padding: 8px 10px;
+  display: grid;
+  gap: 8px;
+  font-size: var(--fs-12);
+}
+
+.exec-hint-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .bubble {
   border-radius: var(--r-12);
   padding: 11px 13px;
@@ -354,14 +425,15 @@ body {
 
 .bubble-assistant {
   align-self: flex-start;
-  max-width: min(84%, 78ch);
+  width: auto;
+  max-width: min(92%, 110ch);
   background: var(--assistant);
   border: 1px solid var(--line);
 }
 
 .bubble-user {
   align-self: flex-end;
-  max-width: min(72%, 64ch);
+  max-width: min(82%, 92ch);
   background: linear-gradient(150deg, var(--user) 0%, var(--accent-2) 100%);
   color: #fff;
 }
@@ -376,11 +448,11 @@ body {
 }
 
 .bubble-assistant table {
-  display: block;
+  display: table;
   width: 100%;
-  overflow-x: auto;
+  table-layout: fixed;
   border-collapse: collapse;
-  margin: 8px 0;
+  margin: 0;
 }
 
 .bubble-assistant th,
@@ -389,6 +461,8 @@ body {
   padding: 6px 8px;
   font-size: var(--fs-12);
   vertical-align: top;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .bubble-enter {
@@ -405,10 +479,88 @@ body {
   animation: bubble-in 180ms ease-out;
 }
 
+.markdown-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.bubble-trace {
+  margin-top: 10px;
+  border: 1px dashed rgba(16, 163, 127, 0.34);
+  border-radius: var(--r-10);
+  background: rgba(16, 163, 127, 0.06);
+  padding: 8px 10px;
+}
+
+.bubble-trace-title {
+  margin: 0 0 6px;
+  font-size: var(--fs-12);
+  color: #0f766e;
+  font-weight: 650;
+}
+
+.bubble-trace ul {
+  margin: 0;
+  padding-left: 16px;
+  display: grid;
+  gap: 4px;
+}
+
+.bubble-trace ul + ul {
+  margin-top: 6px;
+}
+
+.bubble-trace li {
+  font-size: var(--fs-12);
+  color: #1f2937;
+  line-height: 1.35;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.bubble-trace li em {
+  font-style: normal;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.bubble-trace-phase {
+  margin: 8px 0 0;
+  font-size: var(--fs-12);
+  color: #475569;
+}
+
 .bubble-actions {
   margin-top: 10px;
   display: flex;
   gap: 8px;
+}
+
+.bubble-action-btn {
+  width: 34px;
+  height: 34px;
+  min-width: 34px !important;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  color: #64748b;
+  box-shadow: none;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-16);
+  line-height: 1;
+}
+
+.bubble-action-btn:hover {
+  background: #f8fafc;
+  color: #334155;
+  border-color: #d1d5db;
 }
 
 .bubble-streaming {
@@ -916,6 +1068,88 @@ button:disabled {
   padding: 0;
   display: grid;
   gap: 5px;
+}
+
+.sessions-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.session-toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.session-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sidebar-mini-btn {
+  border: 1px solid var(--line);
+  background: #ffffff;
+  color: #475569;
+  border-radius: 999px;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 4px 9px;
+  box-shadow: none;
+}
+
+.sidebar-mini-btn.is-primary {
+  border-color: rgba(16, 163, 127, 0.34);
+  background: rgba(16, 163, 127, 0.12);
+  color: #0e9f6e;
+}
+
+.sessions-empty {
+  font-size: var(--fs-12);
+  color: #64748b;
+  padding: 4px 2px;
+}
+
+.session-item-btn {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--r-10);
+  background: #ffffff;
+  color: #334155;
+  box-shadow: none;
+  text-align: left;
+  padding: 8px 9px;
+  display: grid;
+  gap: 4px;
+}
+
+.session-item-btn strong {
+  font-size: var(--fs-12);
+  line-height: 1.35;
+  color: #1e293b;
+}
+
+.session-item-btn em {
+  font-style: normal;
+  font-size: var(--fs-12);
+  line-height: 1.35;
+  color: #64748b;
+}
+
+.session-item-btn span {
+  font-size: var(--fs-12);
+  line-height: 1.35;
+  color: #64748b;
+}
+
+.session-item-btn.is-active {
+  border-color: rgba(16, 163, 127, 0.34);
+  background: rgba(16, 163, 127, 0.08);
 }
 
 .files-name {

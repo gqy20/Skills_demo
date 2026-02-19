@@ -69,6 +69,7 @@ uv.lock
 
 # Local data directories (user content)
 01_articles/
+02_outputs/
 articles/
 references/
 

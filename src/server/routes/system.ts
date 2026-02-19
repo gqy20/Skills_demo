@@ -2,6 +2,7 @@ import type { Express } from "express";
 import type { RuntimeSettings } from "../types.js";
 import { fetchSkills } from "../services/skills.js";
 import { listWorkspaceFiles, loadIgnoreRules, normalizeRelativePath, resolveWorkspacePath } from "../services/files.js";
+import { listSessionSummaries, readSessionMessages } from "../services/sessions.js";
 import { maskToken, readSettings, writeSettings } from "../services/settings.js";
 import { WorkspaceRegistry } from "../services/workspaces.js";
 import { buildQueryOptions, withTimeout } from "../services/query.js";
@@ -104,6 +105,54 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings }
     } catch (error) {
       const msg = error instanceof Error ? error.message : "unknown error";
       res.status(500).json({ ok: false, error: msg, items: [] });
+    }
+  });
+
+  app.get("/api/sessions", async (req, res) => {
+    try {
+      const workspace = workspaceRegistry.requireWorkspace(req, res);
+      if (!workspace) return;
+      const items = await listSessionSummaries(workspace.root);
+      res.json({
+        ok: true,
+        workspaceId: workspace.id,
+        count: items.length,
+        items
+      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "unknown error";
+      res.status(500).json({ ok: false, error: msg, items: [] });
+    }
+  });
+
+  app.get("/api/sessions/:sessionId", async (req, res) => {
+    try {
+      const workspace = workspaceRegistry.requireWorkspace(req, res);
+      if (!workspace) return;
+      const sessionId = typeof req.params?.sessionId === "string" ? req.params.sessionId : "";
+      if (!sessionId) {
+        res.status(400).json({ ok: false, error: "sessionId is required" });
+        return;
+      }
+      const messages = await readSessionMessages(workspace.root, sessionId);
+      if (!messages) {
+        res.status(404).json({ ok: false, error: "session not found", messages: [] });
+        return;
+      }
+      res.json({
+        ok: true,
+        workspaceId: workspace.id,
+        sessionId,
+        messages: messages.map((m) => ({
+          id: m.id,
+          role: m.role,
+          parts: [{ type: "text", text: m.text }],
+          toolTrace: m.toolTrace || null
+        }))
+      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "unknown error";
+      res.status(500).json({ ok: false, error: msg, messages: [] });
     }
   });
 

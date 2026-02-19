@@ -14,6 +14,7 @@ import {
 } from "../services/chat.js";
 import { readSettings } from "../services/settings.js";
 import { type PendingNotify, type PendingRequestKind, PendingRequestStore } from "../services/pending.js";
+import { appendSessionTurn, type StoredToolTrace } from "../services/sessions.js";
 import { WorkspaceRegistry } from "../services/workspaces.js";
 import { applyMcpToggle, buildQueryOptions, withTimeout } from "../services/query.js";
 import { fetchSkills } from "../services/skills.js";
@@ -44,6 +45,20 @@ function logTrace(traceId: string, phase: string, data: Record<string, unknown> 
 
 function isAskUserQuestionTool(toolName: string): boolean {
   return toolName.trim().toLowerCase() === "askuserquestion";
+}
+
+function normalizeToolLabel(toolName: unknown): string {
+  const raw = String(toolName || "").trim();
+  if (!raw) return "unknown_tool";
+  if (raw.startsWith("mcp__")) {
+    const parts = raw.split("__").filter(Boolean);
+    if (parts.length >= 3) return `${parts[1]}.${parts.slice(2).join("__")}`;
+  }
+  if (raw.startsWith("mcp:")) {
+    const parts = raw.split(":");
+    if (parts.length >= 3) return `${parts[1]}.${parts.slice(2).join(":")}`;
+  }
+  return raw;
 }
 
 function writeDebugSse(
@@ -148,6 +163,18 @@ export function registerChatRoutes({
     let queryInstance: ReturnType<typeof query> | null = null;
     let streamEventCount = 0;
     let deltaCount = 0;
+    let assistantText = "";
+    let responsePhaseMarked = false;
+    const turnTrace: StoredToolTrace & { _seenUseIds: Set<string>; _lastToolLabel: string } = {
+      startedAt: Date.now(),
+      completedAt: 0,
+      skills: {},
+      tools: {},
+      phases: [{ phase: "queued", at: Date.now() }],
+      actions: [],
+      _seenUseIds: new Set<string>(),
+      _lastToolLabel: ""
+    };
     let doneSent = false;
     const heartbeat = setInterval(() => {
       if (!closed) {
@@ -202,6 +229,12 @@ export function registerChatRoutes({
             });
           }
           const kind: PendingRequestKind = isAskUserQuestion ? "ask_user_question" : "permission_request";
+          turnTrace.phases.push({
+            phase: kind === "ask_user_question" ? "waiting_user_input" : "waiting_permission",
+            at: Date.now(),
+            detail: normalizeToolLabel(toolName)
+          });
+          if (turnTrace.phases.length > 30) turnTrace.phases = turnTrace.phases.slice(-30);
           const notify: PendingNotify = (eventType, data) => {
             if (closed) return;
             writeSseData(res, { type: eventType, data });
@@ -331,18 +364,44 @@ export function registerChatRoutes({
         const deltaText = extractDeltaText(event);
         if (deltaText) {
           deltaCount += 1;
+          assistantText += deltaText;
+          if (!responsePhaseMarked) {
+            responsePhaseMarked = true;
+            turnTrace.phases.push({ phase: "responding", at: Date.now() });
+            if (turnTrace.phases.length > 30) turnTrace.phases = turnTrace.phases.slice(-30);
+          }
           writeSseData(res, { type: "text-delta", id: partId, delta: deltaText });
         }
 
         const resultText = extractResultText(event);
         if (resultText && deltaCount === 0) {
           deltaCount += 1;
+          assistantText += resultText;
+          if (!responsePhaseMarked) {
+            responsePhaseMarked = true;
+            turnTrace.phases.push({ phase: "responding", at: Date.now() });
+            if (turnTrace.phases.length > 30) turnTrace.phases = turnTrace.phases.slice(-30);
+          }
           writeSseData(res, { type: "text-delta", id: partId, delta: resultText });
         }
 
         const lifecycle = extractSdkLifecycle(event);
         if (lifecycle) {
           if (lifecycle.category === "tool_progress" && !closed) {
+            const label = normalizeToolLabel(lifecycle.toolName || "");
+            const useId = String(lifecycle.toolUseId || "");
+            const old = turnTrace.tools[label] || { count: 0, elapsedSeconds: 0 };
+            const isNewUse = useId ? !turnTrace._seenUseIds.has(useId) : old.count === 0;
+            if (useId) turnTrace._seenUseIds.add(useId);
+            turnTrace.tools[label] = {
+              count: isNewUse ? old.count + 1 : old.count,
+              elapsedSeconds: Math.max(old.elapsedSeconds || 0, Number(lifecycle.elapsedSeconds || 0))
+            };
+            if (turnTrace._lastToolLabel !== label) {
+              turnTrace._lastToolLabel = label;
+              turnTrace.phases.push({ phase: "tool_running", at: Date.now(), detail: label });
+              if (turnTrace.phases.length > 30) turnTrace.phases = turnTrace.phases.slice(-30);
+            }
             writeSseData(res, {
               type: "data-tool-progress",
               data: {
@@ -353,6 +412,20 @@ export function registerChatRoutes({
             });
           }
           if (lifecycle.category === "tool_use_summary" && !closed) {
+            const summary = String(lifecycle.summary || "");
+            const matched = summary.match(/\/([a-zA-Z0-9_-]+)/g) || [];
+            for (const token of matched) {
+              const name = token.replace("/", "").trim().toLowerCase();
+              if (!name) continue;
+              const old = turnTrace.skills[name] || { count: 0 };
+              turnTrace.skills[name] = { count: old.count + 1 };
+            }
+            if (summary) {
+              turnTrace.actions.push(summary.length > 220 ? `${summary.slice(0, 220)}...` : summary);
+              if (turnTrace.actions.length > 8) turnTrace.actions = turnTrace.actions.slice(-8);
+            }
+            turnTrace.phases.push({ phase: "tool_summary", at: Date.now() });
+            if (turnTrace.phases.length > 30) turnTrace.phases = turnTrace.phases.slice(-30);
             writeSseData(res, {
               type: "data-tool-use-summary",
               data: {
@@ -384,6 +457,16 @@ export function registerChatRoutes({
       }
 
       if (!closed) {
+        turnTrace.completedAt = Date.now();
+        const persistedTrace: StoredToolTrace = {
+          startedAt: turnTrace.startedAt,
+          completedAt: turnTrace.completedAt,
+          skills: turnTrace.skills,
+          tools: turnTrace.tools,
+          phases: turnTrace.phases,
+          actions: turnTrace.actions
+        };
+        await appendSessionTurn(workspace.root, sessionId, rawMessage, assistantText, persistedTrace);
         logTrace(traceId, "stream_completed", {
           workspaceId: workspace.id,
           sessionId,

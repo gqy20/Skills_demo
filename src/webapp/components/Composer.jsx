@@ -216,7 +216,7 @@ export default function Composer({
         ? `已插入 ${insertedHint}`
         : inputText.trim()
           ? "Enter 发送 · Shift+Enter 换行"
-          : "输入 / 或 @ 获取推荐";
+          : "输入内容后发送";
 
   return (
     <form

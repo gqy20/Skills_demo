@@ -39,16 +39,18 @@ function shortText(value, max = 120) {
   return text.length > max ? `${text.slice(0, max)}...` : text;
 }
 
-function isErrorLikeText(text) {
-  const t = String(text || "").toLowerCase();
-  if (!t) return false;
-  return t.includes("error") || t.includes("failed") || t.includes("失败") || t.includes("异常");
-}
-
 function permissionProfileLabel(mode) {
   if (mode === "full_auto") return "全部允许";
   if (mode === "accept_edits") return "自动接受编辑";
   return "标准";
+}
+
+function formatElapsed(seconds) {
+  const n = Math.max(0, Math.floor(seconds));
+  if (n < 60) return `${n}s`;
+  const m = Math.floor(n / 60);
+  const s = n % 60;
+  return `${m}m ${s}s`;
 }
 
 function extractSlashCommand(text) {
@@ -70,6 +72,25 @@ function parseMcpToolName(rawName) {
     return { server: "unknown", tool: name, raw: name };
   }
   return null;
+}
+
+function toolLabel(rawName) {
+  const parsed = parseMcpToolName(rawName);
+  if (parsed) return `${parsed.server}.${parsed.tool}`;
+  return String(rawName || "").trim() || "unknown_tool";
+}
+
+function formatPhaseLabel(phase) {
+  const map = {
+    queued: "已入队",
+    waiting_user_input: "等待用户输入",
+    waiting_permission: "等待权限确认",
+    tool_running: "工具执行中",
+    tool_summary: "工具结果汇总",
+    responding: "生成回复中",
+    completed: "已完成"
+  };
+  return map[String(phase || "")] || String(phase || "");
 }
 
 function normalizeSettings(data) {
@@ -123,8 +144,13 @@ export default function App() {
   const [controlsOpen, setControlsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [dangerConfirmText, setDangerConfirmText] = useState("");
+  const [sessions, setSessions] = useState([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionsError, setSessionsError] = useState("");
+  const [openingSessionId, setOpeningSessionId] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarSections, setSidebarSections] = useState({
+    sessions: true,
     files: false,
     pending: false,
     events: false
@@ -147,6 +173,17 @@ export default function App() {
     askCreated: 0,
     askResolved: 0
   });
+  const [executionState, setExecutionState] = useState({
+    phase: "idle",
+    currentTool: "",
+    toolElapsedSeconds: 0,
+    lastDeltaAt: 0,
+    actions: [],
+    dismissNoDelta: false
+  });
+  const [activeTurnTrace, setActiveTurnTrace] = useState(null);
+  const [traceByAssistantId, setTraceByAssistantId] = useState({});
+  const [nowTick, setNowTick] = useState(Date.now());
   const controlsRef = useRef(null);
   const textareaRef = useRef(null);
   const timelineRef = useRef(null);
@@ -281,18 +318,80 @@ export default function App() {
     [currentSessionId, currentWorkspaceId]
   );
 
-  const { messages, sendMessage, status, stop } = useChat({
+  const { messages, setMessages, sendMessage, status, stop } = useChat({
     transport,
     onData: (part) => {
       setEvents((prev) => [...prev.slice(-(MAX_EVENT_LOG - 1)), part]);
+      const now = Date.now();
 
       if (part?.type === "data-session" && part?.data?.sessionId) {
         setCurrentSessionId(part.data.sessionId);
         return;
       }
 
+      if (part?.type === "finish") {
+        setActiveTurnTrace((prev) =>
+          prev
+            ? {
+                ...prev,
+                completedAt: Date.now(),
+                phases: [...(prev.phases || []), { phase: "completed", at: Date.now() }].slice(-30)
+              }
+            : prev
+        );
+        loadSessions().catch(() => {});
+        return;
+      }
+
+      if (part?.type === "text-delta") {
+        setActiveTurnTrace((prev) => {
+          if (!prev || prev.responseStarted) return prev;
+          return {
+            ...prev,
+            responseStarted: true,
+            phases: [...(prev.phases || []), { phase: "responding", at: now }].slice(-30)
+          };
+        });
+        setExecutionState((prev) => ({
+          ...prev,
+          phase: "responding",
+          lastDeltaAt: now,
+          dismissNoDelta: false
+        }));
+        return;
+      }
+
       if (part?.type === "data-tool-progress") {
         trackMcpUsage(part?.data?.toolName, part?.data?.elapsedSeconds ?? null);
+        setActiveTurnTrace((prev) => {
+          if (!prev) return prev;
+          const label = toolLabel(part?.data?.toolName);
+          const useId = String(part?.data?.toolUseId || "");
+          const seen = { ...(prev.seenToolUseIds || {}) };
+          const tools = { ...(prev.tools || {}) };
+          const old = tools[label] || { count: 0, elapsedSeconds: 0 };
+          const isNewUse = useId ? seen[useId] !== true : old.count === 0;
+          if (useId) seen[useId] = true;
+          tools[label] = {
+            count: isNewUse ? old.count + 1 : old.count,
+            elapsedSeconds: Math.max(old.elapsedSeconds || 0, Number(part?.data?.elapsedSeconds || 0))
+          };
+          const phases =
+            prev.lastToolLabel === label
+              ? prev.phases || []
+              : [...(prev.phases || []), { phase: "tool_running", at: now, detail: label }].slice(-30);
+          return { ...prev, seenToolUseIds: seen, tools, lastToolLabel: label, phases };
+        });
+        setExecutionState((prev) => ({
+          ...prev,
+          phase: "tool",
+          currentTool: String(part?.data?.toolName || prev.currentTool || ""),
+          toolElapsedSeconds:
+            typeof part?.data?.elapsedSeconds === "number" && Number.isFinite(part?.data?.elapsedSeconds)
+              ? Math.max(0, part.data.elapsedSeconds)
+              : prev.toolElapsedSeconds,
+          dismissNoDelta: false
+        }));
         return;
       }
 
@@ -302,6 +401,29 @@ export default function App() {
         for (const token of matched) {
           trackSkillUsage(token.replace("/", ""), { source: "summary", summary: shortText(summary, 280) });
         }
+        setActiveTurnTrace((prev) => {
+          if (!prev) return prev;
+          const nextAction = shortText(summary, 220);
+          const skills = { ...(prev.skills || {}) };
+          for (const token of matched) {
+            const name = token.replace("/", "").trim().toLowerCase();
+            if (!name) continue;
+            const old = skills[name] || { count: 0 };
+            skills[name] = { count: old.count + 1 };
+          }
+          return {
+            ...prev,
+            skills,
+            actions: [...(prev.actions || []).slice(-5), nextAction],
+            phases: [...(prev.phases || []), { phase: "tool_summary", at: now }].slice(-30)
+          };
+        });
+        setExecutionState((prev) => ({
+          ...prev,
+          phase: "tool",
+          actions: [...prev.actions.slice(-4), shortText(summary, 220)],
+          dismissNoDelta: false
+        }));
         return;
       }
 
@@ -315,6 +437,14 @@ export default function App() {
 
       if (part?.type === "data-tool-gate-hit") {
         trackMcpUsage(part?.data?.toolName, null);
+        setActiveTurnTrace((prev) => {
+          if (!prev) return prev;
+          const label = toolLabel(part?.data?.toolName);
+          const tools = { ...(prev.tools || {}) };
+          const old = tools[label] || { count: 0, elapsedSeconds: 0 };
+          tools[label] = { ...old, count: old.count + 1 };
+          return { ...prev, tools };
+        });
         setDiagnostics((prev) => ({
           ...prev,
           gateHits: prev.gateHits + 1
@@ -325,12 +455,47 @@ export default function App() {
       if (part?.type === "data-ask-user-question-created") {
         setDiagnostics((prev) => ({ ...prev, askCreated: prev.askCreated + 1 }));
         upsertPending("ask_user_question", part.data || {});
+        setExecutionState((prev) => ({
+          ...prev,
+          phase: "pending",
+          dismissNoDelta: false
+        }));
+        setActiveTurnTrace((prev) =>
+          prev
+            ? { ...prev, phases: [...(prev.phases || []), { phase: "waiting_user_input", at: now }].slice(-30) }
+            : prev
+        );
         return;
       }
 
       if (part?.type === "data-permission-request-created") {
         trackMcpUsage(part?.data?.toolName, null);
+        setActiveTurnTrace((prev) => {
+          if (!prev) return prev;
+          const label = toolLabel(part?.data?.toolName);
+          const tools = { ...(prev.tools || {}) };
+          const old = tools[label] || { count: 0, elapsedSeconds: 0 };
+          tools[label] = { ...old, count: old.count + 1 };
+          return { ...prev, tools };
+        });
         upsertPending("permission_request", part.data || {});
+        setExecutionState((prev) => ({
+          ...prev,
+          phase: "pending",
+          currentTool: String(part?.data?.toolName || prev.currentTool || ""),
+          dismissNoDelta: false
+        }));
+        setActiveTurnTrace((prev) =>
+          prev
+            ? {
+                ...prev,
+                phases: [
+                  ...(prev.phases || []),
+                  { phase: "waiting_permission", at: now, detail: toolLabel(part?.data?.toolName) }
+                ].slice(-30)
+              }
+            : prev
+        );
         return;
       }
 
@@ -359,7 +524,33 @@ export default function App() {
 
   const isStreaming = status === "submitted" || status === "streaming";
   const blockingPending = Boolean(activePending);
+  const lastAssistantId = useMemo(
+    () =>
+      messages
+        .slice()
+        .reverse()
+        .find((item) => item.role === "assistant")?.id || "",
+    [messages]
+  );
   const showPreflight = messages.length === 0 && !isStreaming && !lastUserText;
+  const silentSeconds =
+    isStreaming && executionState.lastDeltaAt > 0 ? Math.floor((nowTick - executionState.lastDeltaAt) / 1000) : 0;
+  const showNoDeltaHint =
+    isStreaming &&
+    silentSeconds >= 10 &&
+    executionState.phase !== "responding" &&
+    !executionState.dismissNoDelta &&
+    !blockingPending;
+  const showExecutionPanel = isStreaming || blockingPending;
+
+  useEffect(() => {
+    if (!lastAssistantId || !activeTurnTrace?.completedAt) return;
+    setTraceByAssistantId((prev) => {
+      if (prev[lastAssistantId]) return prev;
+      return { ...prev, [lastAssistantId]: activeTurnTrace };
+    });
+    setActiveTurnTrace(null);
+  }, [activeTurnTrace, lastAssistantId]);
 
   const loadWorkspaces = useCallback(async () => {
     const data = await apiGetJson("/api/workspaces", { workspaceId: "" });
@@ -387,6 +578,20 @@ export default function App() {
     setFiles(Array.isArray(data.items) ? data.items : []);
   }, [apiGetJson, currentWorkspaceId]);
 
+  const loadSessions = useCallback(async () => {
+    if (!currentWorkspaceId) return;
+    setSessionsLoading(true);
+    setSessionsError("");
+    try {
+      const data = await apiGetJson("/api/sessions");
+      setSessions(Array.isArray(data.items) ? data.items : []);
+    } catch (error) {
+      setSessionsError(parseError(error));
+    } finally {
+      setSessionsLoading(false);
+    }
+  }, [apiGetJson, currentWorkspaceId]);
+
   const loadFileSuggestions = useCallback(
     async (rawQuery) => {
       if (!currentWorkspaceId) return [];
@@ -411,7 +616,8 @@ export default function App() {
     loadSettings().catch(() => {});
     loadSkills().catch(() => {});
     loadFiles().catch(() => {});
-  }, [currentWorkspaceId, loadFiles, loadSettings, loadSkills]);
+    loadSessions().catch(() => {});
+  }, [currentWorkspaceId, loadFiles, loadSettings, loadSkills, loadSessions]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -440,6 +646,12 @@ export default function App() {
     });
     return () => cancelAnimationFrame(raf);
   }, [messages, isStreaming, blockingPending]);
+
+  useEffect(() => {
+    if (!isStreaming && !blockingPending) return;
+    const timer = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [isStreaming, blockingPending]);
 
   const saveSettings = useCallback(
     async (next) => {
@@ -476,6 +688,25 @@ export default function App() {
     setUsagePanelOpen(false);
     setRuntimeUsage({ skills: initialSkillsState, mcps: {} });
     setUsageExpanded({ skills: false, mcps: false });
+    setExecutionState({
+      phase: "queued",
+      currentTool: "",
+      toolElapsedSeconds: 0,
+      lastDeltaAt: Date.now(),
+      actions: [],
+      dismissNoDelta: false
+    });
+    setActiveTurnTrace({
+      startedAt: Date.now(),
+      completedAt: 0,
+      seenToolUseIds: {},
+      responseStarted: false,
+      lastToolLabel: "",
+      skills: {},
+      tools: {},
+      phases: [{ phase: "queued", at: Date.now() }],
+      actions: []
+    });
     await sendMessage({ id: createId(), text });
   };
 
@@ -486,6 +717,89 @@ export default function App() {
       await navigator.clipboard.writeText(text);
     } catch {
       // ignore clipboard failures in unsupported environments
+    }
+  };
+
+  const openSession = async (sessionId) => {
+    if (!sessionId || isStreaming || blockingPending) return;
+    setOpeningSessionId(sessionId);
+    try {
+      const data = await apiGetJson(`/api/sessions/${encodeURIComponent(sessionId)}`);
+      const nextMessages = Array.isArray(data?.messages) ? data.messages : [];
+      setMessages(nextMessages);
+      const loadedTraceMap = {};
+      for (const msg of nextMessages) {
+        if (msg?.role !== "assistant" || !msg?.id) continue;
+        const trace = msg?.toolTrace;
+        if (!trace || typeof trace !== "object") continue;
+        loadedTraceMap[msg.id] = {
+          startedAt: Number(trace.startedAt || 0),
+          completedAt: Number(trace.completedAt || 0),
+          skills: typeof trace.skills === "object" && trace.skills ? trace.skills : {},
+          tools: typeof trace.tools === "object" && trace.tools ? trace.tools : {},
+          phases: Array.isArray(trace.phases) ? trace.phases : [],
+          actions: Array.isArray(trace.actions) ? trace.actions : []
+        };
+      }
+      setTraceByAssistantId(loadedTraceMap);
+      setCurrentSessionId(sessionId);
+      setActiveTurnTrace(null);
+      setPendingState({ byId: {}, order: [], activeId: null, drafts: {} });
+      setEvents([]);
+      setExecutionState({
+        phase: "idle",
+        currentTool: "",
+        toolElapsedSeconds: 0,
+        lastDeltaAt: 0,
+        actions: [],
+        dismissNoDelta: false
+      });
+      for (let i = nextMessages.length - 1; i >= 0; i -= 1) {
+        const msg = nextMessages[i];
+        if (msg?.role !== "user" || !Array.isArray(msg?.parts)) continue;
+        const txt = msg.parts
+          .filter((p) => p?.type === "text")
+          .map((p) => p.text || "")
+          .join("")
+          .trim();
+        if (txt) {
+          setLastUserText(txt);
+          break;
+        }
+      }
+    } finally {
+      setOpeningSessionId("");
+    }
+  };
+
+  const startNewSession = () => {
+    if (isStreaming || blockingPending) return;
+    setCurrentSessionId(null);
+    setMessages([]);
+    setEvents([]);
+    setLastUserText("");
+    setRuntimeUsage({ skills: {}, mcps: {} });
+    setUsagePanelOpen(false);
+    setUsageExpanded({ skills: false, mcps: false });
+    setPendingState({ byId: {}, order: [], activeId: null, drafts: {} });
+    setExecutionState({
+      phase: "idle",
+      currentTool: "",
+      toolElapsedSeconds: 0,
+      lastDeltaAt: 0,
+      actions: [],
+      dismissNoDelta: false
+    });
+    setTraceByAssistantId({});
+    setActiveTurnTrace(null);
+  };
+
+  const forceStopAndRetry = async () => {
+    stop();
+    if (lastUserText) {
+      setTimeout(() => {
+        submitUserMessage(lastUserText).catch(() => {});
+      }, 220);
     }
   };
 
@@ -733,17 +1047,62 @@ export default function App() {
                   </section>
                 )}
 
-                {(() => {
-                  const lastAssistantId = messages
-                    .slice()
-                    .reverse()
-                    .find((item) => item.role === "assistant")?.id;
+                {showExecutionPanel && (
+                  <section className="exec-panel">
+                    <div className="exec-head">
+                      <strong>
+                        {blockingPending
+                          ? "等待授权"
+                          : executionState.phase === "responding"
+                            ? "正在整理回复"
+                            : executionState.phase === "tool"
+                              ? "工具执行中"
+                              : "处理中"}
+                      </strong>
+                      {executionState.currentTool && <span className="exec-tool">{executionState.currentTool}</span>}
+                    </div>
+                    <div className="exec-meta">
+                      {executionState.toolElapsedSeconds > 0 && <span>工具耗时 {formatElapsed(executionState.toolElapsedSeconds)}</span>}
+                      {silentSeconds > 0 && isStreaming && <span>最近无文本增量 {formatElapsed(silentSeconds)}</span>}
+                      {!blockingPending && settings.permissionProfile === "full_auto" && <span>权限模式：全部允许</span>}
+                    </div>
+                    {executionState.actions.length > 0 && (
+                      <ul className="exec-actions">
+                        {executionState.actions.slice(-3).map((item, idx) => (
+                          <li key={`${item}-${idx}`}>{item}</li>
+                        ))}
+                      </ul>
+                    )}
+                    {showNoDeltaHint && (
+                      <div className="exec-hint">
+                        <span>暂无文本输出，正在等待工具返回结果...</span>
+                        <div className="exec-hint-actions">
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={() => setExecutionState((prev) => ({ ...prev, dismissNoDelta: true }))}
+                          >
+                            继续等待
+                          </button>
+                          <button type="button" className="btn-secondary" onClick={forceStopAndRetry}>
+                            停止并重试
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </section>
+                )}
 
+                {(() => {
                   return messages.map((msg) => {
                     const isLastAssistant = msg.role === "assistant" && lastAssistantId === msg.id;
                     const text = textFromMessage(msg);
                     const hasVisibleText = text.trim().length > 0;
                     const showProcessing = msg.role === "assistant" && isLastAssistant && isStreaming && !hasVisibleText;
+                    const trace = msg.role === "assistant" ? traceByAssistantId[msg.id] || msg?.toolTrace || null : null;
+                    const traceToolEntries = trace ? Object.entries(trace.tools || {}) : [];
+                    const traceSkillEntries = trace ? Object.entries(trace.skills || {}) : [];
+                    const tracePhaseList = Array.isArray(trace?.phases) ? trace.phases : [];
                     if (msg.role === "assistant" && !showProcessing && !hasVisibleText) return null;
                     return (
                       <article
@@ -765,14 +1124,71 @@ export default function App() {
                             </div>
                           ) : (
                             <div className="assistant-content bubble-enter">
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
-                              {isLastAssistant && isErrorLikeText(text) && (
+                              <ReactMarkdown
+                                remarkPlugins={[remarkGfm]}
+                                components={{
+                                  table: ({ node, ...props }) => (
+                                    <div className="markdown-table-wrap">
+                                      <table {...props} />
+                                    </div>
+                                  )
+                                }}
+                              >
+                                {text}
+                              </ReactMarkdown>
+                              {(traceToolEntries.length > 0 || traceSkillEntries.length > 0 || tracePhaseList.length > 0) && (
+                                <div className="bubble-trace">
+                                  <p className="bubble-trace-title">本轮调用</p>
+                                  {traceSkillEntries.length > 0 && (
+                                    <ul>
+                                      {traceSkillEntries.slice(0, 4).map(([name, item]) => (
+                                        <li key={`skill-${name}`}>
+                                          <span>/{name}</span>
+                                          <em>x{item?.count || 1}</em>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                  {traceToolEntries.length > 0 && (
+                                    <ul>
+                                      {traceToolEntries.slice(0, 5).map(([name, item]) => (
+                                        <li key={`tool-${name}`}>
+                                          <span>{name}</span>
+                                          <em>
+                                            x{item?.count || 1}
+                                            {item?.elapsedSeconds > 0 ? ` · ${formatElapsed(item.elapsedSeconds)}` : ""}
+                                          </em>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                  {tracePhaseList.length > 0 && (
+                                    <p className="bubble-trace-phase">
+                                      阶段：{tracePhaseList.slice(-3).map((item) => formatPhaseLabel(item?.phase)).join(" -> ")}
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                              {isLastAssistant && (
                                 <div className="bubble-actions">
-                                  <button type="button" className="btn-secondary" onClick={retryLast} disabled={!lastUserText || isStreaming}>
-                                    重试
+                                  <button
+                                    type="button"
+                                    className="bubble-action-btn"
+                                    title="复制"
+                                    aria-label="复制"
+                                    onClick={() => copyText(text)}
+                                  >
+                                    ⧉
                                   </button>
-                                  <button type="button" className="btn-secondary" onClick={() => copyText(text)}>
-                                    复制错误
+                                  <button
+                                    type="button"
+                                    className="bubble-action-btn"
+                                    title="重试"
+                                    aria-label="重试"
+                                    onClick={retryLast}
+                                    disabled={!lastUserText || isStreaming}
+                                  >
+                                    ↻
                                   </button>
                                 </div>
                               )}
@@ -912,6 +1328,14 @@ export default function App() {
           setSkillExpanded={setSkillExpanded}
           sidebarSections={sidebarSections}
           toggleSidebarSection={toggleSidebarSection}
+          sessions={sessions}
+          sessionsLoading={sessionsLoading}
+          sessionsError={sessionsError}
+          openingSessionId={openingSessionId}
+          openSession={openSession}
+          startNewSession={startNewSession}
+          reloadSessions={loadSessions}
+          currentSessionId={currentSessionId}
           files={files}
           filteredFiles={filteredFiles}
           fileFilter={fileFilter}
