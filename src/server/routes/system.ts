@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { RuntimeSettings } from "../types.js";
 import { fetchSkills } from "../services/skills.js";
 import {
@@ -14,14 +15,113 @@ import { listSessionSummaries, readSessionMessages } from "../services/sessions.
 import { maskToken, readSettings, writeSettings } from "../services/settings.js";
 import { WorkspaceRegistry } from "../services/workspaces.js";
 import { buildQueryOptions, withTimeout } from "../services/query.js";
+import { readMcpConfig } from "../services/mcp.js";
 
 type SystemRoutesDeps = {
   app: Express;
   workspaceRegistry: WorkspaceRegistry;
   defaultSettings: RuntimeSettings;
+  activeQueries: Map<string, ReturnType<typeof query>>;
 };
 
-export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings }: SystemRoutesDeps): void {
+type McpRuntimeRow = {
+  connected: boolean | null;
+  status: string;
+  error: string;
+};
+
+type McpProbeSnapshot = {
+  ok: boolean | null;
+  error: string;
+  source: string;
+  checking: boolean;
+  checkedAt: number;
+  rows: Map<string, McpRuntimeRow>;
+};
+
+export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, activeQueries }: SystemRoutesDeps): void {
+  const mcpProbeCache = new Map<string, McpProbeSnapshot>();
+
+  const getMcpSnapshot = (workspaceId: string): McpProbeSnapshot => {
+    const existing = mcpProbeCache.get(workspaceId);
+    if (existing) return existing;
+    const created: McpProbeSnapshot = {
+      ok: null,
+      error: "",
+      source: "none",
+      checking: false,
+      checkedAt: 0,
+      rows: new Map<string, McpRuntimeRow>()
+    };
+    mcpProbeCache.set(workspaceId, created);
+    return created;
+  };
+
+  const findActiveWorkspaceQuery = (workspaceId: string): ReturnType<typeof query> | null => {
+    let activeQuery: ReturnType<typeof query> | null = null;
+    for (const [key, value] of activeQueries) {
+      if (key.startsWith(`${workspaceId}:`)) activeQuery = value;
+    }
+    return activeQuery;
+  };
+
+  const startMcpProbe = (workspaceId: string): { started: boolean; reason: string } => {
+    const snapshot = getMcpSnapshot(workspaceId);
+    if (snapshot.checking) return { started: false, reason: "already_checking" };
+
+    const activeQuery = findActiveWorkspaceQuery(workspaceId);
+    if (!activeQuery) {
+      snapshot.ok = null;
+      snapshot.error = "No active chat session.";
+      snapshot.source = "active_session_missing";
+      snapshot.checkedAt = Date.now();
+      return { started: false, reason: "no_active_session" };
+    }
+
+    snapshot.checking = true;
+    snapshot.error = "";
+    snapshot.source = "active_session";
+    void (async () => {
+      try {
+        const rawStatus = await withTimeout(activeQuery.mcpServerStatus(), 10000, "mcpServerStatus");
+        snapshot.rows.clear();
+        for (const entry of Array.isArray(rawStatus) ? rawStatus : []) {
+          if (!entry || typeof entry !== "object") continue;
+          const row = entry as Record<string, unknown>;
+          const name =
+            (typeof row.name === "string" && row.name) ||
+            (typeof row.server === "string" && row.server) ||
+            (typeof row.id === "string" && row.id) ||
+            "";
+          if (!name) continue;
+          const connectedRaw = row.connected;
+          const connected = typeof connectedRaw === "boolean" ? connectedRaw : null;
+          const status = typeof row.status === "string" ? row.status : connected === true ? "connected" : "unknown";
+          const error = typeof row.error === "string" ? row.error : "";
+          snapshot.rows.set(name, { connected, status, error });
+        }
+        snapshot.ok = true;
+        snapshot.error = "";
+        snapshot.source = "active_session";
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        snapshot.error = msg;
+        if (msg.includes("Query closed before response received") || msg.includes("ProcessTransport is not ready")) {
+          snapshot.ok = null;
+          snapshot.source = "active_session_unavailable";
+        } else {
+          snapshot.ok = false;
+          snapshot.source = "active_session_error";
+        }
+      } finally {
+        snapshot.checkedAt = Date.now();
+        snapshot.checking = false;
+      }
+    })();
+
+    return { started: true, reason: "started" };
+  };
+
   app.get("/api/workspaces", (_req, res) => {
     res.json({
       ok: true,
@@ -82,6 +182,121 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings }
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Unknown error";
       res.status(500).json({ ok: false, error: msg, items: [] });
+    }
+  });
+
+  app.get("/api/mcps", async (req, res) => {
+    try {
+      const workspace = workspaceRegistry.requireWorkspace(req, res);
+      if (!workspace) return;
+      const settings = await readSettings(workspace.root, defaultSettings);
+      const configured = await readMcpConfig(workspace.root);
+      const snapshot = getMcpSnapshot(workspace.id);
+      const ageSeconds = snapshot.checkedAt > 0 ? Math.max(0, Math.floor((Date.now() - snapshot.checkedAt) / 1000)) : null;
+      const stale = ageSeconds !== null ? ageSeconds > 60 : true;
+
+      const items = configured.map((item) => {
+        const runtime = snapshot.rows.get(item.name) || null;
+        const missingEnvVars = item.requiredEnvVars.filter((name) => !String(process.env[name] || "").trim());
+        const defaultRuntime =
+          settings.mcpEnabled === false
+            ? { connected: null, status: "disabled", error: "" }
+            : missingEnvVars.length > 0
+              ? { connected: false, status: "missing_env", error: `Missing env: ${missingEnvVars.join(", ")}` }
+              : snapshot.checking
+                ? { connected: null, status: "checking", error: "" }
+                : snapshot.ok === false
+                  ? { connected: null, status: "probe_failed", error: snapshot.error }
+                : { connected: null, status: "not_checked", error: "" };
+        return {
+          ...item,
+          enabled: settings.mcpEnabled,
+          missingEnvVars,
+          runtime: runtime
+            ? {
+                connected: runtime.connected,
+                status: runtime.status,
+                error: runtime.error
+              }
+            : defaultRuntime
+        };
+      });
+
+      res.json({
+        ok: true,
+        workspaceId: workspace.id,
+        mcpEnabled: settings.mcpEnabled,
+        count: items.length,
+        runtime: {
+          ok: snapshot.ok,
+          error: snapshot.error,
+          source: snapshot.source,
+          checking: snapshot.checking,
+          lastCheckedAt: snapshot.checkedAt || null,
+          ageSeconds,
+          stale
+        },
+        items
+      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).json({
+        ok: false,
+        error: msg,
+        mcpEnabled: false,
+        count: 0,
+        runtime: { ok: false, error: msg },
+        items: []
+      });
+    }
+  });
+
+  app.post("/api/mcps/refresh", async (req, res) => {
+    try {
+      const workspace = workspaceRegistry.requireWorkspace(req, res);
+      if (!workspace) return;
+      const settings = await readSettings(workspace.root, defaultSettings);
+      const configured = await readMcpConfig(workspace.root);
+      const snapshot = getMcpSnapshot(workspace.id);
+
+      if (!settings.mcpEnabled) {
+        snapshot.ok = null;
+        snapshot.error = "";
+        snapshot.source = "disabled";
+        snapshot.checking = false;
+        snapshot.checkedAt = Date.now();
+        res.json({ ok: true, started: false, reason: "mcp_disabled", runtime: snapshot });
+        return;
+      }
+
+      if (configured.length === 0) {
+        snapshot.ok = null;
+        snapshot.error = "";
+        snapshot.source = "config_empty";
+        snapshot.checking = false;
+        snapshot.checkedAt = Date.now();
+        res.json({ ok: true, started: false, reason: "config_empty", runtime: snapshot });
+        return;
+      }
+
+      const result = startMcpProbe(workspace.id);
+      const fresh = getMcpSnapshot(workspace.id);
+      res.json({
+        ok: true,
+        workspaceId: workspace.id,
+        started: result.started,
+        reason: result.reason,
+        runtime: {
+          ok: fresh.ok,
+          error: fresh.error,
+          source: fresh.source,
+          checking: fresh.checking,
+          lastCheckedAt: fresh.checkedAt || null
+        }
+      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).json({ ok: false, error: msg });
     }
   });
 

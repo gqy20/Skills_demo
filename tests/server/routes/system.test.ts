@@ -101,7 +101,7 @@ describe("registerSystemRoutes", () => {
     process.env.AGENT_WORKSPACES = "";
     const registry = new WorkspaceRegistry();
     const { app, gets } = makeApp();
-    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults });
+    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults, activeQueries: new Map() });
 
     const workspacesRes = makeMockRes();
     await gets.get("/api/workspaces")!({} as Request, workspacesRes);
@@ -125,7 +125,7 @@ describe("registerSystemRoutes", () => {
     await writeSettings(ws, { ...defaults, speedModeEnabled: true, authToken: "abcd1234" });
     const registry = new WorkspaceRegistry();
     const { app, gets } = makeApp();
-    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults });
+    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults, activeQueries: new Map() });
 
     const settingsRes = makeMockRes();
     await gets.get("/api/settings")!({ body: {}, query: {} } as Request, settingsRes);
@@ -149,7 +149,7 @@ describe("registerSystemRoutes", () => {
     process.env.AGENT_WORKSPACES = "";
     const registry = new WorkspaceRegistry();
     const { app, gets } = makeApp();
-    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults });
+    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults, activeQueries: new Map() });
 
     const badRes = makeMockRes();
     await gets.get("/api/files")!({ body: {}, query: { path: "../etc", depth: "1" } } as Request, badRes);
@@ -178,7 +178,7 @@ describe("registerSystemRoutes", () => {
 
     const registry = new WorkspaceRegistry();
     const { app, posts, gets } = makeApp();
-    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults });
+    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults, activeQueries: new Map() });
 
     const postRes = makeMockRes();
     await posts.get("/api/settings")!(
@@ -228,7 +228,7 @@ describe("registerSystemRoutes", () => {
 
     const registry = new WorkspaceRegistry();
     const { app, gets, puts } = makeApp();
-    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults });
+    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults, activeQueries: new Map() });
 
     const readRes = makeMockRes();
     await gets.get("/api/file")!({ body: {}, query: { path: "src/note.md" } } as Request, readRes);
@@ -269,7 +269,7 @@ describe("registerSystemRoutes", () => {
 
     const registry = new WorkspaceRegistry();
     const { app, puts } = makeApp();
-    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults });
+    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults, activeQueries: new Map() });
 
     await writeFile(file, "v2\n");
     const res = makeMockRes();
@@ -283,5 +283,77 @@ describe("registerSystemRoutes", () => {
 
     expect(res.statusCode).toBe(409);
     expect(res.body).toMatchObject({ ok: false, error: "file changed on disk" });
+  });
+
+  it("returns mcp config with explicit runtime fallback states in /api/mcps", async () => {
+    const ws = await makeWorkspace();
+    process.env.AGENT_WORKSPACE_ROOT = ws;
+    process.env.AGENT_WORKSPACES = "";
+    delete process.env.ZHIPU_API_KEY;
+    await writeFile(
+      path.join(ws, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          demo: {
+            type: "http",
+            url: "https://example.com/mcp",
+            headers: { Authorization: "Bearer ${ZHIPU_API_KEY}" }
+          }
+        }
+      })
+    );
+
+    const registry = new WorkspaceRegistry();
+    const { app, gets } = makeApp();
+    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults, activeQueries: new Map() });
+
+    const res = makeMockRes();
+    await gets.get("/api/mcps")!({ body: {}, query: {} } as Request, res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      ok: true,
+      count: 1,
+      items: [
+        {
+          name: "demo",
+          type: "http",
+          missingEnvVars: ["ZHIPU_API_KEY"],
+          runtime: { status: "missing_env" }
+        }
+      ]
+    });
+  });
+
+  it("returns no_active_session for /api/mcps/refresh without active query", async () => {
+    const ws = await makeWorkspace();
+    process.env.AGENT_WORKSPACE_ROOT = ws;
+    process.env.AGENT_WORKSPACES = "";
+    await writeFile(
+      path.join(ws, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          demo: {
+            type: "http",
+            url: "https://example.com/mcp"
+          }
+        }
+      })
+    );
+
+    const registry = new WorkspaceRegistry();
+    const { app, posts } = makeApp();
+    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults, activeQueries: new Map() });
+
+    const res = makeMockRes();
+    await posts.get("/api/mcps/refresh")!({ body: {}, query: {} } as Request, res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      ok: true,
+      started: false,
+      reason: "no_active_session",
+      runtime: {
+        source: "active_session_missing"
+      }
+    });
   });
 });

@@ -50,7 +50,8 @@ app.use(express.static(WEB_ROOT));
 registerSystemRoutes({
   app,
   workspaceRegistry,
-  defaultSettings
+  defaultSettings,
+  activeQueries
 });
 
 registerChatRoutes({

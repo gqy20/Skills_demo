@@ -84,7 +84,7 @@ describe("/api/skills route", () => {
     process.env.AGENT_WORKSPACES = "";
     const registry = new WorkspaceRegistry();
     const { app, gets } = makeApp();
-    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults });
+    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults, activeQueries: new Map() });
 
     const res = makeMockRes();
     await gets.get("/api/skills")!({ body: {}, query: {} } as Request, res);
@@ -104,7 +104,7 @@ describe("/api/skills route", () => {
     process.env.AGENT_WORKSPACES = "";
     const registry = new WorkspaceRegistry();
     const { app, gets } = makeApp();
-    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults });
+    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults, activeQueries: new Map() });
 
     const res = makeMockRes();
     await gets.get("/api/skills")!({ body: {}, query: {} } as Request, res);

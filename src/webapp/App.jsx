@@ -176,6 +176,7 @@ export default function App() {
   const [openingSessionId, setOpeningSessionId] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarSections, setSidebarSections] = useState({
+    mcps: true,
     sessions: true,
     files: false,
     pending: false,
@@ -215,6 +216,14 @@ export default function App() {
     ok: null,
     count: 0,
     error: ""
+  });
+  const [mcpCatalog, setMcpCatalog] = useState({
+    loading: false,
+    error: "",
+    mcpEnabled: true,
+    runtime: { ok: null, error: "", source: "", checking: false, lastCheckedAt: null, ageSeconds: null, stale: true },
+    items: [],
+    updatedAt: 0
   });
   const [activeTurnTrace, setActiveTurnTrace] = useState(null);
   const [traceByAssistantId, setTraceByAssistantId] = useState({});
@@ -642,6 +651,53 @@ export default function App() {
     setFiles(Array.isArray(data.items) ? data.items : []);
   }, [apiGetJson, currentWorkspaceId]);
 
+  const loadMcps = useCallback(async () => {
+    if (!currentWorkspaceId) return;
+    setMcpCatalog((prev) => ({ ...prev, loading: true, error: "" }));
+    try {
+      const data = await apiGetJson("/api/mcps");
+      setMcpCatalog({
+        loading: false,
+        error: "",
+        mcpEnabled: data?.mcpEnabled !== false,
+        runtime: {
+          ok: typeof data?.runtime?.ok === "boolean" ? data.runtime.ok : null,
+          error: String(data?.runtime?.error || ""),
+          source: String(data?.runtime?.source || ""),
+          checking: data?.runtime?.checking === true,
+          lastCheckedAt: typeof data?.runtime?.lastCheckedAt === "number" ? data.runtime.lastCheckedAt : null,
+          ageSeconds: typeof data?.runtime?.ageSeconds === "number" ? data.runtime.ageSeconds : null,
+          stale: data?.runtime?.stale !== false
+        },
+        items: Array.isArray(data?.items) ? data.items : [],
+        updatedAt: Date.now()
+      });
+    } catch (error) {
+      setMcpCatalog((prev) => ({
+        ...prev,
+        loading: false,
+        error: parseError(error),
+        updatedAt: Date.now()
+      }));
+    }
+  }, [apiGetJson, currentWorkspaceId]);
+
+  const refreshMcps = useCallback(async () => {
+    if (!currentWorkspaceId) return;
+    setMcpCatalog((prev) => ({ ...prev, loading: true, error: "" }));
+    try {
+      await apiPostJson("/api/mcps/refresh", {});
+    } catch (error) {
+      setMcpCatalog((prev) => ({ ...prev, loading: false, error: parseError(error), updatedAt: Date.now() }));
+      return;
+    }
+    const delays = [0, 400, 1200, 2600];
+    for (let i = 0; i < delays.length; i += 1) {
+      if (delays[i] > 0) await new Promise((resolve) => setTimeout(resolve, delays[i]));
+      await loadMcps();
+    }
+  }, [apiPostJson, currentWorkspaceId, loadMcps]);
+
   const openFile = useCallback(
     async (filePath) => {
       const nextPath = String(filePath || "").trim();
@@ -752,9 +808,10 @@ export default function App() {
   useEffect(() => {
     loadSettings().catch(() => {});
     loadSkills().catch(() => {});
+    loadMcps().catch(() => {});
     loadFiles().catch(() => {});
     loadSessions().catch(() => {});
-  }, [currentWorkspaceId, loadFiles, loadSettings, loadSkills, loadSessions]);
+  }, [currentWorkspaceId, loadFiles, loadMcps, loadSettings, loadSkills, loadSessions]);
 
   useEffect(() => {
     setOpenedFile(null);
@@ -1505,6 +1562,8 @@ export default function App() {
           skillSourceCounts={skillSourceCounts}
           skillExpanded={skillExpanded}
           setSkillExpanded={setSkillExpanded}
+          mcpCatalog={mcpCatalog}
+          reloadMcps={() => refreshMcps().catch(() => {})}
           sidebarSections={sidebarSections}
           toggleSidebarSection={toggleSidebarSection}
           sessions={sessions}

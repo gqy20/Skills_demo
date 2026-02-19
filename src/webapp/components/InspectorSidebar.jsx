@@ -12,6 +12,8 @@ export default function InspectorSidebar({
   skillSourceCounts,
   skillExpanded,
   setSkillExpanded,
+  mcpCatalog,
+  reloadMcps,
   sidebarSections,
   toggleSidebarSection,
   sessions,
@@ -45,6 +47,12 @@ export default function InspectorSidebar({
       return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     }
     return d.toLocaleDateString([], { month: "2-digit", day: "2-digit" });
+  };
+
+  const formatTime = (ts) => {
+    const n = Number(ts || 0);
+    if (!Number.isFinite(n) || n <= 0) return "-";
+    return new Date(n).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   };
 
   return (
@@ -118,6 +126,94 @@ export default function InspectorSidebar({
             );
           })}
         </ul>
+      </section>
+
+      <section className="panel panel-collapsible">
+        <button type="button" className="panel-collapse-btn" onClick={() => toggleSidebarSection("mcps")}>
+          <h2>MCP Servers</h2>
+          <span>{sidebarSections.mcps ? "收起" : "展开"}</span>
+        </button>
+        {sidebarSections.mcps && (
+          <>
+            <div className="panel-toolbar">
+              <div className="session-toolbar-row">
+                <p className="session-tag">
+                  开关={mcpCatalog.mcpEnabled ? "ON" : "OFF"} · 数量={mcpCatalog.items.length}
+                </p>
+                <button type="button" className="sidebar-mini-btn" onClick={reloadMcps} disabled={mcpCatalog.loading}>
+                  {mcpCatalog.loading ? "刷新中..." : "刷新"}
+                </button>
+              </div>
+              <p className="session-tag">
+                探针=
+                {mcpCatalog.runtime.checking
+                  ? "检测中..."
+                  : mcpCatalog.runtime.ok === true
+                  ? "正常"
+                  : mcpCatalog.runtime.ok === false
+                    ? `异常${mcpCatalog.runtime.error ? `: ${mcpCatalog.runtime.error}` : ""}`
+                    : mcpCatalog.runtime.source === "active_session_missing"
+                      ? "待检测（无活跃会话）"
+                      : mcpCatalog.runtime.source === "active_session_unavailable"
+                        ? `会话不可用${mcpCatalog.runtime.error ? `: ${mcpCatalog.runtime.error}` : ""}`
+                        : "未知"}{" "}
+                · 最近检测{" "}
+                {typeof mcpCatalog.runtime.lastCheckedAt === "number" && mcpCatalog.runtime.lastCheckedAt > 0
+                  ? `${formatTime(mcpCatalog.runtime.lastCheckedAt)}${
+                      typeof mcpCatalog.runtime.ageSeconds === "number" ? ` (${mcpCatalog.runtime.ageSeconds}s前)` : ""
+                    }`
+                  : "未检测"}
+              </p>
+              {mcpCatalog.error && <p className="session-tag">加载失败：{mcpCatalog.error}</p>}
+            </div>
+            <ul className="mcps-list">
+              {mcpCatalog.items.map((item) => {
+                const runtime = item?.runtime || null;
+                const runtimeStatus = String(runtime?.status || "");
+                const status =
+                  !mcpCatalog.mcpEnabled || runtimeStatus === "disabled"
+                    ? "全局关闭"
+                    : runtimeStatus === "missing_env"
+                      ? "缺少环境变量"
+                    : runtimeStatus === "probe_failed"
+                        ? "探针失败"
+                      : runtimeStatus === "checking"
+                        ? "检测中"
+                        : runtime?.connected === true || runtimeStatus === "connected"
+                          ? "在线"
+                          : runtime?.connected === false || runtimeStatus === "disconnected"
+                            ? "离线"
+                            : runtimeStatus === "not_checked"
+                              ? "待检测"
+                              : "未知";
+                const statusClass =
+                  status === "在线"
+                    ? "mcp-status-ok"
+                    : status === "离线" || status === "全局关闭" || status === "缺少环境变量" || status === "探针失败"
+                      ? "mcp-status-off"
+                      : "mcp-status-unknown";
+                return (
+                  <li className="mcp-item" key={item.name}>
+                    <div className="mcp-head">
+                      <p className="mcp-name">{item.name}</p>
+                      <span className={`mcp-status ${statusClass}`}>{status}</span>
+                    </div>
+                    <p className="mcp-meta">
+                      类型: {item.type || "unknown"}
+                      {runtime?.status ? ` · ${runtime.status}` : ""}
+                    </p>
+                    {item.endpoint && <p className="mcp-endpoint">{item.endpoint}</p>}
+                    {Array.isArray(item?.missingEnvVars) && item.missingEnvVars.length > 0 && (
+                      <p className="mcp-error">缺少变量: {item.missingEnvVars.join(", ")}</p>
+                    )}
+                    {runtime?.error && <p className="mcp-error">错误: {runtime.error}</p>}
+                  </li>
+                );
+              })}
+              {mcpCatalog.items.length === 0 && !mcpCatalog.loading && <li className="sessions-empty">未发现 MCP 配置</li>}
+            </ul>
+          </>
+        )}
       </section>
 
       <section className="panel panel-collapsible">

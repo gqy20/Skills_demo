@@ -1079,6 +1079,80 @@ button:disabled {
   box-shadow: none;
 }
 
+.mcps-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.mcp-item {
+  border: 1px solid var(--line);
+  border-radius: var(--r-12);
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.74);
+  display: grid;
+  gap: 4px;
+}
+
+.mcp-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.mcp-name {
+  margin: 0;
+  font-size: var(--fs-14);
+  font-weight: 650;
+  color: #263a5f;
+}
+
+.mcp-status {
+  border-radius: 999px;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  padding: 1px 8px;
+}
+
+.mcp-status-ok {
+  color: #0e9f6e;
+  background: rgba(16, 163, 127, 0.12);
+}
+
+.mcp-status-off {
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.14);
+}
+
+.mcp-status-unknown {
+  color: #475569;
+  background: #eef2f7;
+}
+
+.mcp-meta {
+  margin: 0;
+  font-size: var(--fs-12);
+  color: #64748b;
+}
+
+.mcp-endpoint {
+  margin: 0;
+  font-size: var(--fs-12);
+  color: #334155;
+  line-height: 1.35;
+  word-break: break-all;
+}
+
+.mcp-error {
+  margin: 0;
+  font-size: var(--fs-12);
+  color: #b91c1c;
+  line-height: 1.35;
+}
+
 .files-list {
   list-style: none;
   margin: 8px 0 0;
