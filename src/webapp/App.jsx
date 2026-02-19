@@ -4,6 +4,7 @@ import { DefaultChatTransport } from "ai";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import Composer from "./components/Composer.jsx";
+import FileEditorPane from "./components/FileEditorPane.jsx";
 import InspectorSidebar from "./components/InspectorSidebar.jsx";
 
 const MAX_EVENT_LOG = 120;
@@ -30,7 +31,13 @@ function textFromMessage(message) {
 }
 
 function parseError(error) {
-  return error instanceof Error ? error.message : String(error);
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  if (error && typeof error === "object") {
+    if (typeof error.error === "string") return error.error;
+    if (typeof error.message === "string") return error.message;
+  }
+  return String(error);
 }
 
 function shortText(value, max = 120) {
@@ -56,6 +63,19 @@ function formatElapsed(seconds) {
 function extractSlashCommand(text) {
   const m = String(text || "").trim().match(/^\/([a-zA-Z0-9_-]+)/);
   return m ? m[1].toLowerCase() : "";
+}
+
+function flattenFiles(items, level = 0) {
+  if (!Array.isArray(items)) return [];
+  const out = [];
+  for (const item of items) {
+    if (!item || typeof item !== "object") continue;
+    out.push({ ...item, level });
+    if (item.type === "directory" && Array.isArray(item.children) && item.children.length > 0) {
+      out.push(...flattenFiles(item.children, level + 1));
+    }
+  }
+  return out;
 }
 
 function parseMcpToolName(rawName) {
@@ -165,6 +185,10 @@ export default function App() {
   const [skillFilter, setSkillFilter] = useState("");
   const [skillSourceTab, setSkillSourceTab] = useState("all");
   const [fileFilter, setFileFilter] = useState("");
+  const [openedFile, setOpenedFile] = useState(null);
+  const [fileLoading, setFileLoading] = useState(false);
+  const [fileSaving, setFileSaving] = useState(false);
+  const [fileError, setFileError] = useState("");
   const [inputText, setInputText] = useState("");
   const [lastUserText, setLastUserText] = useState("");
   const [pendingState, setPendingState] = useState({
@@ -268,6 +292,26 @@ export default function App() {
       });
       if (!res.ok) throw new Error(await res.text());
       return res.json();
+    },
+    [workspaceQuery]
+  );
+
+  const apiPutJson = useCallback(
+    async (pathname, body) => {
+      const res = await fetch(workspaceQuery(pathname), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body || {})
+      });
+      const text = await res.text();
+      let parsed = {};
+      try {
+        parsed = text ? JSON.parse(text) : {};
+      } catch {
+        parsed = { error: text || "request failed" };
+      }
+      if (!res.ok) throw parsed;
+      return parsed;
     },
     [workspaceQuery]
   );
@@ -598,6 +642,79 @@ export default function App() {
     setFiles(Array.isArray(data.items) ? data.items : []);
   }, [apiGetJson, currentWorkspaceId]);
 
+  const openFile = useCallback(
+    async (filePath) => {
+      const nextPath = String(filePath || "").trim();
+      if (!nextPath || !currentWorkspaceId) return;
+      setFileLoading(true);
+      setFileError("");
+      try {
+        const data = await apiGetJson("/api/file", { path: nextPath });
+        const content = typeof data?.content === "string" ? data.content : "";
+        const pathValue = typeof data?.path === "string" ? data.path : nextPath;
+        setOpenedFile({
+          path: pathValue,
+          name: data?.name || pathValue.split("/").pop() || pathValue,
+          content,
+          savedContent: content,
+          mtimeMs: Number(data?.mtimeMs || 0),
+          size: Number(data?.size || 0),
+          dirty: false
+        });
+      } catch (error) {
+        setFileError(parseError(error));
+      } finally {
+        setFileLoading(false);
+      }
+    },
+    [apiGetJson, currentWorkspaceId]
+  );
+
+  const requestOpenFile = useCallback(
+    async (filePath, { force = false } = {}) => {
+      const nextPath = String(filePath || "").trim();
+      if (!nextPath) return;
+      if (openedFile?.path === nextPath && !fileLoading) return;
+      if (!force && openedFile?.dirty) {
+        const ok = window.confirm("当前文件有未保存修改，是否放弃并切换到其他文件？");
+        if (!ok) return;
+      }
+      await openFile(nextPath);
+    },
+    [fileLoading, openFile, openedFile?.dirty, openedFile?.path]
+  );
+
+  const saveOpenedFile = useCallback(async () => {
+    if (!openedFile?.path || fileLoading || fileSaving) return;
+    if (!openedFile.dirty) return;
+    setFileSaving(true);
+    setFileError("");
+    try {
+      const data = await apiPutJson("/api/file", {
+        path: openedFile.path,
+        content: openedFile.content,
+        expectedMtimeMs: openedFile.mtimeMs
+      });
+      const mtimeMs = Number(data?.mtimeMs || Date.now());
+      setOpenedFile((prev) =>
+        prev
+          ? {
+              ...prev,
+              savedContent: prev.content,
+              dirty: false,
+              mtimeMs,
+              size: Number(data?.size || prev.size || 0)
+            }
+          : prev
+      );
+      loadFiles().catch(() => {});
+    } catch (error) {
+      setFileError(parseError(error));
+    } finally {
+      setFileSaving(false);
+    }
+  }, [apiPutJson, fileLoading, fileSaving, loadFiles, openedFile]);
+
   const loadSessions = useCallback(async () => {
     if (!currentWorkspaceId) return;
     setSessionsLoading(true);
@@ -638,6 +755,13 @@ export default function App() {
     loadFiles().catch(() => {});
     loadSessions().catch(() => {});
   }, [currentWorkspaceId, loadFiles, loadSettings, loadSkills, loadSessions]);
+
+  useEffect(() => {
+    setOpenedFile(null);
+    setFileLoading(false);
+    setFileSaving(false);
+    setFileError("");
+  }, [currentWorkspaceId]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -901,11 +1025,13 @@ export default function App() {
     });
   }, [skills, skillFilter, skillSourceTab]);
 
+  const flattenedFiles = useMemo(() => flattenFiles(files), [files]);
+
   const filteredFiles = useMemo(() => {
     const q = fileFilter.trim().toLowerCase();
-    if (!q) return files;
-    return files.filter((item) => `${item?.name || ""} ${item?.path || ""}`.toLowerCase().includes(q));
-  }, [files, fileFilter]);
+    if (!q) return flattenedFiles;
+    return flattenedFiles.filter((item) => `${item?.name || ""} ${item?.path || ""}`.toLowerCase().includes(q));
+  }, [flattenedFiles, fileFilter]);
 
   useEffect(() => {
     autoResizeTextarea();
@@ -1237,6 +1363,27 @@ export default function App() {
             </section>
           </section>
 
+          <FileEditorPane
+            openedFile={openedFile}
+            fileLoading={fileLoading}
+            fileSaving={fileSaving}
+            fileError={fileError}
+            onChange={(value) =>
+              setOpenedFile((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      content: value,
+                      dirty: value !== prev.savedContent
+                    }
+                  : prev
+              )
+            }
+            onSave={() => saveOpenedFile().catch(() => {})}
+            onReload={() => requestOpenFile(openedFile?.path, { force: true }).catch(() => {})}
+            onClose={() => setOpenedFile(null)}
+          />
+
           <section id="pending-overlay" className={`pending-overlay ${blockingPending ? "" : "hidden"}`}>
             {blockingPending && (
               <>
@@ -1372,6 +1519,8 @@ export default function App() {
           filteredFiles={filteredFiles}
           fileFilter={fileFilter}
           setFileFilter={setFileFilter}
+          openFile={(filePath) => requestOpenFile(filePath).catch(() => {})}
+          openedFilePath={openedFile?.path || ""}
           pendingState={pendingState}
           blockingPending={blockingPending}
           diagnostics={diagnostics}

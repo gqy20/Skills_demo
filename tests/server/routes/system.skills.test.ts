@@ -58,7 +58,8 @@ function makeApp() {
       get(route: string, handler: Handler) {
         gets.set(route, handler);
       },
-      post() {}
+      post() {},
+      put() {}
     },
     gets
   };

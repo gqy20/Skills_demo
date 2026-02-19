@@ -1,6 +1,6 @@
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import type { Request, Response } from "express";
 import { afterEach, describe, expect, it } from "vitest";
 import { registerSystemRoutes } from "../../../src/server/routes/system.js";
@@ -70,6 +70,7 @@ async function makeWorkspace(): Promise<string> {
 function makeApp() {
   const gets = new Map<string, Handler>();
   const posts = new Map<string, Handler>();
+  const puts = new Map<string, Handler>();
   return {
     app: {
       get(route: string, handler: Handler) {
@@ -77,10 +78,14 @@ function makeApp() {
       },
       post(route: string, handler: Handler) {
         posts.set(route, handler);
+      },
+      put(route: string, handler: Handler) {
+        puts.set(route, handler);
       }
     },
     gets,
-    posts
+    posts,
+    puts
   };
 }
 
@@ -212,5 +217,71 @@ describe("registerSystemRoutes", () => {
       hasToken: true,
       hasMineruKey: false
     });
+  });
+
+  it("reads and saves text file via /api/file", async () => {
+    const ws = await makeWorkspace();
+    await mkdir(path.join(ws, "src"), { recursive: true });
+    await writeFile(path.join(ws, "src", "note.md"), "# old\n");
+    process.env.AGENT_WORKSPACE_ROOT = ws;
+    process.env.AGENT_WORKSPACES = "";
+
+    const registry = new WorkspaceRegistry();
+    const { app, gets, puts } = makeApp();
+    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults });
+
+    const readRes = makeMockRes();
+    await gets.get("/api/file")!({ body: {}, query: { path: "src/note.md" } } as Request, readRes);
+    expect(readRes.statusCode).toBe(200);
+    expect(readRes.body).toMatchObject({
+      ok: true,
+      path: "src/note.md",
+      name: "note.md",
+      content: "# old\n"
+    });
+    const oldMtime = Number((readRes.body as { mtimeMs: number }).mtimeMs);
+
+    const saveRes = makeMockRes();
+    await puts.get("/api/file")!(
+      {
+        body: { path: "src/note.md", content: "# new\n", expectedMtimeMs: oldMtime },
+        query: {}
+      } as Request,
+      saveRes
+    );
+    expect(saveRes.statusCode).toBe(200);
+    expect(saveRes.body).toMatchObject({
+      ok: true,
+      path: "src/note.md"
+    });
+
+    const saved = await readFile(path.join(ws, "src", "note.md"), "utf-8");
+    expect(saved).toBe("# new\n");
+  });
+
+  it("rejects stale mtime when saving /api/file", async () => {
+    const ws = await makeWorkspace();
+    await mkdir(path.join(ws, "src"), { recursive: true });
+    const file = path.join(ws, "src", "stale.txt");
+    await writeFile(file, "v1\n");
+    process.env.AGENT_WORKSPACE_ROOT = ws;
+    process.env.AGENT_WORKSPACES = "";
+
+    const registry = new WorkspaceRegistry();
+    const { app, puts } = makeApp();
+    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults });
+
+    await writeFile(file, "v2\n");
+    const res = makeMockRes();
+    await puts.get("/api/file")!(
+      {
+        body: { path: "src/stale.txt", content: "v3\n", expectedMtimeMs: 1 },
+        query: {}
+      } as Request,
+      res
+    );
+
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toMatchObject({ ok: false, error: "file changed on disk" });
   });
 });

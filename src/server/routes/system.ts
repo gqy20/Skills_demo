@@ -1,7 +1,15 @@
 import type { Express } from "express";
 import type { RuntimeSettings } from "../types.js";
 import { fetchSkills } from "../services/skills.js";
-import { listWorkspaceFiles, loadIgnoreRules, normalizeRelativePath, resolveWorkspacePath } from "../services/files.js";
+import {
+  FileAccessError,
+  listWorkspaceFiles,
+  loadIgnoreRules,
+  normalizeRelativePath,
+  readWorkspaceTextFile,
+  resolveWorkspacePath,
+  writeWorkspaceTextFile
+} from "../services/files.js";
 import { listSessionSummaries, readSessionMessages } from "../services/sessions.js";
 import { maskToken, readSettings, writeSettings } from "../services/settings.js";
 import { WorkspaceRegistry } from "../services/workspaces.js";
@@ -105,6 +113,27 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings }
     } catch (error) {
       const msg = error instanceof Error ? error.message : "unknown error";
       res.status(500).json({ ok: false, error: msg, items: [] });
+    }
+  });
+
+  app.get("/api/file", async (req, res) => {
+    try {
+      const workspace = workspaceRegistry.requireWorkspace(req, res);
+      if (!workspace) return;
+      const relativePath = normalizeRelativePath(req.query?.path);
+      const file = await readWorkspaceTextFile(workspace.root, relativePath);
+      res.json({
+        ok: true,
+        workspaceId: workspace.id,
+        ...file
+      });
+    } catch (error) {
+      if (error instanceof FileAccessError) {
+        res.status(error.statusCode).json({ ok: false, error: error.message });
+        return;
+      }
+      const msg = error instanceof Error ? error.message : "unknown error";
+      res.status(500).json({ ok: false, error: msg });
     }
   });
 
@@ -213,5 +242,34 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings }
       hasMineruKey: Boolean(next.mineruApiKey),
       mineruKeyPreview: maskToken(next.mineruApiKey)
     });
+  });
+
+  app.put("/api/file", async (req, res) => {
+    try {
+      const workspace = workspaceRegistry.requireWorkspace(req, res);
+      if (!workspace) return;
+      const relativePath = normalizeRelativePath(req.body?.path);
+      const content = typeof req.body?.content === "string" ? req.body.content : "";
+      const expectedMtimeMs = typeof req.body?.expectedMtimeMs === "number" ? req.body.expectedMtimeMs : null;
+
+      if (!relativePath) {
+        res.status(400).json({ ok: false, error: "invalid path" });
+        return;
+      }
+
+      const result = await writeWorkspaceTextFile(workspace.root, relativePath, content, expectedMtimeMs);
+      res.json({
+        ok: true,
+        workspaceId: workspace.id,
+        ...result
+      });
+    } catch (error) {
+      if (error instanceof FileAccessError) {
+        res.status(error.statusCode).json({ ok: false, error: error.message });
+        return;
+      }
+      const msg = error instanceof Error ? error.message : "unknown error";
+      res.status(500).json({ ok: false, error: msg });
+    }
   });
 }

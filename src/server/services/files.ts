@@ -11,6 +11,7 @@ const DEFAULT_FILE_EXCLUDES = new Set([
   ".idea",
   ".vscode"
 ]);
+const MAX_TEXT_FILE_SIZE = 1_000_000;
 
 let ignoreCache: Map<string, { loadedAt: number; rules: IgnoreRuleSet }> | null = null;
 
@@ -76,6 +77,15 @@ export function resolveWorkspacePath(workspaceRoot: string, relativePath: string
   if (abs === workspaceRoot) return abs;
   if (!abs.startsWith(`${workspaceRoot}${path.sep}`)) return null;
   return abs;
+}
+
+export class FileAccessError extends Error {
+  readonly statusCode: number;
+
+  constructor(message: string, statusCode: number) {
+    super(message);
+    this.statusCode = statusCode;
+  }
 }
 
 function shouldExcludeEntry(relativePath: string, name: string, rules: IgnoreRuleSet): boolean {
@@ -153,4 +163,93 @@ export async function listWorkspaceFiles(
     }
   }
   return items;
+}
+
+type TextFileData = {
+  path: string;
+  name: string;
+  content: string;
+  size: number;
+  mtimeMs: number;
+};
+
+function ensureTextContent(raw: Buffer, relativePath: string): string {
+  if (raw.includes(0)) {
+    throw new FileAccessError(`file is binary: ${relativePath}`, 415);
+  }
+  return raw.toString("utf-8");
+}
+
+export async function readWorkspaceTextFile(workspaceRoot: string, relativePath: string): Promise<TextFileData> {
+  const normalized = normalizeRelativePath(relativePath);
+  const abs = resolveWorkspacePath(workspaceRoot, normalized);
+  if (!abs || !normalized) throw new FileAccessError("invalid path", 400);
+
+  let stat;
+  try {
+    stat = await fs.stat(abs);
+  } catch {
+    throw new FileAccessError("file not found", 404);
+  }
+  if (!stat.isFile()) throw new FileAccessError("path must be file", 400);
+  if (stat.size > MAX_TEXT_FILE_SIZE) throw new FileAccessError("file too large", 413);
+
+  let raw: Buffer;
+  try {
+    raw = await fs.readFile(abs);
+  } catch {
+    throw new FileAccessError("failed to read file", 500);
+  }
+
+  const content = ensureTextContent(raw, normalized);
+  return {
+    path: normalized,
+    name: path.basename(normalized),
+    content,
+    size: stat.size,
+    mtimeMs: stat.mtimeMs
+  };
+}
+
+export async function writeWorkspaceTextFile(
+  workspaceRoot: string,
+  relativePath: string,
+  content: string,
+  expectedMtimeMs: number | null
+): Promise<{ path: string; size: number; mtimeMs: number }> {
+  const normalized = normalizeRelativePath(relativePath);
+  const abs = resolveWorkspacePath(workspaceRoot, normalized);
+  if (!abs || !normalized) throw new FileAccessError("invalid path", 400);
+
+  if (Buffer.byteLength(content, "utf-8") > MAX_TEXT_FILE_SIZE) {
+    throw new FileAccessError("file too large", 413);
+  }
+
+  let stat;
+  try {
+    stat = await fs.stat(abs);
+  } catch {
+    throw new FileAccessError("file not found", 404);
+  }
+  if (!stat.isFile()) throw new FileAccessError("path must be file", 400);
+
+  if (typeof expectedMtimeMs === "number" && Number.isFinite(expectedMtimeMs)) {
+    const delta = Math.abs(stat.mtimeMs - expectedMtimeMs);
+    if (delta > 1) {
+      throw new FileAccessError("file changed on disk", 409);
+    }
+  }
+
+  try {
+    await fs.writeFile(abs, content, "utf-8");
+  } catch {
+    throw new FileAccessError("failed to write file", 500);
+  }
+
+  const nextStat = await fs.stat(abs);
+  return {
+    path: normalized,
+    size: nextStat.size,
+    mtimeMs: nextStat.mtimeMs
+  };
 }

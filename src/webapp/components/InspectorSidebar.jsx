@@ -26,6 +26,8 @@ export default function InspectorSidebar({
   filteredFiles,
   fileFilter,
   setFileFilter,
+  openFile,
+  openedFilePath,
   pendingState,
   blockingPending,
   diagnostics,
@@ -184,10 +186,21 @@ export default function InspectorSidebar({
             <ul className="files-list">
               {filteredFiles.map((file) => (
                 <li key={file.path}>
-                  <span className="files-name">
-                    {file.type === "directory" ? "▸ " : "· "}
-                    {file.name}
-                  </span>
+                  {file.type === "file" ? (
+                    <button
+                      type="button"
+                      className={`file-item-btn ${openedFilePath === file.path ? "is-active" : ""}`}
+                      onClick={() => openFile(file.path)}
+                    >
+                      <span className="files-name" style={{ paddingLeft: `${(file.level || 0) * 14}px` }}>
+                        · {file.name}
+                      </span>
+                    </button>
+                  ) : (
+                    <span className="files-name files-dir" style={{ paddingLeft: `${(file.level || 0) * 14}px` }}>
+                      ▸ {file.name}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>
