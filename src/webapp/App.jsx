@@ -93,6 +93,12 @@ function formatPhaseLabel(phase) {
   return map[String(phase || "")] || String(phase || "");
 }
 
+function looksLikeToolClaim(text) {
+  const t = String(text || "");
+  if (!t) return false;
+  return /(mcp__|mcp|search_literature|get_article_details|tool|工具|调用|检索|读取|保存到文件|skills?)/i.test(t);
+}
+
 function normalizeSettings(data) {
   return {
     model: data?.model || "",
@@ -180,6 +186,11 @@ export default function App() {
     lastDeltaAt: 0,
     actions: [],
     dismissNoDelta: false
+  });
+  const [mcpRuntimeStatus, setMcpRuntimeStatus] = useState({
+    ok: null,
+    count: 0,
+    error: ""
   });
   const [activeTurnTrace, setActiveTurnTrace] = useState(null);
   const [traceByAssistantId, setTraceByAssistantId] = useState({});
@@ -340,6 +351,15 @@ export default function App() {
             : prev
         );
         loadSessions().catch(() => {});
+        return;
+      }
+
+      if (part?.type === "data-mcp-status") {
+        setMcpRuntimeStatus({
+          ok: part?.data?.ok === true,
+          count: Number(part?.data?.count || 0),
+          error: String(part?.data?.error || "")
+        });
         return;
       }
 
@@ -696,6 +716,7 @@ export default function App() {
       actions: [],
       dismissNoDelta: false
     });
+    setMcpRuntimeStatus({ ok: null, count: 0, error: "" });
     setActiveTurnTrace({
       startedAt: Date.now(),
       completedAt: 0,
@@ -754,6 +775,7 @@ export default function App() {
         actions: [],
         dismissNoDelta: false
       });
+      setMcpRuntimeStatus({ ok: null, count: 0, error: "" });
       for (let i = nextMessages.length - 1; i >= 0; i -= 1) {
         const msg = nextMessages[i];
         if (msg?.role !== "user" || !Array.isArray(msg?.parts)) continue;
@@ -790,6 +812,7 @@ export default function App() {
       actions: [],
       dismissNoDelta: false
     });
+    setMcpRuntimeStatus({ ok: null, count: 0, error: "" });
     setTraceByAssistantId({});
     setActiveTurnTrace(null);
   };
@@ -1065,6 +1088,10 @@ export default function App() {
                       {executionState.toolElapsedSeconds > 0 && <span>工具耗时 {formatElapsed(executionState.toolElapsedSeconds)}</span>}
                       {silentSeconds > 0 && isStreaming && <span>最近无文本增量 {formatElapsed(silentSeconds)}</span>}
                       {!blockingPending && settings.permissionProfile === "full_auto" && <span>权限模式：全部允许</span>}
+                      {mcpRuntimeStatus.ok === true && <span>MCP 连接正常（{mcpRuntimeStatus.count}）</span>}
+                      {mcpRuntimeStatus.ok === false && (
+                        <span className="exec-meta-warning">MCP 异常：{mcpRuntimeStatus.error || "连接失败"}</span>
+                      )}
                     </div>
                     {executionState.actions.length > 0 && (
                       <ul className="exec-actions">
@@ -1103,6 +1130,8 @@ export default function App() {
                     const traceToolEntries = trace ? Object.entries(trace.tools || {}) : [];
                     const traceSkillEntries = trace ? Object.entries(trace.skills || {}) : [];
                     const tracePhaseList = Array.isArray(trace?.phases) ? trace.phases : [];
+                    const unverifiedToolClaim =
+                      msg.role === "assistant" && traceToolEntries.length === 0 && traceSkillEntries.length === 0 && looksLikeToolClaim(text);
                     if (msg.role === "assistant" && !showProcessing && !hasVisibleText) return null;
                     return (
                       <article
@@ -1168,6 +1197,9 @@ export default function App() {
                                     </p>
                                   )}
                                 </div>
+                              )}
+                              {unverifiedToolClaim && (
+                                <div className="bubble-trace-warning">未检测到真实工具事件，当前内容可能是模型自述结果。</div>
                               )}
                               {isLastAssistant && (
                                 <div className="bubble-actions">

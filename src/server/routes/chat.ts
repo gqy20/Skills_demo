@@ -279,11 +279,36 @@ export function registerChatRoutes({
         hasResume: Boolean(sdkSessionId)
       });
 
+      void withTimeout(queryInstance.mcpServerStatus(), 10000, "mcpServerStatus")
+        .then((status) => {
+          if (!closed) {
+            writeSseData(res, {
+              type: "data-mcp-status",
+              data: { ok: true, count: Array.isArray(status) ? status.length : 0 }
+            });
+          }
+          writeDebugSse(res, closed, debugSseEnabled, traceId, "probe_mcp_status", {
+            count: Array.isArray(status) ? status.length : 0
+          });
+        })
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          if (!closed) {
+            writeSseData(res, {
+              type: "data-mcp-status",
+              data: { ok: false, count: 0, error: message }
+            });
+          }
+          writeDebugSse(res, closed, debugSseEnabled, traceId, "probe_mcp_status_error", {
+            error: message
+          });
+        });
+
       if (settings.debugEnabled) {
         const [initProbe, accountProbe, mcpProbe, modelProbe] = await Promise.allSettled([
           withTimeout(queryInstance.initializationResult(), 5000, "initializationResult"),
           withTimeout(queryInstance.accountInfo(), 3000, "accountInfo"),
-          withTimeout(queryInstance.mcpServerStatus(), 3000, "mcpServerStatus"),
+          withTimeout(queryInstance.mcpServerStatus(), 10000, "mcpServerStatus"),
           withTimeout(queryInstance.supportedModels(), 3000, "supportedModels")
         ]);
 
