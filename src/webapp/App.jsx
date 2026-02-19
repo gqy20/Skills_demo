@@ -9,6 +9,11 @@ const QUICK_PROMPTS = [
   { title: "文献综述分析", text: "请基于当前文献目录，提取研究问题、方法、结论并给出研究空白。" },
   { title: "科研初稿生成", text: "请根据已有文献与项目背景，生成研究报告初稿（摘要、方法、实验设计、讨论）。" }
 ];
+const QUICK_CHIPS = [
+  "先分析文献目录结构",
+  "列出研究空白与创新点",
+  "基于已有资料生成初稿大纲"
+];
 
 function createId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -79,8 +84,19 @@ export default function App() {
   const [skills, setSkills] = useState([]);
   const [files, setFiles] = useState([]);
   const [controlsOpen, setControlsOpen] = useState(false);
+  const [composerToolsOpen, setComposerToolsOpen] = useState(false);
+  const [composerMoreOpen, setComposerMoreOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarSections, setSidebarSections] = useState({
+    files: false,
+    pending: false,
+    events: false
+  });
+  const [skillExpanded, setSkillExpanded] = useState({});
+  const [skillFilter, setSkillFilter] = useState("");
+  const [skillSourceTab, setSkillSourceTab] = useState("all");
+  const [fileFilter, setFileFilter] = useState("");
   const [inputText, setInputText] = useState("");
   const [lastUserText, setLastUserText] = useState("");
   const [pendingState, setPendingState] = useState({
@@ -96,6 +112,9 @@ export default function App() {
     askResolved: 0
   });
   const controlsRef = useRef(null);
+  const composerToolsRef = useRef(null);
+  const composerMoreRef = useRef(null);
+  const textareaRef = useRef(null);
   const timelineRef = useRef(null);
 
   const trackSkillUsage = useCallback((skillName, details = null) => {
@@ -311,6 +330,7 @@ export default function App() {
 
   const isStreaming = status === "submitted" || status === "streaming";
   const blockingPending = Boolean(activePending);
+  const showPreflight = messages.length === 0 && !isStreaming && !lastUserText;
   const runtimeStage = blockingPending
     ? "等待用户输入"
     : isStreaming
@@ -382,7 +402,11 @@ export default function App() {
       const target = event.target;
       if (!(target instanceof Element)) return;
       if (controlsRef.current && controlsRef.current.contains(target)) return;
+      if (composerToolsRef.current && composerToolsRef.current.contains(target)) return;
+      if (composerMoreRef.current && composerMoreRef.current.contains(target)) return;
       setControlsOpen(false);
+      setComposerToolsOpen(false);
+      setComposerMoreOpen(false);
     };
     document.addEventListener("click", onDocClick);
     return () => document.removeEventListener("click", onDocClick);
@@ -449,6 +473,14 @@ export default function App() {
     await sendMessage({ id: createId(), text });
   };
 
+  const autoResizeTextarea = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "0px";
+    const next = Math.min(el.scrollHeight, 184);
+    el.style.height = `${Math.max(next, 46)}px`;
+  }, []);
+
   const submitPending = async (requestId, payload) => {
     await apiPostJson("/api/input", { requestId, ...payload });
     resolvePending({ requestId });
@@ -494,6 +526,47 @@ export default function App() {
         .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0)),
     [runtimeUsage.mcps]
   );
+
+  const skillSourceCounts = useMemo(() => {
+    const counts = { all: skills.length, project: 0, user: 0 };
+    for (const item of skills) {
+      const src = String(item?.source || "").toLowerCase();
+      if (src === "project") counts.project += 1;
+      if (src === "user") counts.user += 1;
+    }
+    return counts;
+  }, [skills]);
+
+  const filteredSkills = useMemo(() => {
+    const q = skillFilter.trim().toLowerCase();
+    return skills.filter((item) => {
+      const src = String(item?.source || "").toLowerCase();
+      if (skillSourceTab !== "all" && src !== skillSourceTab) return false;
+      if (!q) return true;
+      const text = `${item?.name || ""} ${item?.description || ""} ${item?.source || ""}`.toLowerCase();
+      return text.includes(q);
+    });
+  }, [skills, skillFilter, skillSourceTab]);
+
+  const filteredFiles = useMemo(() => {
+    const q = fileFilter.trim().toLowerCase();
+    if (!q) return files;
+    return files.filter((item) => `${item?.name || ""} ${item?.path || ""}`.toLowerCase().includes(q));
+  }, [files, fileFilter]);
+
+  useEffect(() => {
+    autoResizeTextarea();
+  }, [inputText, autoResizeTextarea]);
+
+  useEffect(() => {
+    if (isStreaming) setComposerMoreOpen(false);
+  }, [isStreaming]);
+
+  const toggleSidebarSection = (key) =>
+    setSidebarSections((prev) => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
 
   return (
     <>
@@ -569,9 +642,6 @@ export default function App() {
               <span className="meta-chip">Workspace: {currentWorkspaceId || "-"}</span>
               <span className="meta-chip">Model: {settings.model || "-"}</span>
               <span className="meta-chip">Runtime: {runtimeModel || "-"}</span>
-              <span className="meta-chip">API Key: {settings.hasToken ? "已配置" : "未配置"}</span>
-              <span className="meta-chip">MinerU: {settings.hasMineruKey ? "已配置" : "未配置"}</span>
-              <span className="meta-chip">Gate: {settings.toolGateEnabled ? "ON" : "OFF"}</span>
             </div>
             <div className={`runtime-stage runtime-${blockingPending ? "pending" : isStreaming ? "streaming" : "idle"}`}>
               当前阶段: {runtimeStage}
@@ -581,20 +651,34 @@ export default function App() {
           <section className="timeline-wrap">
             <section className="timeline" ref={timelineRef}>
               <div className="timeline-inner">
-                {messages.length === 0 && (
-                  <div className="empty-actions">
-                    {QUICK_PROMPTS.map((item) => (
-                      <button
-                        key={item.title}
-                        type="button"
-                        className="empty-action-card"
-                        onClick={() => submitUserMessage(item.text).catch(() => {})}
-                      >
-                        <strong>{item.title}</strong>
-                        <span>{item.text}</span>
-                      </button>
-                    ))}
-                  </div>
+                {showPreflight && (
+                  <section className="empty-state">
+                    <div className="empty-state-intro">
+                      <h2>开始你的科研任务</h2>
+                      <p>先选择任务模板，或在底部输入框补充具体要求后发送。</p>
+                    </div>
+                    <div className="empty-actions">
+                      {QUICK_PROMPTS.map((item) => (
+                        <button
+                          key={item.title}
+                          type="button"
+                          className="empty-action-card"
+                          onClick={() => submitUserMessage(item.text).catch(() => {})}
+                        >
+                          <strong>{item.title}</strong>
+                          <span>{item.text}</span>
+                          <span className="empty-action-cta">立即开始</span>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="quick-chip-list">
+                      {QUICK_CHIPS.map((chip) => (
+                        <button key={chip} type="button" className="quick-chip" onClick={() => setInputText(chip)}>
+                          {chip}
+                        </button>
+                      ))}
+                    </div>
+                  </section>
                 )}
 
                 {(skillUsageList.length > 0 || mcpUsageList.length > 0) && (
@@ -779,39 +863,92 @@ export default function App() {
             className={`composer ${blockingPending ? "is-blocked" : ""}`}
             onSubmit={(event) => {
               event.preventDefault();
+              if (isStreaming) {
+                stop();
+                return;
+              }
               submitUserMessage().catch(() => {});
             }}
           >
-            <div className="composer-box">
-              <textarea
-                id="message"
-                rows={4}
-                value={inputText}
-                disabled={blockingPending}
-                placeholder="例如：/commander status"
-                onChange={(event) => setInputText(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    submitUserMessage().catch(() => {});
-                  }
-                }}
-              />
-              <div className="composer-actions composer-actions-inline">
-                <button type="submit" disabled={isStreaming || blockingPending}>
-                  发送
-                </button>
-                <button type="button" className="btn-secondary" disabled={!isStreaming} onClick={() => stop()}>
-                  停止
-                </button>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  disabled={isStreaming || !lastUserText || blockingPending}
-                  onClick={() => submitUserMessage(lastUserText).catch(() => {})}
-                >
-                  重试
-                </button>
+            <div className="composer-shell">
+              <div className="composer-box">
+                <div className="composer-prefix" ref={composerToolsRef}>
+                  <button
+                    type="button"
+                    className="btn-secondary composer-icon-btn"
+                    aria-label="打开快捷操作"
+                    onClick={() => setComposerToolsOpen((v) => !v)}
+                  >
+                    +
+                  </button>
+                  <div className={`composer-popover ${composerToolsOpen ? "" : "hidden"}`}>
+                    <button
+                      type="button"
+                      className="composer-popover-item"
+                      onClick={() => {
+                        setInputText((prev) => `${prev}${prev ? "\n" : ""}/文献综述分析 `);
+                        setComposerToolsOpen(false);
+                      }}
+                    >
+                      文献综述分析模板
+                    </button>
+                    <button
+                      type="button"
+                      className="composer-popover-item"
+                      onClick={() => {
+                        setInputText((prev) => `${prev}${prev ? "\n" : ""}@01_articles `);
+                        setComposerToolsOpen(false);
+                      }}
+                    >
+                      引用文献目录
+                    </button>
+                  </div>
+                </div>
+                <textarea
+                  ref={textareaRef}
+                  id="message"
+                  rows={1}
+                  value={inputText}
+                  disabled={blockingPending}
+                  placeholder="例如：基于当前文献目录，先输出研究问题、方法路线和研究空白。"
+                  onChange={(event) => setInputText(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      if (isStreaming) {
+                        stop();
+                        return;
+                      }
+                      submitUserMessage().catch(() => {});
+                    }
+                  }}
+                />
+                <div className="composer-right" ref={composerMoreRef}>
+                  <button type="button" className="btn-secondary composer-icon-btn" onClick={() => setComposerMoreOpen((v) => !v)}>
+                    ⋯
+                  </button>
+                  <div className={`composer-popover composer-more ${composerMoreOpen ? "" : "hidden"}`}>
+                    <button
+                      type="button"
+                      className="composer-popover-item"
+                      disabled={isStreaming || !lastUserText || blockingPending}
+                      onClick={() => submitUserMessage(lastUserText).catch(() => {})}
+                    >
+                      重新生成
+                    </button>
+                  </div>
+                  <button
+                    type="submit"
+                    className={`btn-primary composer-send-btn ${isStreaming ? "is-stop" : ""}`}
+                    disabled={blockingPending}
+                    aria-label={isStreaming ? "停止" : "发送"}
+                  >
+                    {isStreaming ? "■" : "↑"}
+                  </button>
+                </div>
+              </div>
+              <div className="composer-foot">
+                <span className="composer-shortcut">`/` 快捷指令 · `@` 引用文件 · Enter 发送</span>
               </div>
             </div>
           </form>
@@ -832,52 +969,120 @@ export default function App() {
 
           <section className="panel">
             <h2>Skills</h2>
-            <p className="session-tag">仅显示用户/项目 skills，共 {skills.length} 个</p>
+            <div className="panel-toolbar">
+              <p className="session-tag">仅显示用户/项目 skills，共 {skills.length} 个</p>
+              <input
+                className="panel-filter-input"
+                value={skillFilter}
+                onChange={(event) => setSkillFilter(event.target.value)}
+                placeholder="筛选 skills"
+              />
+              <div className="skills-tabs" role="tablist" aria-label="skills source">
+                <button
+                  type="button"
+                  className={`skills-tab ${skillSourceTab === "all" ? "is-active" : ""}`}
+                  onClick={() => setSkillSourceTab("all")}
+                >
+                  全部 {skillSourceCounts.all}
+                </button>
+                <button
+                  type="button"
+                  className={`skills-tab ${skillSourceTab === "project" ? "is-active" : ""}`}
+                  onClick={() => setSkillSourceTab("project")}
+                >
+                  project {skillSourceCounts.project}
+                </button>
+                <button
+                  type="button"
+                  className={`skills-tab ${skillSourceTab === "user" ? "is-active" : ""}`}
+                  onClick={() => setSkillSourceTab("user")}
+                >
+                  user {skillSourceCounts.user}
+                </button>
+              </div>
+            </div>
             <ul className="skills-list">
-              {skills.map((item) => (
+              {filteredSkills.map((item) => {
+                const expanded = skillExpanded[item.name] === true;
+                return (
                 <li className="skills-item" key={item.name}>
                   <div className="skills-head">
                     <p className="skills-name">/{item.name}</p>
                     <span className="skills-source">{item.source}</span>
                   </div>
-                  <p className="skills-desc">{item.description || "无描述"}</p>
+                  <p className={`skills-desc ${expanded ? "is-expanded" : ""}`}>{item.description || "无描述"}</p>
+                  {item.description && item.description.length > 72 && (
+                    <button
+                      type="button"
+                      className="skills-toggle"
+                      onClick={() => setSkillExpanded((prev) => ({ ...prev, [item.name]: !expanded }))}
+                    >
+                      {expanded ? "收起" : "展开"}
+                    </button>
+                  )}
                 </li>
-              ))}
+              );
+              })}
             </ul>
           </section>
 
-          <section className="panel">
-            <h2>Files</h2>
-            <p className="session-tag">工作区文件 {files.length} 项</p>
-            <ul className="files-list">
-              {files.map((file) => (
-                <li key={file.path}>
-                  <span className="files-name">{file.type === "directory" ? "▸ " : "· "}{file.name}</span>
-                </li>
-              ))}
-            </ul>
+          <section className="panel panel-collapsible">
+            <button type="button" className="panel-collapse-btn" onClick={() => toggleSidebarSection("files")}>
+              <h2>Files</h2>
+              <span>{sidebarSections.files ? "收起" : "展开"}</span>
+            </button>
+            {sidebarSections.files && (
+              <>
+                <div className="panel-toolbar">
+                  <p className="session-tag">工作区文件 {files.length} 项</p>
+                  <input
+                    className="panel-filter-input"
+                    value={fileFilter}
+                    onChange={(event) => setFileFilter(event.target.value)}
+                    placeholder="筛选文件"
+                  />
+                </div>
+                <ul className="files-list">
+                  {filteredFiles.map((file) => (
+                    <li key={file.path}>
+                      <span className="files-name">{file.type === "directory" ? "▸ " : "· "}{file.name}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
           </section>
 
-          <section className="panel">
-            <h2>Pending Input</h2>
-            <div className="pending-summary">
-              <p>
-                <strong>队列:</strong> {pendingState.order.length}
-              </p>
-              <p>
-                <strong>当前状态:</strong> {blockingPending ? "等待你的输入" : "空闲"}
-              </p>
-              <p className="hint">
-                Gate={diagnostics.toolGateEnabled ? "ON" : "OFF"} · Hits={diagnostics.gateHits} · Ask=
-                {diagnostics.askCreated}/{diagnostics.askResolved}
-              </p>
-            </div>
+          <section className="panel panel-collapsible">
+            <button type="button" className="panel-collapse-btn" onClick={() => toggleSidebarSection("pending")}>
+              <h2>Pending Input</h2>
+              <span>{sidebarSections.pending ? "收起" : "展开"}</span>
+            </button>
+            {sidebarSections.pending && (
+              <div className="pending-summary">
+                <p>
+                  <strong>队列:</strong> {pendingState.order.length}
+                </p>
+                <p>
+                  <strong>当前状态:</strong> {blockingPending ? "等待你的输入" : "空闲"}
+                </p>
+                <p className="hint">
+                  Gate={diagnostics.toolGateEnabled ? "ON" : "OFF"} · Hits={diagnostics.gateHits} · Ask=
+                  {diagnostics.askCreated}/{diagnostics.askResolved}
+                </p>
+              </div>
+            )}
           </section>
 
-          <section className="panel panel-events">
-            <h2>Events</h2>
-            <pre className="output">{JSON.stringify(events, null, 2)}</pre>
-          </section>
+          {settings.debugEnabled && (
+            <section className="panel panel-collapsible panel-events">
+              <button type="button" className="panel-collapse-btn" onClick={() => toggleSidebarSection("events")}>
+                <h2>Events</h2>
+                <span>{sidebarSections.events ? "收起" : "展开"}</span>
+              </button>
+              {sidebarSections.events && <pre className="output">{JSON.stringify(events, null, 2)}</pre>}
+            </section>
+          )}
         </aside>
       </main>
 
