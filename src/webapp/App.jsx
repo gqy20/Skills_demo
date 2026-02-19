@@ -652,9 +652,6 @@ export default function App() {
               <span className="meta-chip">Model: {settings.model || "-"}</span>
               <span className="meta-chip">Runtime: {runtimeDisplay}</span>
             </div>
-            <div className={`runtime-stage runtime-${blockingPending ? "pending" : isStreaming ? "streaming" : "idle"}`}>
-              当前阶段: {runtimeStage}
-            </div>
           </header>
 
           <section className="timeline-wrap">

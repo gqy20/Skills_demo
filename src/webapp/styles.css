@@ -151,33 +151,6 @@ body {
   background: #f8fafc;
 }
 
-.runtime-stage {
-  margin-top: 6px;
-  font-size: var(--fs-14);
-  font-weight: 500;
-  color: #374151;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.runtime-stage::before {
-  content: "";
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: #7f8aa6;
-}
-
-.runtime-streaming::before {
-  background: #10a37f;
-  animation: pulse-dot 1.1s ease-in-out infinite;
-}
-
-.runtime-pending::before {
-  background: #d59b2f;
-}
-
 .timeline {
   position: relative;
   min-height: 0;
