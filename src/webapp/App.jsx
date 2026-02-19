@@ -3,6 +3,8 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import Composer from "./components/Composer.jsx";
+import InspectorSidebar from "./components/InspectorSidebar.jsx";
 
 const MAX_EVENT_LOG = 120;
 const QUICK_PROMPTS = [
@@ -56,6 +58,24 @@ function parseMcpToolName(rawName) {
     return { server: "unknown", tool: name, raw: name };
   }
   return null;
+}
+
+function normalizeSettings(data) {
+  return {
+    model: data?.model || "",
+    baseUrl: data?.baseUrl || "",
+    authToken: "",
+    hasToken: data?.hasToken === true,
+    tokenPreview: data?.tokenPreview || "",
+    mineruApiKey: "",
+    hasMineruKey: data?.hasMineruKey === true,
+    mineruKeyPreview: data?.mineruKeyPreview || "",
+    mcpEnabled: data?.mcpEnabled !== false,
+    speedModeEnabled: data?.speedModeEnabled === true,
+    toolGateEnabled: data?.toolGateEnabled !== false,
+    debugEnabled: data?.debugEnabled === true,
+    debugSseEnabled: data?.debugSseEnabled === true
+  };
 }
 
 export default function App() {
@@ -349,21 +369,7 @@ export default function App() {
   const loadSettings = useCallback(async () => {
     if (!currentWorkspaceId) return;
     const data = await apiGetJson("/api/settings");
-    setSettings({
-      model: data.model || "",
-      baseUrl: data.baseUrl || "",
-      authToken: "",
-      hasToken: data.hasToken === true,
-      tokenPreview: data.tokenPreview || "",
-      mineruApiKey: "",
-      hasMineruKey: data.hasMineruKey === true,
-      mineruKeyPreview: data.mineruKeyPreview || "",
-      mcpEnabled: data.mcpEnabled !== false,
-      speedModeEnabled: data.speedModeEnabled === true,
-      toolGateEnabled: data.toolGateEnabled !== false,
-      debugEnabled: data.debugEnabled === true,
-      debugSseEnabled: data.debugSseEnabled === true
-    });
+    setSettings(normalizeSettings(data));
     setDiagnostics((prev) => ({ ...prev, toolGateEnabled: data.toolGateEnabled !== false }));
   }, [apiGetJson, currentWorkspaceId]);
 
@@ -428,21 +434,7 @@ export default function App() {
         keepExistingToken: next.authToken ? false : true,
         keepExistingMineruKey: next.mineruApiKey ? false : true
       });
-      setSettings({
-        model: data.model || "",
-        baseUrl: data.baseUrl || "",
-        authToken: "",
-        hasToken: data.hasToken === true,
-        tokenPreview: data.tokenPreview || "",
-        mineruApiKey: "",
-        hasMineruKey: data.hasMineruKey === true,
-        mineruKeyPreview: data.mineruKeyPreview || "",
-        mcpEnabled: data.mcpEnabled !== false,
-        speedModeEnabled: data.speedModeEnabled === true,
-        toolGateEnabled: data.toolGateEnabled !== false,
-        debugEnabled: data.debugEnabled === true,
-        debugSseEnabled: data.debugSseEnabled === true
-      });
+      setSettings(normalizeSettings(data));
       setCurrentSessionId(null);
       setRuntimeModel("");
       setDiagnostics((prev) => ({ ...prev, toolGateEnabled: data.toolGateEnabled !== false }));
@@ -570,8 +562,6 @@ export default function App() {
 
   return (
     <>
-      <div className="bg-shape bg-shape-a" />
-      <div className="bg-shape bg-shape-b" />
       <main className={`workspace ${sidebarOpen ? "workspace-with-sidebar" : "workspace-chat-only"}`}>
         <section className="chat-shell">
           <header className="chat-head">
@@ -859,231 +849,49 @@ export default function App() {
             )}
           </section>
 
-          <form
-            className={`composer ${blockingPending ? "is-blocked" : ""}`}
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (isStreaming) {
-                stop();
-                return;
-              }
-              submitUserMessage().catch(() => {});
-            }}
-          >
-            <div className="composer-shell">
-              <div className="composer-box">
-                <div className="composer-prefix" ref={composerToolsRef}>
-                  <button
-                    type="button"
-                    className="btn-secondary composer-icon-btn"
-                    aria-label="打开快捷操作"
-                    onClick={() => setComposerToolsOpen((v) => !v)}
-                  >
-                    +
-                  </button>
-                  <div className={`composer-popover ${composerToolsOpen ? "" : "hidden"}`}>
-                    <button
-                      type="button"
-                      className="composer-popover-item"
-                      onClick={() => {
-                        setInputText((prev) => `${prev}${prev ? "\n" : ""}/文献综述分析 `);
-                        setComposerToolsOpen(false);
-                      }}
-                    >
-                      文献综述分析模板
-                    </button>
-                    <button
-                      type="button"
-                      className="composer-popover-item"
-                      onClick={() => {
-                        setInputText((prev) => `${prev}${prev ? "\n" : ""}@01_articles `);
-                        setComposerToolsOpen(false);
-                      }}
-                    >
-                      引用文献目录
-                    </button>
-                  </div>
-                </div>
-                <textarea
-                  ref={textareaRef}
-                  id="message"
-                  rows={1}
-                  value={inputText}
-                  disabled={blockingPending}
-                  placeholder="例如：基于当前文献目录，先输出研究问题、方法路线和研究空白。"
-                  onChange={(event) => setInputText(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
-                      event.preventDefault();
-                      if (isStreaming) {
-                        stop();
-                        return;
-                      }
-                      submitUserMessage().catch(() => {});
-                    }
-                  }}
-                />
-                <div className="composer-right" ref={composerMoreRef}>
-                  <button type="button" className="btn-secondary composer-icon-btn" onClick={() => setComposerMoreOpen((v) => !v)}>
-                    ⋯
-                  </button>
-                  <div className={`composer-popover composer-more ${composerMoreOpen ? "" : "hidden"}`}>
-                    <button
-                      type="button"
-                      className="composer-popover-item"
-                      disabled={isStreaming || !lastUserText || blockingPending}
-                      onClick={() => submitUserMessage(lastUserText).catch(() => {})}
-                    >
-                      重新生成
-                    </button>
-                  </div>
-                  <button
-                    type="submit"
-                    className={`btn-primary composer-send-btn ${isStreaming ? "is-stop" : ""}`}
-                    disabled={blockingPending}
-                    aria-label={isStreaming ? "停止" : "发送"}
-                  >
-                    {isStreaming ? "■" : "↑"}
-                  </button>
-                </div>
-              </div>
-              <div className="composer-foot">
-                <span className="composer-shortcut">`/` 快捷指令 · `@` 引用文件 · Enter 发送</span>
-              </div>
-            </div>
-          </form>
+          <Composer
+            blockingPending={blockingPending}
+            isStreaming={isStreaming}
+            inputText={inputText}
+            setInputText={setInputText}
+            submitUserMessage={submitUserMessage}
+            stop={stop}
+            lastUserText={lastUserText}
+            composerToolsOpen={composerToolsOpen}
+            setComposerToolsOpen={setComposerToolsOpen}
+            composerMoreOpen={composerMoreOpen}
+            setComposerMoreOpen={setComposerMoreOpen}
+            composerToolsRef={composerToolsRef}
+            composerMoreRef={composerMoreRef}
+            textareaRef={textareaRef}
+          />
         </section>
-
-        <aside className={`inspector ${sidebarOpen ? "" : "hidden"}`}>
-          <section className="panel">
-            <h2>Workspace</h2>
-            <select value={currentWorkspaceId} onChange={(event) => setCurrentWorkspaceId(event.target.value)}>
-              {workspaces.map((ws) => (
-                <option key={ws.id} value={ws.id}>
-                  {ws.id}
-                </option>
-              ))}
-            </select>
-            <p className="session-tag">{workspaces.find((ws) => ws.id === currentWorkspaceId)?.root || ""}</p>
-          </section>
-
-          <section className="panel">
-            <h2>Skills</h2>
-            <div className="panel-toolbar">
-              <p className="session-tag">仅显示用户/项目 skills，共 {skills.length} 个</p>
-              <input
-                className="panel-filter-input"
-                value={skillFilter}
-                onChange={(event) => setSkillFilter(event.target.value)}
-                placeholder="筛选 skills"
-              />
-              <div className="skills-tabs" role="tablist" aria-label="skills source">
-                <button
-                  type="button"
-                  className={`skills-tab ${skillSourceTab === "all" ? "is-active" : ""}`}
-                  onClick={() => setSkillSourceTab("all")}
-                >
-                  全部 {skillSourceCounts.all}
-                </button>
-                <button
-                  type="button"
-                  className={`skills-tab ${skillSourceTab === "project" ? "is-active" : ""}`}
-                  onClick={() => setSkillSourceTab("project")}
-                >
-                  project {skillSourceCounts.project}
-                </button>
-                <button
-                  type="button"
-                  className={`skills-tab ${skillSourceTab === "user" ? "is-active" : ""}`}
-                  onClick={() => setSkillSourceTab("user")}
-                >
-                  user {skillSourceCounts.user}
-                </button>
-              </div>
-            </div>
-            <ul className="skills-list">
-              {filteredSkills.map((item) => {
-                const expanded = skillExpanded[item.name] === true;
-                return (
-                <li className="skills-item" key={item.name}>
-                  <div className="skills-head">
-                    <p className="skills-name">/{item.name}</p>
-                    <span className="skills-source">{item.source}</span>
-                  </div>
-                  <p className={`skills-desc ${expanded ? "is-expanded" : ""}`}>{item.description || "无描述"}</p>
-                  {item.description && item.description.length > 72 && (
-                    <button
-                      type="button"
-                      className="skills-toggle"
-                      onClick={() => setSkillExpanded((prev) => ({ ...prev, [item.name]: !expanded }))}
-                    >
-                      {expanded ? "收起" : "展开"}
-                    </button>
-                  )}
-                </li>
-              );
-              })}
-            </ul>
-          </section>
-
-          <section className="panel panel-collapsible">
-            <button type="button" className="panel-collapse-btn" onClick={() => toggleSidebarSection("files")}>
-              <h2>Files</h2>
-              <span>{sidebarSections.files ? "收起" : "展开"}</span>
-            </button>
-            {sidebarSections.files && (
-              <>
-                <div className="panel-toolbar">
-                  <p className="session-tag">工作区文件 {files.length} 项</p>
-                  <input
-                    className="panel-filter-input"
-                    value={fileFilter}
-                    onChange={(event) => setFileFilter(event.target.value)}
-                    placeholder="筛选文件"
-                  />
-                </div>
-                <ul className="files-list">
-                  {filteredFiles.map((file) => (
-                    <li key={file.path}>
-                      <span className="files-name">{file.type === "directory" ? "▸ " : "· "}{file.name}</span>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
-          </section>
-
-          <section className="panel panel-collapsible">
-            <button type="button" className="panel-collapse-btn" onClick={() => toggleSidebarSection("pending")}>
-              <h2>Pending Input</h2>
-              <span>{sidebarSections.pending ? "收起" : "展开"}</span>
-            </button>
-            {sidebarSections.pending && (
-              <div className="pending-summary">
-                <p>
-                  <strong>队列:</strong> {pendingState.order.length}
-                </p>
-                <p>
-                  <strong>当前状态:</strong> {blockingPending ? "等待你的输入" : "空闲"}
-                </p>
-                <p className="hint">
-                  Gate={diagnostics.toolGateEnabled ? "ON" : "OFF"} · Hits={diagnostics.gateHits} · Ask=
-                  {diagnostics.askCreated}/{diagnostics.askResolved}
-                </p>
-              </div>
-            )}
-          </section>
-
-          {settings.debugEnabled && (
-            <section className="panel panel-collapsible panel-events">
-              <button type="button" className="panel-collapse-btn" onClick={() => toggleSidebarSection("events")}>
-                <h2>Events</h2>
-                <span>{sidebarSections.events ? "收起" : "展开"}</span>
-              </button>
-              {sidebarSections.events && <pre className="output">{JSON.stringify(events, null, 2)}</pre>}
-            </section>
-          )}
-        </aside>
+        <InspectorSidebar
+          sidebarOpen={sidebarOpen}
+          currentWorkspaceId={currentWorkspaceId}
+          setCurrentWorkspaceId={setCurrentWorkspaceId}
+          workspaces={workspaces}
+          skills={skills}
+          filteredSkills={filteredSkills}
+          skillFilter={skillFilter}
+          setSkillFilter={setSkillFilter}
+          skillSourceTab={skillSourceTab}
+          setSkillSourceTab={setSkillSourceTab}
+          skillSourceCounts={skillSourceCounts}
+          skillExpanded={skillExpanded}
+          setSkillExpanded={setSkillExpanded}
+          sidebarSections={sidebarSections}
+          toggleSidebarSection={toggleSidebarSection}
+          files={files}
+          filteredFiles={filteredFiles}
+          fileFilter={fileFilter}
+          setFileFilter={setFileFilter}
+          pendingState={pendingState}
+          blockingPending={blockingPending}
+          diagnostics={diagnostics}
+          settings={settings}
+          events={events}
+        />
       </main>
 
       <div className={`modal ${settingsOpen ? "" : "hidden"}`} onClick={() => setSettingsOpen(false)}>
