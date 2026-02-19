@@ -100,6 +100,7 @@ export default function App() {
   });
   const [events, setEvents] = useState([]);
   const [runtimeUsage, setRuntimeUsage] = useState({ skills: {}, mcps: {} });
+  const [usagePanelOpen, setUsagePanelOpen] = useState(false);
   const [usageExpanded, setUsageExpanded] = useState({ skills: false, mcps: false });
   const [skills, setSkills] = useState([]);
   const [files, setFiles] = useState([]);
@@ -351,6 +352,7 @@ export default function App() {
   const isStreaming = status === "submitted" || status === "streaming";
   const blockingPending = Boolean(activePending);
   const showPreflight = messages.length === 0 && !isStreaming && !lastUserText;
+  const runtimeDisplay = runtimeModel && runtimeModel !== settings.model ? runtimeModel : "Agent SDK";
   const runtimeStage = blockingPending
     ? "等待用户输入"
     : isStreaming
@@ -460,6 +462,7 @@ export default function App() {
       askCreated: 0,
       askResolved: 0
     }));
+    setUsagePanelOpen(false);
     setRuntimeUsage({ skills: initialSkillsState, mcps: {} });
     setUsageExpanded({ skills: false, mcps: false });
     await sendMessage({ id: createId(), text });
@@ -631,7 +634,7 @@ export default function App() {
             <div className="runtime-meta">
               <span className="meta-chip">Workspace: {currentWorkspaceId || "-"}</span>
               <span className="meta-chip">Model: {settings.model || "-"}</span>
-              <span className="meta-chip">Runtime: {runtimeModel || "-"}</span>
+              <span className="meta-chip">Runtime: {runtimeDisplay}</span>
             </div>
             <div className={`runtime-stage runtime-${blockingPending ? "pending" : isStreaming ? "streaming" : "idle"}`}>
               当前阶段: {runtimeStage}
@@ -673,49 +676,56 @@ export default function App() {
 
                 {(skillUsageList.length > 0 || mcpUsageList.length > 0) && (
                   <section className="usage-strip">
-                    <strong>运行使用情况</strong>
-                    <div className="usage-grid">
-                      <article className="usage-card">
-                        <header>
-                          <span>Skills</span>
-                          <button
-                            type="button"
-                            className="activity-toggle"
-                            onClick={() => setUsageExpanded((prev) => ({ ...prev, skills: !prev.skills }))}
-                          >
-                            {usageExpanded.skills ? "收起" : "展开"}
-                          </button>
-                        </header>
-                        <ul>
-                          {(usageExpanded.skills ? skillUsageList : skillUsageList.slice(0, 3)).map((item) => (
-                            <li key={item.name}>
-                              <span>/{item.name}</span>
-                              <em>x{item.count || 1}</em>
-                            </li>
-                          ))}
-                        </ul>
-                      </article>
-                      <article className="usage-card">
-                        <header>
-                          <span>MCP</span>
-                          <button
-                            type="button"
-                            className="activity-toggle"
-                            onClick={() => setUsageExpanded((prev) => ({ ...prev, mcps: !prev.mcps }))}
-                          >
-                            {usageExpanded.mcps ? "收起" : "展开"}
-                          </button>
-                        </header>
-                        <ul>
-                          {(usageExpanded.mcps ? mcpUsageList : mcpUsageList.slice(0, 3)).map((item) => (
-                            <li key={item.key}>
-                              <span>{item.details?.server || "mcp"}::{item.details?.tool || item.key}</span>
-                              <em>x{item.count || 1}</em>
-                            </li>
-                          ))}
-                        </ul>
-                      </article>
+                    <div className="usage-strip-head">
+                      <strong>运行摘要</strong>
+                      <button type="button" className="activity-toggle" onClick={() => setUsagePanelOpen((v) => !v)}>
+                        {usagePanelOpen ? "收起" : "展开"}
+                      </button>
                     </div>
+                    {usagePanelOpen && (
+                      <div className="usage-grid">
+                        <article className="usage-card">
+                          <header>
+                            <span>Skills</span>
+                            <button
+                              type="button"
+                              className="activity-toggle"
+                              onClick={() => setUsageExpanded((prev) => ({ ...prev, skills: !prev.skills }))}
+                            >
+                              {usageExpanded.skills ? "收起" : "展开"}
+                            </button>
+                          </header>
+                          <ul>
+                            {(usageExpanded.skills ? skillUsageList : skillUsageList.slice(0, 3)).map((item) => (
+                              <li key={item.name}>
+                                <span>/{item.name}</span>
+                                <em>x{item.count || 1}</em>
+                              </li>
+                            ))}
+                          </ul>
+                        </article>
+                        <article className="usage-card">
+                          <header>
+                            <span>MCP</span>
+                            <button
+                              type="button"
+                              className="activity-toggle"
+                              onClick={() => setUsageExpanded((prev) => ({ ...prev, mcps: !prev.mcps }))}
+                            >
+                              {usageExpanded.mcps ? "收起" : "展开"}
+                            </button>
+                          </header>
+                          <ul>
+                            {(usageExpanded.mcps ? mcpUsageList : mcpUsageList.slice(0, 3)).map((item) => (
+                              <li key={item.key}>
+                                <span>{item.details?.server || "mcp"}::{item.details?.tool || item.key}</span>
+                                <em>x{item.count || 1}</em>
+                              </li>
+                            ))}
+                          </ul>
+                        </article>
+                      </div>
+                    )}
                   </section>
                 )}
 
@@ -740,7 +750,15 @@ export default function App() {
                       >
                         {msg.role === "assistant" ? (
                           showProcessing ? (
-                            <p>处理中</p>
+                            <div className="processing-card">
+                              <p className="processing-title">处理中</p>
+                              <p className="processing-subtitle">当前阶段：{runtimeStage}</p>
+                              <div className="processing-skeleton">
+                                <span />
+                                <span />
+                                <span />
+                              </div>
+                            </div>
                           ) : (
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
                           )
