@@ -43,6 +43,8 @@ downloads/
 eggs/
 .eggs/
 lib/
+!.claude/hooks/lib/
+!.claude/hooks/lib/*.sh
 lib64/
 parts/
 sdist/
