@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import Composer from "./components/Composer.jsx";
@@ -17,15 +17,15 @@ import { usePendingState } from "./hooks/usePendingState.js";
 import { useRuntimeUsage } from "./hooks/useRuntimeUsage.js";
 import { useFileEditorActions } from "./hooks/useFileEditorActions.js";
 import { useSessionActions } from "./hooks/useSessionActions.js";
+import { useSidebarDerived } from "./hooks/useSidebarDerived.js";
+import { useAppEffects } from "./hooks/useAppEffects.js";
+import { handleChatStreamError, handleChatStreamPart } from "./lib/chatStreamHandlers.js";
 import {
   extractSlashCommand,
-  flattenFiles,
   parseError,
   shortText,
   toolLabel
 } from "./lib/chatUtils.js";
-
-const MAX_EVENT_LOG = 120;
 const QUICK_PROMPTS = [
   { title: "文献综述分析", text: "请基于当前文献目录，提取研究问题、方法、结论并给出研究空白。" },
   { title: "科研初稿生成", text: "请根据已有文献与项目背景，生成研究报告初稿（摘要、方法、实验设计、讨论）。" }
@@ -169,215 +169,24 @@ export default function App() {
 
   const { messages, setMessages, sendMessage, status, stop } = useChat({
     transport,
-    onData: (part) => {
-      setEvents((prev) => [...prev.slice(-(MAX_EVENT_LOG - 1)), part]);
-      const now = Date.now();
-
-      if (part?.type === "data-session" && part?.data?.sessionId) {
-        setCurrentSessionId(part.data.sessionId);
-        return;
-      }
-
-      if (part?.type === "finish") {
-        setActiveTurnTrace((prev) =>
-          prev
-            ? {
-                ...prev,
-                completedAt: Date.now(),
-                phases: [...(prev.phases || []), { phase: "completed", at: Date.now() }].slice(-30)
-              }
-            : prev
-        );
-        loadSessions().catch(() => {});
-        return;
-      }
-
-      if (part?.type === "data-mcp-status") {
-        setMcpRuntimeStatus({
-          ok: part?.data?.ok === true,
-          count: Number(part?.data?.count || 0),
-          error: String(part?.data?.error || "")
-        });
-        return;
-      }
-
-      if (part?.type === "text-delta") {
-        setActiveTurnTrace((prev) => {
-          if (!prev || prev.responseStarted) return prev;
-          return {
-            ...prev,
-            responseStarted: true,
-            phases: [...(prev.phases || []), { phase: "responding", at: now }].slice(-30)
-          };
-        });
-        setExecutionState((prev) => ({
-          ...prev,
-          phase: "responding",
-          lastDeltaAt: now,
-          dismissNoDelta: false
-        }));
-        return;
-      }
-
-      if (part?.type === "data-tool-progress") {
-        trackMcpUsage(part?.data?.toolName, part?.data?.elapsedSeconds ?? null);
-        setActiveTurnTrace((prev) => {
-          if (!prev) return prev;
-          const label = toolLabel(part?.data?.toolName);
-          const useId = String(part?.data?.toolUseId || "");
-          const seen = { ...(prev.seenToolUseIds || {}) };
-          const tools = { ...(prev.tools || {}) };
-          const old = tools[label] || { count: 0, elapsedSeconds: 0 };
-          const isNewUse = useId ? seen[useId] !== true : old.count === 0;
-          if (useId) seen[useId] = true;
-          tools[label] = {
-            count: isNewUse ? old.count + 1 : old.count,
-            elapsedSeconds: Math.max(old.elapsedSeconds || 0, Number(part?.data?.elapsedSeconds || 0))
-          };
-          const phases =
-            prev.lastToolLabel === label
-              ? prev.phases || []
-              : [...(prev.phases || []), { phase: "tool_running", at: now, detail: label }].slice(-30);
-          return { ...prev, seenToolUseIds: seen, tools, lastToolLabel: label, phases };
-        });
-        setExecutionState((prev) => ({
-          ...prev,
-          phase: "tool",
-          currentTool: String(part?.data?.toolName || prev.currentTool || ""),
-          toolElapsedSeconds:
-            typeof part?.data?.elapsedSeconds === "number" && Number.isFinite(part?.data?.elapsedSeconds)
-              ? Math.max(0, part.data.elapsedSeconds)
-              : prev.toolElapsedSeconds,
-          dismissNoDelta: false
-        }));
-        return;
-      }
-
-      if (part?.type === "data-tool-use-summary") {
-        const summary = String(part?.data?.summary || "");
-        const matched = summary.match(/\/([a-zA-Z0-9_-]+)/g) || [];
-        for (const token of matched) {
-          trackSkillUsage(token.replace("/", ""), { source: "summary", summary: shortText(summary, 280) });
-        }
-        setActiveTurnTrace((prev) => {
-          if (!prev) return prev;
-          const nextAction = shortText(summary, 220);
-          const skills = { ...(prev.skills || {}) };
-          for (const token of matched) {
-            const name = token.replace("/", "").trim().toLowerCase();
-            if (!name) continue;
-            const old = skills[name] || { count: 0 };
-            skills[name] = { count: old.count + 1 };
-          }
-          return {
-            ...prev,
-            skills,
-            actions: [...(prev.actions || []).slice(-5), nextAction],
-            phases: [...(prev.phases || []), { phase: "tool_summary", at: now }].slice(-30)
-          };
-        });
-        setExecutionState((prev) => ({
-          ...prev,
-          phase: "tool",
-          actions: [...prev.actions.slice(-4), shortText(summary, 220)],
-          dismissNoDelta: false
-        }));
-        return;
-      }
-
-      if (part?.type === "data-tool-gate-status") {
-        setDiagnostics((prev) => ({
-          ...prev,
-          toolGateEnabled: part?.data?.enabled !== false
-        }));
-        return;
-      }
-
-      if (part?.type === "data-tool-gate-hit") {
-        trackMcpUsage(part?.data?.toolName, null);
-        setActiveTurnTrace((prev) => {
-          if (!prev) return prev;
-          const label = toolLabel(part?.data?.toolName);
-          const tools = { ...(prev.tools || {}) };
-          const old = tools[label] || { count: 0, elapsedSeconds: 0 };
-          tools[label] = { ...old, count: old.count + 1 };
-          return { ...prev, tools };
-        });
-        setDiagnostics((prev) => ({
-          ...prev,
-          gateHits: prev.gateHits + 1
-        }));
-        return;
-      }
-
-      if (part?.type === "data-ask-user-question-created") {
-        setDiagnostics((prev) => ({ ...prev, askCreated: prev.askCreated + 1 }));
-        upsertPending("ask_user_question", part.data || {});
-        setExecutionState((prev) => ({
-          ...prev,
-          phase: "pending",
-          dismissNoDelta: false
-        }));
-        setActiveTurnTrace((prev) =>
-          prev
-            ? { ...prev, phases: [...(prev.phases || []), { phase: "waiting_user_input", at: now }].slice(-30) }
-            : prev
-        );
-        return;
-      }
-
-      if (part?.type === "data-permission-request-created") {
-        trackMcpUsage(part?.data?.toolName, null);
-        setActiveTurnTrace((prev) => {
-          if (!prev) return prev;
-          const label = toolLabel(part?.data?.toolName);
-          const tools = { ...(prev.tools || {}) };
-          const old = tools[label] || { count: 0, elapsedSeconds: 0 };
-          tools[label] = { ...old, count: old.count + 1 };
-          return { ...prev, tools };
-        });
-        upsertPending("permission_request", part.data || {});
-        setExecutionState((prev) => ({
-          ...prev,
-          phase: "pending",
-          currentTool: String(part?.data?.toolName || prev.currentTool || ""),
-          dismissNoDelta: false
-        }));
-        setActiveTurnTrace((prev) =>
-          prev
-            ? {
-                ...prev,
-                phases: [
-                  ...(prev.phases || []),
-                  { phase: "waiting_permission", at: now, detail: toolLabel(part?.data?.toolName) }
-                ].slice(-30)
-              }
-            : prev
-        );
-        return;
-      }
-
-      if (
-        part?.type === "data-ask-user-question-resolved" ||
-        part?.type === "data-ask-user-question-timeout" ||
-        part?.type === "data-ask-user-question-canceled"
-      ) {
-        setDiagnostics((prev) => ({ ...prev, askResolved: prev.askResolved + 1 }));
-        resolvePending(part.data || {});
-        return;
-      }
-
-      if (
-        part?.type === "data-permission-request-resolved" ||
-        part?.type === "data-permission-request-timeout" ||
-        part?.type === "data-permission-request-canceled"
-      ) {
-        resolvePending(part.data || {});
-      }
-    },
-    onError: (error) => {
-      setEvents((prev) => [...prev.slice(-(MAX_EVENT_LOG - 1)), { type: "error", error: parseError(error) }]);
-    }
+    onData: (part) =>
+      handleChatStreamPart(part, {
+        setEvents,
+        now: Date.now(),
+        setCurrentSessionId,
+        setActiveTurnTrace,
+        loadSessions,
+        setMcpRuntimeStatus,
+        setExecutionState,
+        trackMcpUsage,
+        setDiagnostics,
+        upsertPending,
+        resolvePending,
+        trackSkillUsage,
+        toolLabel,
+        shortText
+      }),
+    onError: (error) => handleChatStreamError(error, { setEvents, parseError })
   });
 
   const isStreaming = status === "submitted" || status === "streaming";
@@ -456,58 +265,28 @@ export default function App() {
     loadFiles
   });
 
-  useEffect(() => {
-    loadWorkspaces().catch(() => {});
-  }, [loadWorkspaces]);
-
-  useEffect(() => {
-    loadSettings().catch(() => {});
-    loadSkills().catch(() => {});
-    loadMcps().catch(() => {});
-    loadFiles().catch(() => {});
-    loadSessions().catch(() => {});
-  }, [currentWorkspaceId, loadFiles, loadMcps, loadSettings, loadSkills, loadSessions]);
-
-  useEffect(() => {
-    setOpenedFile(null);
-    setFileLoading(false);
-    setFileSaving(false);
-    setFileError("");
-  }, [currentWorkspaceId]);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if (document.hidden) return;
-      loadSkills().catch(() => {});
-    }, 3000);
-    return () => clearInterval(timer);
-  }, [loadSkills]);
-
-  useEffect(() => {
-    const onDocClick = (event) => {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      if (controlsRef.current && controlsRef.current.contains(target)) return;
-      setControlsOpen(false);
-    };
-    document.addEventListener("click", onDocClick);
-    return () => document.removeEventListener("click", onDocClick);
-  }, []);
-
-  useEffect(() => {
-    const el = timelineRef.current;
-    if (!el) return;
-    const raf = requestAnimationFrame(() => {
-      el.scrollTop = el.scrollHeight;
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [messages, isStreaming, blockingPending]);
-
-  useEffect(() => {
-    if (!isStreaming && !blockingPending) return;
-    const timer = setInterval(() => setNowTick(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [isStreaming, blockingPending]);
+  useAppEffects({
+    loadWorkspaces,
+    currentWorkspaceId,
+    loadSettings,
+    loadSkills,
+    loadMcps,
+    loadFiles,
+    loadSessions,
+    setOpenedFile,
+    setFileLoading,
+    setFileSaving,
+    setFileError,
+    controlsRef,
+    setControlsOpen,
+    timelineRef,
+    messages,
+    isStreaming,
+    blockingPending,
+    setNowTick,
+    inputText,
+    textareaRef
+  });
 
   const submitUserMessage = async (overrideText = null) => {
     const text = (overrideText ?? inputText).trim();
@@ -569,46 +348,13 @@ export default function App() {
     }
   };
 
-  const autoResizeTextarea = useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "0px";
-    const next = Math.min(el.scrollHeight, 184);
-    el.style.height = `${Math.max(next, 46)}px`;
-  }, []);
-
-  const skillSourceCounts = useMemo(() => {
-    const counts = { all: skills.length, project: 0, user: 0 };
-    for (const item of skills) {
-      const src = String(item?.source || "").toLowerCase();
-      if (src === "project") counts.project += 1;
-      if (src === "user") counts.user += 1;
-    }
-    return counts;
-  }, [skills]);
-
-  const filteredSkills = useMemo(() => {
-    const q = skillFilter.trim().toLowerCase();
-    return skills.filter((item) => {
-      const src = String(item?.source || "").toLowerCase();
-      if (skillSourceTab !== "all" && src !== skillSourceTab) return false;
-      if (!q) return true;
-      const text = `${item?.name || ""} ${item?.description || ""} ${item?.source || ""}`.toLowerCase();
-      return text.includes(q);
-    });
-  }, [skills, skillFilter, skillSourceTab]);
-
-  const flattenedFiles = useMemo(() => flattenFiles(files), [files]);
-
-  const filteredFiles = useMemo(() => {
-    const q = fileFilter.trim().toLowerCase();
-    if (!q) return flattenedFiles;
-    return flattenedFiles.filter((item) => `${item?.name || ""} ${item?.path || ""}`.toLowerCase().includes(q));
-  }, [flattenedFiles, fileFilter]);
-
-  useEffect(() => {
-    autoResizeTextarea();
-  }, [inputText, autoResizeTextarea]);
+  const { skillSourceCounts, filteredSkills, filteredFiles } = useSidebarDerived({
+    skills,
+    skillSourceTab,
+    skillFilter,
+    files,
+    fileFilter
+  });
 
   const toggleSidebarSection = (key) =>
     setSidebarSections((prev) => ({
