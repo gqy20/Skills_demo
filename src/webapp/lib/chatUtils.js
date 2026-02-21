@@ -1,0 +1,118 @@
+export function textFromMessage(message) {
+  if (!Array.isArray(message?.parts)) return "";
+  return message.parts
+    .filter((part) => part?.type === "text" && typeof part?.text === "string")
+    .map((part) => part.text)
+    .join("");
+}
+
+export function parseError(error) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  if (error && typeof error === "object") {
+    if (typeof error.error === "string") return error.error;
+    if (typeof error.message === "string") return error.message;
+  }
+  return String(error);
+}
+
+export function shortText(value, max = 120) {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text) return "";
+  return text.length > max ? `${text.slice(0, max)}...` : text;
+}
+
+export function permissionProfileLabel(mode) {
+  if (mode === "full_auto") return "全部允许";
+  if (mode === "accept_edits") return "自动接受编辑";
+  return "标准";
+}
+
+export function formatElapsed(seconds) {
+  const n = Math.max(0, Math.floor(seconds));
+  if (n < 60) return `${n}s`;
+  const m = Math.floor(n / 60);
+  const s = n % 60;
+  return `${m}m ${s}s`;
+}
+
+export function extractSlashCommand(text) {
+  const m = String(text || "").trim().match(/^\/([a-zA-Z0-9_-]+)/);
+  return m ? m[1].toLowerCase() : "";
+}
+
+export function flattenFiles(items, level = 0) {
+  if (!Array.isArray(items)) return [];
+  const out = [];
+  for (const item of items) {
+    if (!item || typeof item !== "object") continue;
+    out.push({ ...item, level });
+    if (item.type === "directory" && Array.isArray(item.children) && item.children.length > 0) {
+      out.push(...flattenFiles(item.children, level + 1));
+    }
+  }
+  return out;
+}
+
+export function parseMcpToolName(rawName) {
+  const name = String(rawName || "").trim();
+  if (!name) return null;
+  if (name.startsWith("mcp__")) {
+    const parts = name.split("__").filter(Boolean);
+    if (parts.length >= 3) return { server: parts[1], tool: parts.slice(2).join("__"), raw: name };
+    return { server: "unknown", tool: name, raw: name };
+  }
+  if (name.startsWith("mcp:")) {
+    const parts = name.split(":");
+    if (parts.length >= 3) return { server: parts[1] || "unknown", tool: parts.slice(2).join(":"), raw: name };
+    return { server: "unknown", tool: name, raw: name };
+  }
+  return null;
+}
+
+export function toolLabel(rawName) {
+  const parsed = parseMcpToolName(rawName);
+  if (parsed) return `${parsed.server}.${parsed.tool}`;
+  return String(rawName || "").trim() || "unknown_tool";
+}
+
+export function formatPhaseLabel(phase) {
+  const map = {
+    queued: "已入队",
+    waiting_user_input: "等待用户输入",
+    waiting_permission: "等待权限确认",
+    tool_running: "工具执行中",
+    tool_summary: "工具结果汇总",
+    responding: "生成回复中",
+    completed: "已完成"
+  };
+  return map[String(phase || "")] || String(phase || "");
+}
+
+export function looksLikeToolClaim(text) {
+  const t = String(text || "");
+  if (!t) return false;
+  return /(mcp__|mcp|search_literature|get_article_details|tool|工具|调用|检索|读取|保存到文件|skills?)/i.test(t);
+}
+
+export function normalizeSettings(data) {
+  return {
+    model: data?.model || "",
+    baseUrl: data?.baseUrl || "",
+    authToken: "",
+    hasToken: data?.hasToken === true,
+    tokenPreview: data?.tokenPreview || "",
+    mineruApiKey: "",
+    hasMineruKey: data?.hasMineruKey === true,
+    mineruKeyPreview: data?.mineruKeyPreview || "",
+    permissionProfile:
+      data?.permissionProfile === "full_auto" || data?.permissionProfile === "accept_edits"
+        ? data.permissionProfile
+        : "standard",
+    mcpEnabled: data?.mcpEnabled !== false,
+    speedModeEnabled: data?.speedModeEnabled === true,
+    toolGateEnabled: data?.toolGateEnabled !== false,
+    debugEnabled: data?.debugEnabled === true,
+    debugSseEnabled: data?.debugSseEnabled === true
+  };
+}

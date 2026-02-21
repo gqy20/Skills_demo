@@ -1,11 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import Composer from "./components/Composer.jsx";
+import ChatMessageList from "./components/ChatMessageList.jsx";
+import ExecutionPanel from "./components/ExecutionPanel.jsx";
 import FileEditorPane from "./components/FileEditorPane.jsx";
 import InspectorSidebar from "./components/InspectorSidebar.jsx";
+import PendingOverlay from "./components/PendingOverlay.jsx";
+import PreflightPanel from "./components/PreflightPanel.jsx";
+import SettingsModal from "./components/SettingsModal.jsx";
+import UsageStrip from "./components/UsageStrip.jsx";
+import {
+  extractSlashCommand,
+  flattenFiles,
+  normalizeSettings,
+  parseError,
+  parseMcpToolName,
+  permissionProfileLabel,
+  shortText,
+  toolLabel
+} from "./lib/chatUtils.js";
 
 const MAX_EVENT_LOG = 120;
 const QUICK_PROMPTS = [
@@ -22,124 +36,6 @@ function createId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function textFromMessage(message) {
-  if (!Array.isArray(message?.parts)) return "";
-  return message.parts
-    .filter((part) => part?.type === "text" && typeof part?.text === "string")
-    .map((part) => part.text)
-    .join("");
-}
-
-function parseError(error) {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
-  if (error && typeof error === "object") {
-    if (typeof error.error === "string") return error.error;
-    if (typeof error.message === "string") return error.message;
-  }
-  return String(error);
-}
-
-function shortText(value, max = 120) {
-  const text = typeof value === "string" ? value.trim() : "";
-  if (!text) return "";
-  return text.length > max ? `${text.slice(0, max)}...` : text;
-}
-
-function permissionProfileLabel(mode) {
-  if (mode === "full_auto") return "全部允许";
-  if (mode === "accept_edits") return "自动接受编辑";
-  return "标准";
-}
-
-function formatElapsed(seconds) {
-  const n = Math.max(0, Math.floor(seconds));
-  if (n < 60) return `${n}s`;
-  const m = Math.floor(n / 60);
-  const s = n % 60;
-  return `${m}m ${s}s`;
-}
-
-function extractSlashCommand(text) {
-  const m = String(text || "").trim().match(/^\/([a-zA-Z0-9_-]+)/);
-  return m ? m[1].toLowerCase() : "";
-}
-
-function flattenFiles(items, level = 0) {
-  if (!Array.isArray(items)) return [];
-  const out = [];
-  for (const item of items) {
-    if (!item || typeof item !== "object") continue;
-    out.push({ ...item, level });
-    if (item.type === "directory" && Array.isArray(item.children) && item.children.length > 0) {
-      out.push(...flattenFiles(item.children, level + 1));
-    }
-  }
-  return out;
-}
-
-function parseMcpToolName(rawName) {
-  const name = String(rawName || "").trim();
-  if (!name) return null;
-  if (name.startsWith("mcp__")) {
-    const parts = name.split("__").filter(Boolean);
-    if (parts.length >= 3) return { server: parts[1], tool: parts.slice(2).join("__"), raw: name };
-    return { server: "unknown", tool: name, raw: name };
-  }
-  if (name.startsWith("mcp:")) {
-    const parts = name.split(":");
-    if (parts.length >= 3) return { server: parts[1] || "unknown", tool: parts.slice(2).join(":"), raw: name };
-    return { server: "unknown", tool: name, raw: name };
-  }
-  return null;
-}
-
-function toolLabel(rawName) {
-  const parsed = parseMcpToolName(rawName);
-  if (parsed) return `${parsed.server}.${parsed.tool}`;
-  return String(rawName || "").trim() || "unknown_tool";
-}
-
-function formatPhaseLabel(phase) {
-  const map = {
-    queued: "已入队",
-    waiting_user_input: "等待用户输入",
-    waiting_permission: "等待权限确认",
-    tool_running: "工具执行中",
-    tool_summary: "工具结果汇总",
-    responding: "生成回复中",
-    completed: "已完成"
-  };
-  return map[String(phase || "")] || String(phase || "");
-}
-
-function looksLikeToolClaim(text) {
-  const t = String(text || "");
-  if (!t) return false;
-  return /(mcp__|mcp|search_literature|get_article_details|tool|工具|调用|检索|读取|保存到文件|skills?)/i.test(t);
-}
-
-function normalizeSettings(data) {
-  return {
-    model: data?.model || "",
-    baseUrl: data?.baseUrl || "",
-    authToken: "",
-    hasToken: data?.hasToken === true,
-    tokenPreview: data?.tokenPreview || "",
-    mineruApiKey: "",
-    hasMineruKey: data?.hasMineruKey === true,
-    mineruKeyPreview: data?.mineruKeyPreview || "",
-    permissionProfile:
-      data?.permissionProfile === "full_auto" || data?.permissionProfile === "accept_edits"
-        ? data.permissionProfile
-        : "standard",
-    mcpEnabled: data?.mcpEnabled !== false,
-    speedModeEnabled: data?.speedModeEnabled === true,
-    toolGateEnabled: data?.toolGateEnabled !== false,
-    debugEnabled: data?.debugEnabled === true,
-    debugSseEnabled: data?.debugSseEnabled === true
-  };
-}
 
 export default function App() {
   const [workspaces, setWorkspaces] = useState([]);
@@ -1168,254 +1064,45 @@ export default function App() {
           <section className="timeline-wrap">
             <section className="timeline" ref={timelineRef}>
               <div className="timeline-inner">
-                {showPreflight && (
-                  <section className="empty-state">
-                    <div className="empty-state-intro">
-                      <h2>开始你的科研任务</h2>
-                      <p>先选择任务模板，或在底部输入框补充具体要求后发送。</p>
-                    </div>
-                    <div className="empty-actions">
-                      {QUICK_PROMPTS.map((item) => (
-                        <button
-                          key={item.title}
-                          type="button"
-                          className="empty-action-card"
-                          onClick={() => submitUserMessage(item.text).catch(() => {})}
-                        >
-                          <strong>{item.title}</strong>
-                          <span>{item.text}</span>
-                          <span className="empty-action-cta">立即开始</span>
-                        </button>
-                      ))}
-                    </div>
-                    <div className="quick-chip-list">
-                      {QUICK_CHIPS.map((chip) => (
-                        <button key={chip} type="button" className="quick-chip" onClick={() => setInputText(chip)}>
-                          {chip}
-                        </button>
-                      ))}
-                    </div>
-                  </section>
-                )}
+                <PreflightPanel
+                  show={showPreflight}
+                  quickPrompts={QUICK_PROMPTS}
+                  quickChips={QUICK_CHIPS}
+                  onSubmitPrompt={(text) => submitUserMessage(text).catch(() => {})}
+                  onSelectChip={setInputText}
+                />
 
-                {(skillUsageList.length > 0 || mcpUsageList.length > 0) && (
-                  <section className="usage-strip">
-                    <div className="usage-strip-head">
-                      <strong>运行摘要</strong>
-                      <button type="button" className="activity-toggle" onClick={() => setUsagePanelOpen((v) => !v)}>
-                        {usagePanelOpen ? "收起" : "展开"}
-                      </button>
-                    </div>
-                    {usagePanelOpen && (
-                      <div className="usage-grid">
-                        <article className="usage-card">
-                          <header>
-                            <span>Skills</span>
-                            <button
-                              type="button"
-                              className="activity-toggle"
-                              onClick={() => setUsageExpanded((prev) => ({ ...prev, skills: !prev.skills }))}
-                            >
-                              {usageExpanded.skills ? "收起" : "展开"}
-                            </button>
-                          </header>
-                          <ul>
-                            {(usageExpanded.skills ? skillUsageList : skillUsageList.slice(0, 3)).map((item) => (
-                              <li key={item.name}>
-                                <span>/{item.name}</span>
-                                <em>x{item.count || 1}</em>
-                              </li>
-                            ))}
-                          </ul>
-                        </article>
-                        <article className="usage-card">
-                          <header>
-                            <span>MCP</span>
-                            <button
-                              type="button"
-                              className="activity-toggle"
-                              onClick={() => setUsageExpanded((prev) => ({ ...prev, mcps: !prev.mcps }))}
-                            >
-                              {usageExpanded.mcps ? "收起" : "展开"}
-                            </button>
-                          </header>
-                          <ul>
-                            {(usageExpanded.mcps ? mcpUsageList : mcpUsageList.slice(0, 3)).map((item) => (
-                              <li key={item.key}>
-                                <span>{item.details?.server || "mcp"}::{item.details?.tool || item.key}</span>
-                                <em>x{item.count || 1}</em>
-                              </li>
-                            ))}
-                          </ul>
-                        </article>
-                      </div>
-                    )}
-                  </section>
-                )}
+                <UsageStrip
+                  skillUsageList={skillUsageList}
+                  mcpUsageList={mcpUsageList}
+                  usagePanelOpen={usagePanelOpen}
+                  usageExpanded={usageExpanded}
+                  setUsagePanelOpen={setUsagePanelOpen}
+                  setUsageExpanded={setUsageExpanded}
+                />
 
-                {showExecutionPanel && (
-                  <section className="exec-panel">
-                    <div className="exec-head">
-                      <strong>
-                        {blockingPending
-                          ? "等待授权"
-                          : executionState.phase === "responding"
-                            ? "正在整理回复"
-                            : executionState.phase === "tool"
-                              ? "工具执行中"
-                              : "处理中"}
-                      </strong>
-                      {executionState.currentTool && <span className="exec-tool">{executionState.currentTool}</span>}
-                    </div>
-                    <div className="exec-meta">
-                      {executionState.toolElapsedSeconds > 0 && <span>工具耗时 {formatElapsed(executionState.toolElapsedSeconds)}</span>}
-                      {silentSeconds > 0 && isStreaming && <span>最近无文本增量 {formatElapsed(silentSeconds)}</span>}
-                      {!blockingPending && settings.permissionProfile === "full_auto" && <span>权限模式：全部允许</span>}
-                      {mcpRuntimeStatus.ok === true && <span>MCP 连接正常（{mcpRuntimeStatus.count}）</span>}
-                      {mcpRuntimeStatus.ok === false && (
-                        <span className="exec-meta-warning">MCP 异常：{mcpRuntimeStatus.error || "连接失败"}</span>
-                      )}
-                    </div>
-                    {executionState.actions.length > 0 && (
-                      <ul className="exec-actions">
-                        {executionState.actions.slice(-3).map((item, idx) => (
-                          <li key={`${item}-${idx}`}>{item}</li>
-                        ))}
-                      </ul>
-                    )}
-                    {showNoDeltaHint && (
-                      <div className="exec-hint">
-                        <span>暂无文本输出，正在等待工具返回结果...</span>
-                        <div className="exec-hint-actions">
-                          <button
-                            type="button"
-                            className="btn-secondary"
-                            onClick={() => setExecutionState((prev) => ({ ...prev, dismissNoDelta: true }))}
-                          >
-                            继续等待
-                          </button>
-                          <button type="button" className="btn-secondary" onClick={forceStopAndRetry}>
-                            停止并重试
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </section>
-                )}
+                <ExecutionPanel
+                  show={showExecutionPanel}
+                  blockingPending={blockingPending}
+                  executionState={executionState}
+                  silentSeconds={silentSeconds}
+                  isStreaming={isStreaming}
+                  settings={settings}
+                  mcpRuntimeStatus={mcpRuntimeStatus}
+                  showNoDeltaHint={showNoDeltaHint}
+                  onDismissNoDelta={() => setExecutionState((prev) => ({ ...prev, dismissNoDelta: true }))}
+                  onForceStopAndRetry={forceStopAndRetry}
+                />
 
-                {(() => {
-                  return messages.map((msg) => {
-                    const isLastAssistant = msg.role === "assistant" && lastAssistantId === msg.id;
-                    const text = textFromMessage(msg);
-                    const hasVisibleText = text.trim().length > 0;
-                    const showProcessing = msg.role === "assistant" && isLastAssistant && isStreaming && !hasVisibleText;
-                    const trace = msg.role === "assistant" ? traceByAssistantId[msg.id] || msg?.toolTrace || null : null;
-                    const traceToolEntries = trace ? Object.entries(trace.tools || {}) : [];
-                    const traceSkillEntries = trace ? Object.entries(trace.skills || {}) : [];
-                    const tracePhaseList = Array.isArray(trace?.phases) ? trace.phases : [];
-                    const unverifiedToolClaim =
-                      msg.role === "assistant" && traceToolEntries.length === 0 && traceSkillEntries.length === 0 && looksLikeToolClaim(text);
-                    if (msg.role === "assistant" && !showProcessing && !hasVisibleText) return null;
-                    return (
-                      <article
-                        key={msg.id}
-                        className={`bubble ${msg.role === "user" ? "bubble-user" : "bubble-assistant"} ${
-                          isLastAssistant && isStreaming && !showProcessing ? "bubble-streaming" : ""
-                        } ${showProcessing ? "bubble-processing" : ""}`}
-                      >
-                        {msg.role === "assistant" ? (
-                          showProcessing ? (
-                            <div className="processing-card">
-                              <p className="processing-title">处理中</p>
-                              <p className="processing-subtitle">正在整理结果，请稍候...</p>
-                              <div className="processing-skeleton">
-                                <span />
-                                <span />
-                                <span />
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="assistant-content bubble-enter">
-                              <ReactMarkdown
-                                remarkPlugins={[remarkGfm]}
-                                components={{
-                                  table: ({ node, ...props }) => (
-                                    <div className="markdown-table-wrap">
-                                      <table {...props} />
-                                    </div>
-                                  )
-                                }}
-                              >
-                                {text}
-                              </ReactMarkdown>
-                              {(traceToolEntries.length > 0 || traceSkillEntries.length > 0 || tracePhaseList.length > 0) && (
-                                <div className="bubble-trace">
-                                  <p className="bubble-trace-title">本轮调用</p>
-                                  {traceSkillEntries.length > 0 && (
-                                    <ul>
-                                      {traceSkillEntries.slice(0, 4).map(([name, item]) => (
-                                        <li key={`skill-${name}`}>
-                                          <span>/{name}</span>
-                                          <em>x{item?.count || 1}</em>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  )}
-                                  {traceToolEntries.length > 0 && (
-                                    <ul>
-                                      {traceToolEntries.slice(0, 5).map(([name, item]) => (
-                                        <li key={`tool-${name}`}>
-                                          <span>{name}</span>
-                                          <em>
-                                            x{item?.count || 1}
-                                            {item?.elapsedSeconds > 0 ? ` · ${formatElapsed(item.elapsedSeconds)}` : ""}
-                                          </em>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  )}
-                                  {tracePhaseList.length > 0 && (
-                                    <p className="bubble-trace-phase">
-                                      阶段：{tracePhaseList.slice(-3).map((item) => formatPhaseLabel(item?.phase)).join(" -> ")}
-                                    </p>
-                                  )}
-                                </div>
-                              )}
-                              {unverifiedToolClaim && (
-                                <div className="bubble-trace-warning">未检测到真实工具事件，当前内容可能是模型自述结果。</div>
-                              )}
-                              {isLastAssistant && (
-                                <div className="bubble-actions">
-                                  <button
-                                    type="button"
-                                    className="bubble-action-btn"
-                                    title="复制"
-                                    aria-label="复制"
-                                    onClick={() => copyText(text)}
-                                  >
-                                    ⧉
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="bubble-action-btn"
-                                    title="重试"
-                                    aria-label="重试"
-                                    onClick={retryLast}
-                                    disabled={!lastUserText || isStreaming}
-                                  >
-                                    ↻
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          )
-                        ) : (
-                          <p>{text}</p>
-                        )}
-                      </article>
-                    );
-                  });
-                })()}
+                <ChatMessageList
+                  messages={messages}
+                  lastAssistantId={lastAssistantId}
+                  isStreaming={isStreaming}
+                  traceByAssistantId={traceByAssistantId}
+                  onCopyText={copyText}
+                  onRetryLast={retryLast}
+                  lastUserText={lastUserText}
+                />
               </div>
             </section>
           </section>
@@ -1441,99 +1128,16 @@ export default function App() {
             onClose={() => setOpenedFile(null)}
           />
 
-          <section id="pending-overlay" className={`pending-overlay ${blockingPending ? "" : "hidden"}`}>
-            {blockingPending && (
-              <>
-                <p>
-                  <strong>{activePending.kind === "ask_user_question" ? "AskUserQuestion" : "Tool Permission"}</strong>
-                </p>
-                <p className="pending-why">为了继续执行任务，需要你先确认本步骤输入。</p>
-                {activePending.kind === "permission_request" ? (
-                  <>
-                    <pre className="output">{JSON.stringify(activePending.input || {}, null, 2)}</pre>
-                    <div className="pending-actions">
-                      <button
-                        type="button"
-                        onClick={() => submitPending(activePending.requestId, { behavior: "allow", alwaysAllow: false })}
-                      >
-                        允许
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        onClick={() => submitPending(activePending.requestId, { behavior: "deny", message: "User denied from web UI." })}
-                      >
-                        拒绝
-                      </button>
-                      <button type="button" className="btn-secondary" onClick={() => cancelPending(activePending.requestId)}>
-                        取消
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <fieldset className="pending-fieldset">
-                      <legend>
-                        问题 {draft.index + 1}/{askQuestions.length}
-                      </legend>
-                      <p>{currentAsk?.question || "请回答当前问题"}</p>
-                      {Array.isArray(currentAsk?.options) &&
-                        currentAsk.options.map((opt, idx) => {
-                          const label = opt?.label || `Option ${idx + 1}`;
-                          const key = currentAsk?.id || currentAsk?.question || `q_${draft.index}`;
-                          const checked = draft.answers[key] === label;
-                          return (
-                            <label className="pending-option" key={`${label}-${idx}`}>
-                              <input
-                                type="radio"
-                                name={`q_${draft.index}`}
-                                checked={checked}
-                                onChange={() => setAskDraft({ ...draft, answers: { ...draft.answers, [key]: label } })}
-                              />{" "}
-                              {label}
-                            </label>
-                          );
-                        })}
-                    </fieldset>
-                    <div className="pending-actions">
-                      <button
-                        type="button"
-                        disabled={draft.index <= 0}
-                        onClick={() => setAskDraft({ ...draft, index: Math.max(0, draft.index - 1) })}
-                      >
-                        上一题
-                      </button>
-                      <button
-                        type="button"
-                        disabled={draft.index >= askQuestions.length - 1}
-                        onClick={() => setAskDraft({ ...draft, index: Math.min(askQuestions.length - 1, draft.index + 1) })}
-                      >
-                        下一题
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          submitPending(activePending.requestId, {
-                            behavior: "allow",
-                            updatedInput: { ...(activePending.input || {}), answers: draft.answers }
-                          })
-                        }
-                      >
-                        提交全部答案
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        onClick={() => submitPending(activePending.requestId, { behavior: "deny", message: "User denied AskUserQuestion." })}
-                      >
-                        拒绝
-                      </button>
-                    </div>
-                  </>
-                )}
-              </>
-            )}
-          </section>
+          <PendingOverlay
+            blockingPending={blockingPending}
+            activePending={activePending}
+            askQuestions={askQuestions}
+            draft={draft}
+            currentAsk={currentAsk}
+            setAskDraft={setAskDraft}
+            submitPending={submitPending}
+            cancelPending={cancelPending}
+          />
 
           <Composer
             blockingPending={blockingPending}
@@ -1588,99 +1192,18 @@ export default function App() {
         />
       </main>
 
-      <div
-        className={`modal ${settingsOpen ? "" : "hidden"}`}
-        onClick={() => {
+      <SettingsModal
+        open={settingsOpen}
+        settings={settings}
+        setSettings={setSettings}
+        dangerConfirmText={dangerConfirmText}
+        setDangerConfirmText={setDangerConfirmText}
+        onClose={() => {
           setSettingsOpen(false);
           setDangerConfirmText("");
         }}
-      >
-        <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-          <div className="modal-head">
-            <h2>运行配置</h2>
-            <button
-              className="btn-secondary"
-              type="button"
-              onClick={() => {
-                setSettingsOpen(false);
-                setDangerConfirmText("");
-              }}
-            >
-              关闭
-            </button>
-          </div>
-          <form
-            className="settings-form"
-            onSubmit={async (event) => {
-              event.preventDefault();
-              if (settings.permissionProfile === "full_auto" && dangerConfirmText.trim() !== "I UNDERSTAND") {
-                window.alert("启用“全部允许”前，请输入 I UNDERSTAND 进行确认。");
-                return;
-              }
-              await saveSettings(settings);
-              setDangerConfirmText("");
-              setSettingsOpen(false);
-            }}
-          >
-            <label>ANTHROPIC_MODEL</label>
-            <input value={settings.model} onChange={(e) => setSettings((s) => ({ ...s, model: e.target.value }))} />
-            <label>ANTHROPIC_BASE_URL</label>
-            <input value={settings.baseUrl} onChange={(e) => setSettings((s) => ({ ...s, baseUrl: e.target.value }))} />
-            <label>ANTHROPIC_AUTH_TOKEN (API Key)</label>
-            <input
-              type="password"
-              value={settings.authToken}
-              placeholder={settings.hasToken ? `已保存: ${settings.tokenPreview}` : "请输入 API Key"}
-              onChange={(e) => setSettings((s) => ({ ...s, authToken: e.target.value }))}
-            />
-            <label>MINERU_API_KEY</label>
-            <input
-              type="password"
-              value={settings.mineruApiKey}
-              placeholder={settings.hasMineruKey ? `已保存: ${settings.mineruKeyPreview}` : "请输入 MinerU API Key"}
-              onChange={(e) => setSettings((s) => ({ ...s, mineruApiKey: e.target.value }))}
-            />
-            <label>权限模式</label>
-            <select
-              value={settings.permissionProfile}
-              onChange={(e) => {
-                const nextMode = e.target.value;
-                setSettings((s) => ({
-                  ...s,
-                  permissionProfile: nextMode,
-                  toolGateEnabled: nextMode === "standard" ? s.toolGateEnabled : false
-                }));
-                if (nextMode !== "full_auto") setDangerConfirmText("");
-              }}
-            >
-              <option value="standard">标准（按需审批）</option>
-              <option value="accept_edits">自动接受编辑</option>
-              <option value="full_auto">全部允许（高风险）</option>
-            </select>
-            {settings.permissionProfile === "full_auto" && (
-              <>
-                <p className="settings-warning">
-                  该模式会跳过权限审批，工具可直接执行写文件/命令操作。请仅在可信环境使用。
-                </p>
-                <label>输入 I UNDERSTAND 以确认</label>
-                <input value={dangerConfirmText} onChange={(e) => setDangerConfirmText(e.target.value)} placeholder="I UNDERSTAND" />
-              </>
-            )}
-            <label>审批开关（仅标准模式）</label>
-            <select
-              value={settings.toolGateEnabled ? "on" : "off"}
-              disabled={settings.permissionProfile !== "standard"}
-              onChange={(e) => setSettings((s) => ({ ...s, toolGateEnabled: e.target.value === "on" }))}
-            >
-              <option value="on">ON</option>
-              <option value="off">OFF</option>
-            </select>
-            <div className="pending-actions">
-              <button type="submit">保存配置</button>
-            </div>
-          </form>
-        </div>
-      </div>
+        onSave={saveSettings}
+      />
     </>
   );
 }
