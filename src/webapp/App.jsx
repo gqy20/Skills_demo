@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import Composer from "./components/Composer.jsx";
+import ChatHeader from "./components/ChatHeader.jsx";
 import ChatMessageList from "./components/ChatMessageList.jsx";
 import ExecutionPanel from "./components/ExecutionPanel.jsx";
 import FileEditorPane from "./components/FileEditorPane.jsx";
@@ -10,13 +11,14 @@ import PendingOverlay from "./components/PendingOverlay.jsx";
 import PreflightPanel from "./components/PreflightPanel.jsx";
 import SettingsModal from "./components/SettingsModal.jsx";
 import UsageStrip from "./components/UsageStrip.jsx";
+import { useWorkspaceApi } from "./hooks/useWorkspaceApi.js";
+import { usePendingState } from "./hooks/usePendingState.js";
+import { useRuntimeUsage } from "./hooks/useRuntimeUsage.js";
 import {
   extractSlashCommand,
   flattenFiles,
   normalizeSettings,
   parseError,
-  parseMcpToolName,
-  permissionProfileLabel,
   shortText,
   toolLabel
 } from "./lib/chatUtils.js";
@@ -58,9 +60,6 @@ export default function App() {
     debugSseEnabled: false
   });
   const [events, setEvents] = useState([]);
-  const [runtimeUsage, setRuntimeUsage] = useState({ skills: {}, mcps: {} });
-  const [usagePanelOpen, setUsagePanelOpen] = useState(false);
-  const [usageExpanded, setUsageExpanded] = useState({ skills: false, mcps: false });
   const [skills, setSkills] = useState([]);
   const [files, setFiles] = useState([]);
   const [controlsOpen, setControlsOpen] = useState(false);
@@ -88,12 +87,6 @@ export default function App() {
   const [fileError, setFileError] = useState("");
   const [inputText, setInputText] = useState("");
   const [lastUserText, setLastUserText] = useState("");
-  const [pendingState, setPendingState] = useState({
-    byId: {},
-    order: [],
-    activeId: null,
-    drafts: {}
-  });
   const [diagnostics, setDiagnostics] = useState({
     toolGateEnabled: true,
     gateHits: 0,
@@ -128,140 +121,34 @@ export default function App() {
   const textareaRef = useRef(null);
   const timelineRef = useRef(null);
 
-  const trackSkillUsage = useCallback((skillName, details = null) => {
-    const name = String(skillName || "").trim().toLowerCase();
-    if (!name) return;
-    setRuntimeUsage((prev) => {
-      const old = prev.skills[name] || { count: 0, lastTs: 0, details: null };
-      return {
-        ...prev,
-        skills: {
-          ...prev.skills,
-          [name]: { count: old.count + 1, lastTs: Date.now(), details: details || old.details || null }
-        }
-      };
-    });
-  }, []);
+  const {
+    usagePanelOpen,
+    usageExpanded,
+    setUsagePanelOpen,
+    setUsageExpanded,
+    trackSkillUsage,
+    trackMcpUsage,
+    resetRuntimeUsage,
+    startTurnUsage,
+    skillUsageList,
+    mcpUsageList
+  } = useRuntimeUsage();
 
-  const trackMcpUsage = useCallback((toolName, elapsedSeconds = null) => {
-    const parsed = parseMcpToolName(toolName);
-    if (!parsed) return false;
-    const key = `${parsed.server}:${parsed.tool}`;
-    setRuntimeUsage((prev) => {
-      const old = prev.mcps[key] || { count: 0, lastTs: 0, details: null };
-      return {
-        ...prev,
-        mcps: {
-          ...prev.mcps,
-          [key]: {
-            count: old.count + 1,
-            lastTs: Date.now(),
-            details: { server: parsed.server, tool: parsed.tool, raw: parsed.raw, elapsedSeconds }
-          }
-        }
-      };
-    });
-    return true;
-  }, []);
-
-  const workspaceQuery = useCallback(
-    (pathname) => {
-      if (!currentWorkspaceId) return pathname;
-      const sep = pathname.includes("?") ? "&" : "?";
-      return `${pathname}${sep}workspaceId=${encodeURIComponent(currentWorkspaceId)}`;
-    },
-    [currentWorkspaceId]
-  );
-
-  const apiGetJson = useCallback(
-    async (pathname, params = null) => {
-      const url = new URL(workspaceQuery(pathname), window.location.origin);
-      if (params && typeof params === "object") {
-        Object.entries(params).forEach(([k, v]) => {
-          if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, String(v));
-        });
-      }
-      const res = await fetch(url.toString());
-      if (!res.ok) throw new Error(await res.text());
-      return res.json();
-    },
-    [workspaceQuery]
-  );
-
-  const apiPostJson = useCallback(
-    async (pathname, body) => {
-      const res = await fetch(workspaceQuery(pathname), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body || {})
-      });
-      if (!res.ok) throw new Error(await res.text());
-      return res.json();
-    },
-    [workspaceQuery]
-  );
-
-  const apiPutJson = useCallback(
-    async (pathname, body) => {
-      const res = await fetch(workspaceQuery(pathname), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body || {})
-      });
-      const text = await res.text();
-      let parsed = {};
-      try {
-        parsed = text ? JSON.parse(text) : {};
-      } catch {
-        parsed = { error: text || "request failed" };
-      }
-      if (!res.ok) throw parsed;
-      return parsed;
-    },
-    [workspaceQuery]
-  );
-
-  const upsertPending = useCallback((kind, data) => {
-    const requestId = data?.requestId;
-    if (!requestId) return;
-    setPendingState((prev) => {
-      const old = prev.byId[requestId] || {};
-      const nextItem = {
-        ...old,
-        requestId,
-        kind,
-        toolName: data?.toolName || old.toolName || "",
-        input: data?.input || old.input || {},
-        suggestions: data?.suggestions || old.suggestions || [],
-        status: "pending"
-      };
-      return {
-        ...prev,
-        byId: { ...prev.byId, [requestId]: nextItem },
-        order: prev.order.includes(requestId) ? prev.order : [...prev.order, requestId],
-        activeId: prev.activeId || requestId
-      };
-    });
-  }, []);
-
-  const resolvePending = useCallback((data) => {
-    const requestId = data?.requestId;
-    if (!requestId) return;
-    setPendingState((prev) => {
-      if (!prev.byId[requestId]) return prev;
-      const nextById = { ...prev.byId };
-      delete nextById[requestId];
-      const nextOrder = prev.order.filter((id) => id !== requestId);
-      return {
-        ...prev,
-        byId: nextById,
-        order: nextOrder,
-        activeId: nextOrder[0] || null
-      };
-    });
-  }, []);
-
-  const activePending = pendingState.activeId ? pendingState.byId[pendingState.activeId] : null;
+  const { apiGetJson, apiPostJson, apiPutJson } = useWorkspaceApi(currentWorkspaceId);
+  const {
+    pendingState,
+    activePending,
+    askQuestions,
+    draft,
+    currentAsk,
+    blockingPending,
+    upsertPending,
+    resolvePending,
+    setAskDraft,
+    submitPending,
+    cancelPending,
+    resetPending
+  } = usePendingState(apiPostJson);
 
   const transport = useMemo(
     () =>
@@ -492,7 +379,6 @@ export default function App() {
   });
 
   const isStreaming = status === "submitted" || status === "streaming";
-  const blockingPending = Boolean(activePending);
   const lastAssistantId = useMemo(
     () =>
       messages
@@ -775,16 +661,14 @@ export default function App() {
     setLastUserText(text);
     setInputText("");
     setEvents([]);
-    setPendingState({ byId: {}, order: [], activeId: null, drafts: {} });
+    resetPending();
     setDiagnostics((prev) => ({
       ...prev,
       gateHits: 0,
       askCreated: 0,
       askResolved: 0
     }));
-    setUsagePanelOpen(false);
-    setRuntimeUsage({ skills: initialSkillsState, mcps: {} });
-    setUsageExpanded({ skills: false, mcps: false });
+    startTurnUsage(initialSkillsState);
     setExecutionState({
       phase: "queued",
       currentTool: "",
@@ -842,7 +726,7 @@ export default function App() {
       setTraceByAssistantId(loadedTraceMap);
       setCurrentSessionId(sessionId);
       setActiveTurnTrace(null);
-      setPendingState({ byId: {}, order: [], activeId: null, drafts: {} });
+      resetPending();
       setEvents([]);
       setExecutionState({
         phase: "idle",
@@ -877,10 +761,8 @@ export default function App() {
     setMessages([]);
     setEvents([]);
     setLastUserText("");
-    setRuntimeUsage({ skills: {}, mcps: {} });
-    setUsagePanelOpen(false);
-    setUsageExpanded({ skills: false, mcps: false });
-    setPendingState({ byId: {}, order: [], activeId: null, drafts: {} });
+    resetRuntimeUsage();
+    resetPending();
     setExecutionState({
       phase: "idle",
       currentTool: "",
@@ -910,52 +792,6 @@ export default function App() {
     const next = Math.min(el.scrollHeight, 184);
     el.style.height = `${Math.max(next, 46)}px`;
   }, []);
-
-  const submitPending = async (requestId, payload) => {
-    await apiPostJson("/api/input", { requestId, ...payload });
-    resolvePending({ requestId });
-  };
-
-  const cancelPending = async (requestId) => {
-    await apiPostJson("/api/input/cancel", { requestId });
-    resolvePending({ requestId });
-  };
-
-  const askQuestions = Array.isArray(activePending?.input?.questions) ? activePending.input.questions : [];
-  const draft = activePending
-    ? pendingState.drafts[activePending.requestId] || { index: 0, answers: {} }
-    : { index: 0, answers: {} };
-  const currentAsk = askQuestions[draft.index];
-
-  const setAskDraft = (next) => {
-    if (!activePending) return;
-    setPendingState((prev) => ({
-      ...prev,
-      drafts: {
-        ...prev.drafts,
-        [activePending.requestId]: {
-          index: Math.min(Math.max(next.index ?? 0, 0), Math.max(askQuestions.length - 1, 0)),
-          answers: { ...(next.answers || {}) }
-        }
-      }
-    }));
-  };
-
-  const skillUsageList = useMemo(
-    () =>
-      Object.entries(runtimeUsage.skills)
-        .map(([name, item]) => ({ name, ...(item || {}) }))
-        .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0)),
-    [runtimeUsage.skills]
-  );
-
-  const mcpUsageList = useMemo(
-    () =>
-      Object.entries(runtimeUsage.mcps)
-        .map(([key, item]) => ({ key, ...(item || {}) }))
-        .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0)),
-    [runtimeUsage.mcps]
-  );
 
   const skillSourceCounts = useMemo(() => {
     const counts = { all: skills.length, project: 0, user: 0 };
@@ -1000,66 +836,23 @@ export default function App() {
     <>
       <main className={`workspace ${sidebarOpen ? "workspace-with-sidebar" : "workspace-chat-only"}`}>
         <section className="chat-shell">
-          <header className="chat-head">
-            <div className="chat-head-row">
-              <h1>Agent Workspace</h1>
-              <div className="head-actions" ref={controlsRef}>
-                <button className="btn-secondary" type="button" onClick={() => setSidebarOpen((v) => !v)}>
-                  {sidebarOpen ? "隐藏侧栏" : "侧栏"}
-                </button>
-                <button className="btn-secondary" type="button" onClick={() => setControlsOpen((v) => !v)}>
-                  控制
-                </button>
-                <div className={`controls-popover ${controlsOpen ? "" : "hidden"}`}>
-                  <button
-                    className={`btn-secondary ${settings.hasToken ? "" : "is-off"}`}
-                    type="button"
-                    onClick={() => {
-                      setControlsOpen(false);
-                      setSettingsOpen(true);
-                    }}
-                  >
-                    API Key: {settings.hasToken ? "已配置" : "未配置"}
-                  </button>
-                  <button
-                    className={`btn-secondary ${settings.hasMineruKey ? "" : "is-off"}`}
-                    type="button"
-                    onClick={() => {
-                      setControlsOpen(false);
-                      setSettingsOpen(true);
-                    }}
-                  >
-                    MinerU: {settings.hasMineruKey ? "已配置" : "未配置"}
-                  </button>
-                  <button
-                    className={`btn-secondary ${settings.mcpEnabled ? "" : "is-off"}`}
-                    type="button"
-                    onClick={async () => {
-                      await saveSettings({ ...settings, mcpEnabled: !settings.mcpEnabled });
-                      setControlsOpen(false);
-                    }}
-                  >
-                    MCP: {settings.mcpEnabled ? "ON" : "OFF"}
-                  </button>
-                  <button
-                    className="btn-secondary"
-                    type="button"
-                    onClick={() => {
-                      setControlsOpen(false);
-                      setSettingsOpen(true);
-                    }}
-                  >
-                    权限: {permissionProfileLabel(settings.permissionProfile)}
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div className="runtime-meta">
-              <span className="meta-chip">Workspace: {currentWorkspaceId || "-"}</span>
-              <span className="meta-chip">Model: {settings.model || "-"}</span>
-              <span className="meta-chip">权限: {permissionProfileLabel(settings.permissionProfile)}</span>
-            </div>
-          </header>
+          <ChatHeader
+            sidebarOpen={sidebarOpen}
+            setSidebarOpen={setSidebarOpen}
+            controlsOpen={controlsOpen}
+            setControlsOpen={setControlsOpen}
+            controlsRef={controlsRef}
+            settings={settings}
+            currentWorkspaceId={currentWorkspaceId}
+            onOpenSettings={() => {
+              setControlsOpen(false);
+              setSettingsOpen(true);
+            }}
+            onToggleMcp={async () => {
+              await saveSettings({ ...settings, mcpEnabled: !settings.mcpEnabled });
+              setControlsOpen(false);
+            }}
+          />
 
           <section className="timeline-wrap">
             <section className="timeline" ref={timelineRef}>
