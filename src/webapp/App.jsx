@@ -21,25 +21,13 @@ import { useSidebarDerived } from "./hooks/useSidebarDerived.js";
 import { useAppEffects } from "./hooks/useAppEffects.js";
 import { handleChatStreamError, handleChatStreamPart } from "./lib/chatStreamHandlers.js";
 import {
-  extractSlashCommand,
-  parseError,
-  shortText,
-  toolLabel
-} from "./lib/chatUtils.js";
-const QUICK_PROMPTS = [
-  { title: "文献综述分析", text: "请基于当前文献目录，提取研究问题、方法、结论并给出研究空白。" },
-  { title: "科研初稿生成", text: "请根据已有文献与项目背景，生成研究报告初稿（摘要、方法、实验设计、讨论）。" }
-];
-const QUICK_CHIPS = [
-  "先分析文献目录结构",
-  "列出研究空白与创新点",
-  "基于已有资料生成初稿大纲"
-];
-
-function createId() {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
+  buildInitialSkillUsage,
+  buildQueuedExecutionState,
+  buildInitialTurnTrace,
+  resetDiagnosticsForTurn
+} from "./lib/turnState.js";
+import { QUICK_PROMPTS, QUICK_CHIPS, createId } from "./lib/appConstants.js";
+import { extractSlashCommand, parseError, toolLabel } from "./lib/chatUtils.js";
 
 export default function App() {
   const [workspaces, setWorkspaces] = useState([]);
@@ -291,41 +279,18 @@ export default function App() {
   const submitUserMessage = async (overrideText = null) => {
     const text = (overrideText ?? inputText).trim();
     if (!text || isStreaming || blockingPending) return;
+    const now = Date.now();
     const initialSkill = extractSlashCommand(text);
-    const initialSkillsState = initialSkill
-      ? { [initialSkill]: { count: 1, lastTs: Date.now(), details: { source: "prompt", text: shortText(text, 220) } } }
-      : {};
+    const initialSkillsState = buildInitialSkillUsage(text, initialSkill, now);
     setLastUserText(text);
     setInputText("");
     setEvents([]);
     resetPending();
-    setDiagnostics((prev) => ({
-      ...prev,
-      gateHits: 0,
-      askCreated: 0,
-      askResolved: 0
-    }));
+    setDiagnostics(resetDiagnosticsForTurn);
     startTurnUsage(initialSkillsState);
-    setExecutionState({
-      phase: "queued",
-      currentTool: "",
-      toolElapsedSeconds: 0,
-      lastDeltaAt: Date.now(),
-      actions: [],
-      dismissNoDelta: false
-    });
+    setExecutionState(buildQueuedExecutionState(now));
     setMcpRuntimeStatus({ ok: null, count: 0, error: "" });
-    setActiveTurnTrace({
-      startedAt: Date.now(),
-      completedAt: 0,
-      seenToolUseIds: {},
-      responseStarted: false,
-      lastToolLabel: "",
-      skills: {},
-      tools: {},
-      phases: [{ phase: "queued", at: Date.now() }],
-      actions: []
-    });
+    setActiveTurnTrace(buildInitialTurnTrace(now));
     await sendMessage({ id: createId(), text });
   };
 
