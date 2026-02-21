@@ -57,7 +57,9 @@ export async function consumeQueryEvents({
     }
 
     if (event.type === "system" && event.subtype === "init") {
-      const tools = Array.isArray(event.tools) ? event.tools : [];
+      const tools = Array.isArray(event.tools)
+        ? event.tools.filter((tool: unknown): tool is string => typeof tool === "string")
+        : [];
       writeSseData(res, {
         type: "data-sdk-init",
         data: {
@@ -65,7 +67,7 @@ export async function consumeQueryEvents({
           permissionMode: event.permissionMode || "",
           toolCount: tools.length,
           tools: tools.slice(0, 80),
-          hasAskUserQuestionTool: tools.some((tool) => tool.trim().toLowerCase() === "askuserquestion")
+          hasAskUserQuestionTool: tools.some((tool: unknown) => String(tool).trim().toLowerCase() === "askuserquestion")
         }
       });
     }
