@@ -32,13 +32,17 @@ export async function applyMcpToggle(
   enabled: boolean
 ): Promise<void> {
   const names = await getMcpServerNames(workspaceRoot);
-  for (const name of names) {
-    try {
-      await queryInstance.toggleMcpServer(name, enabled);
-    } catch {
-      // Ignore individual MCP toggle errors to keep stream path resilient.
-    }
-  }
+  if (names.length === 0) return;
+
+  await Promise.all(
+    names.map(async (name) => {
+      try {
+        await withTimeout(queryInstance.toggleMcpServer(name, enabled), 3000, `toggleMcpServer(${name})`);
+      } catch {
+        // Ignore individual MCP toggle errors to keep stream path resilient.
+      }
+    })
+  );
 }
 
 function buildQueryEnv(settings: RuntimeSettings): Record<string, string | undefined> {

@@ -29,6 +29,26 @@ function trimPhases(turnTrace: MutableTurnTrace): void {
   }
 }
 
+function writeHookStage(
+  res: Response,
+  data: {
+    stage: string;
+    at: number;
+    hookName?: string;
+    hookEvent?: string;
+    hookId?: string;
+    toolName?: string;
+    toolUseId?: string;
+    outcome?: string;
+    detail?: string;
+    resultSubtype?: string;
+    isError?: boolean;
+    stopReason?: string | null;
+  }
+): void {
+  writeSseData(res, { type: "data-hook-stage", data });
+}
+
 export async function consumeQueryEvents({
   queryInstance,
   key,
@@ -46,6 +66,8 @@ export async function consumeQueryEvents({
   let deltaCount = 0;
   let assistantText = "";
   let responsePhaseMarked = false;
+  const streamStartedAt = Date.now();
+  let firstTextTimeoutNotified = false;
 
   for await (const event of queryInstance) {
     if (runtime.closed) break;
@@ -69,6 +91,11 @@ export async function consumeQueryEvents({
           tools: tools.slice(0, 80),
           hasAskUserQuestionTool: tools.some((tool: unknown) => String(tool).trim().toLowerCase() === "askuserquestion")
         }
+      });
+      writeHookStage(res, {
+        stage: "sdk_init",
+        at: Date.now(),
+        detail: `tools=${tools.length}`
       });
     }
 
@@ -98,6 +125,39 @@ export async function consumeQueryEvents({
 
     const lifecycle = extractSdkLifecycle(event);
     if (lifecycle) {
+      if (lifecycle.category === "hook_started") {
+        writeHookStage(res, {
+          stage: "hook_started",
+          at: Date.now(),
+          hookId: String(lifecycle.hookId || ""),
+          hookName: String(lifecycle.hookName || ""),
+          hookEvent: String(lifecycle.hookEvent || "")
+        });
+      }
+
+      if (lifecycle.category === "hook_progress") {
+        writeHookStage(res, {
+          stage: "hook_progress",
+          at: Date.now(),
+          hookId: String(lifecycle.hookId || ""),
+          hookName: String(lifecycle.hookName || ""),
+          hookEvent: String(lifecycle.hookEvent || ""),
+          detail: String(lifecycle.output || lifecycle.stderr || "")
+        });
+      }
+
+      if (lifecycle.category === "hook_response") {
+        writeHookStage(res, {
+          stage: "hook_response",
+          at: Date.now(),
+          hookId: String(lifecycle.hookId || ""),
+          hookName: String(lifecycle.hookName || ""),
+          hookEvent: String(lifecycle.hookEvent || ""),
+          outcome: String(lifecycle.outcome || ""),
+          detail: lifecycle.exitCode === null ? "" : `exit=${String(lifecycle.exitCode)}`
+        });
+      }
+
       if (lifecycle.category === "tool_progress") {
         const label = normalizeToolLabel(lifecycle.toolName || "");
         const useId = String(lifecycle.toolUseId || "");
@@ -121,6 +181,12 @@ export async function consumeQueryEvents({
             elapsedSeconds: lifecycle.elapsedSeconds ?? null
           }
         });
+        writeHookStage(res, {
+          stage: "tool_progress",
+          at: Date.now(),
+          toolName: String(lifecycle.toolName || ""),
+          toolUseId: String(lifecycle.toolUseId || "")
+        });
       }
 
       if (lifecycle.category === "tool_use_summary") {
@@ -142,9 +208,44 @@ export async function consumeQueryEvents({
           type: "data-tool-use-summary",
           data: { summary: lifecycle.summary || "" }
         });
+        writeHookStage(res, {
+          stage: "tool_summary",
+          at: Date.now(),
+          detail: summary
+        });
+      }
+
+      if (lifecycle.category === "result") {
+        writeHookStage(res, {
+          stage: "result",
+          at: Date.now(),
+          resultSubtype: String(lifecycle.subtype || ""),
+          isError: lifecycle.isError === true,
+          stopReason: lifecycle.stopReason ? String(lifecycle.stopReason) : null
+        });
       }
 
       writeDebugSse(res, runtime.closed, debugSseEnabled, traceId, "sdk_lifecycle", lifecycle);
+    }
+
+    if (!responsePhaseMarked && !firstTextTimeoutNotified && Date.now() - streamStartedAt >= 20000) {
+      firstTextTimeoutNotified = true;
+      writeSseData(res, {
+        type: "data-first-token-timeout",
+        data: {
+          waitedSeconds: Math.floor((Date.now() - streamStartedAt) / 1000),
+          streamEventCount
+        }
+      });
+      writeHookStage(res, {
+        stage: "first_text_timeout",
+        at: Date.now(),
+        detail: "no_text_delta"
+      });
+      writeDebugSse(res, runtime.closed, debugSseEnabled, traceId, "first_text_timeout", {
+        waitedSeconds: Math.floor((Date.now() - streamStartedAt) / 1000),
+        streamEventCount
+      });
     }
 
     if (event.type === "result" && event.is_error) {
@@ -154,13 +255,27 @@ export async function consumeQueryEvents({
       writeSseData(res, { type: "error", error: message });
     }
 
-    if (settingsDebugEnabled && debugSseEnabled && streamEventCount <= 30) {
+    if (settingsDebugEnabled && debugSseEnabled && streamEventCount <= 60) {
+      const streamSubtype =
+        event.type === "stream_event" && event.event && typeof event.event === "object"
+          ? String((event.event as Record<string, unknown>).type || "")
+          : "";
+      const deltaType =
+        event.type === "stream_event" &&
+        event.event &&
+        typeof event.event === "object" &&
+        (event.event as Record<string, unknown>).delta &&
+        typeof (event.event as Record<string, unknown>).delta === "object"
+          ? String((((event.event as Record<string, unknown>).delta as Record<string, unknown>).type || ""))
+          : "";
       writeSseData(res, {
         type: "data-debug",
         data: {
           traceId,
           phase: "sdk_event",
           eventType: event.type,
+          streamSubtype,
+          deltaType,
           hasSession: typeof event.session_id === "string"
         }
       });

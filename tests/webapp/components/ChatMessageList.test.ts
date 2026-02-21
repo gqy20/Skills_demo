@@ -37,4 +37,19 @@ describe("ChatMessageList", () => {
     );
     expect(html).toContain("未检测到真实工具事件");
   });
+
+  it("shows fallback card when assistant message has no visible text", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ChatMessageList, {
+        messages: [{ id: "a1", role: "assistant", parts: [{ type: "text", text: "" }] }],
+        lastAssistantId: "a1",
+        isStreaming: false,
+        traceByAssistantId: {},
+        onCopyText: vi.fn(),
+        onRetryLast: vi.fn(),
+        lastUserText: "你好"
+      })
+    );
+    expect(html).toContain("未收到文本输出");
+  });
 });

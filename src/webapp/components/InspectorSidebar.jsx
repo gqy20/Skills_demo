@@ -1,3 +1,5 @@
+import { describeMcpProbe } from "../lib/chatUtils.js";
+
 export default function InspectorSidebar({
   sidebarOpen,
   currentWorkspaceId,
@@ -49,11 +51,7 @@ export default function InspectorSidebar({
     return d.toLocaleDateString([], { month: "2-digit", day: "2-digit" });
   };
 
-  const formatTime = (ts) => {
-    const n = Number(ts || 0);
-    if (!Number.isFinite(n) || n <= 0) return "-";
-    return new Date(n).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  };
+  const probeInfo = describeMcpProbe(mcpCatalog.runtime);
 
   return (
     <aside className={`inspector ${sidebarOpen ? "" : "hidden"}`}>
@@ -145,24 +143,7 @@ export default function InspectorSidebar({
                 </button>
               </div>
               <p className="session-tag">
-                探针=
-                {mcpCatalog.runtime.checking
-                  ? "检测中..."
-                  : mcpCatalog.runtime.ok === true
-                  ? "正常"
-                  : mcpCatalog.runtime.ok === false
-                    ? `异常${mcpCatalog.runtime.error ? `: ${mcpCatalog.runtime.error}` : ""}`
-                    : mcpCatalog.runtime.source === "active_session_missing"
-                      ? "待检测（无活跃会话）"
-                      : mcpCatalog.runtime.source === "active_session_unavailable"
-                        ? `会话不可用${mcpCatalog.runtime.error ? `: ${mcpCatalog.runtime.error}` : ""}`
-                        : "未知"}{" "}
-                · 最近检测{" "}
-                {typeof mcpCatalog.runtime.lastCheckedAt === "number" && mcpCatalog.runtime.lastCheckedAt > 0
-                  ? `${formatTime(mcpCatalog.runtime.lastCheckedAt)}${
-                      typeof mcpCatalog.runtime.ageSeconds === "number" ? ` (${mcpCatalog.runtime.ageSeconds}s前)` : ""
-                    }`
-                  : "未检测"}
+                探针={probeInfo.probe} · 最近检测 {probeInfo.lastChecked}
               </p>
               {mcpCatalog.error && <p className="session-tag">加载失败：{mcpCatalog.error}</p>}
             </div>

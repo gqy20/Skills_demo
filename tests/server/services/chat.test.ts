@@ -58,6 +58,24 @@ describe("chat service helpers", () => {
       toolUseId: "u1",
       elapsedSeconds: 1.2
     });
+    expect(
+      extractSdkLifecycle({
+        type: "system",
+        subtype: "hook_response",
+        hook_id: "h1",
+        hook_name: "update-status.sh",
+        hook_event: "PostToolUse",
+        outcome: "success",
+        exit_code: 0
+      } as never)
+    ).toEqual({
+      category: "hook_response",
+      hookId: "h1",
+      hookName: "update-status.sh",
+      hookEvent: "PostToolUse",
+      outcome: "success",
+      exitCode: 0
+    });
   });
 
   it("writes SSE frames", () => {

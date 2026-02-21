@@ -1,5 +1,6 @@
 import React from "react";
-import { formatElapsed } from "../lib/chatUtils.js";
+import { describeMcpProbe, formatElapsed } from "../lib/chatUtils.js";
+import HookTimeline from "./HookTimeline.jsx";
 
 export default function ExecutionPanel({
   show,
@@ -9,11 +10,14 @@ export default function ExecutionPanel({
   isStreaming,
   settings,
   mcpRuntimeStatus,
+  mcpProbeRuntime,
+  hookTimeline = [],
   showNoDeltaHint,
   onDismissNoDelta,
   onForceStopAndRetry
 }) {
   if (!show) return null;
+  const probeInfo = describeMcpProbe(mcpProbeRuntime || {});
 
   return (
     <section className="exec-panel">
@@ -21,6 +25,10 @@ export default function ExecutionPanel({
         <strong>
           {blockingPending
             ? "等待授权"
+            : executionState.phase === "waiting_model"
+              ? "等待模型响应"
+              : executionState.phase === "error"
+                ? "请求异常"
             : executionState.phase === "responding"
               ? "正在整理回复"
               : executionState.phase === "tool"
@@ -33,8 +41,10 @@ export default function ExecutionPanel({
         {executionState.toolElapsedSeconds > 0 && <span>工具耗时 {formatElapsed(executionState.toolElapsedSeconds)}</span>}
         {silentSeconds > 0 && isStreaming && <span>最近无文本增量 {formatElapsed(silentSeconds)}</span>}
         {!blockingPending && settings.permissionProfile === "full_auto" && <span>权限模式：全部允许</span>}
+        <span className={probeInfo.level === "warn" || probeInfo.level === "error" ? "exec-meta-warning" : ""}>
+          MCP 探针：{probeInfo.probe} · 最近检测 {probeInfo.lastChecked}
+        </span>
         {mcpRuntimeStatus.ok === true && <span>MCP 连接正常（{mcpRuntimeStatus.count}）</span>}
-        {mcpRuntimeStatus.ok === false && <span className="exec-meta-warning">MCP 异常：{mcpRuntimeStatus.error || "连接失败"}</span>}
       </div>
       {executionState.actions.length > 0 && (
         <ul className="exec-actions">
@@ -56,6 +66,7 @@ export default function ExecutionPanel({
           </div>
         </div>
       )}
+      <HookTimeline items={hookTimeline} />
     </section>
   );
 }

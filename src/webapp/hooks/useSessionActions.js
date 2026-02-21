@@ -47,7 +47,8 @@ export function useSessionActions({
   setExecutionState,
   setMcpRuntimeStatus,
   setLastUserText,
-  resetRuntimeUsage
+  resetRuntimeUsage,
+  setHookTimeline
 }) {
   const openSession = useCallback(
     async (sessionId) => {
@@ -62,6 +63,7 @@ export function useSessionActions({
         setActiveTurnTrace(null);
         resetPending();
         setEvents([]);
+        setHookTimeline([]);
         setExecutionState({
           phase: "idle",
           currentTool: "",
@@ -70,7 +72,7 @@ export function useSessionActions({
           actions: [],
           dismissNoDelta: false
         });
-        setMcpRuntimeStatus({ ok: null, count: 0, error: "" });
+        setMcpRuntimeStatus({ ok: null, count: 0, error: "", status: "unknown" });
         const last = findLastUserTextFromMessages(nextMessages);
         if (last) setLastUserText(last);
       } finally {
@@ -85,6 +87,7 @@ export function useSessionActions({
       setActiveTurnTrace,
       setCurrentSessionId,
       setEvents,
+      setHookTimeline,
       setExecutionState,
       setLastUserText,
       setMcpRuntimeStatus,
@@ -99,6 +102,7 @@ export function useSessionActions({
     setCurrentSessionId(null);
     setMessages([]);
     setEvents([]);
+    setHookTimeline([]);
     setLastUserText("");
     resetRuntimeUsage();
     resetPending();
@@ -110,7 +114,7 @@ export function useSessionActions({
       actions: [],
       dismissNoDelta: false
     });
-    setMcpRuntimeStatus({ ok: null, count: 0, error: "" });
+    setMcpRuntimeStatus({ ok: null, count: 0, error: "", status: "unknown" });
     setTraceByAssistantId({});
     setActiveTurnTrace(null);
   }, [
@@ -121,6 +125,7 @@ export function useSessionActions({
     setActiveTurnTrace,
     setCurrentSessionId,
     setEvents,
+    setHookTimeline,
     setExecutionState,
     setLastUserText,
     setMcpRuntimeStatus,

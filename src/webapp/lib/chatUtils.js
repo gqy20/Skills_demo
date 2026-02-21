@@ -36,6 +36,42 @@ export function formatElapsed(seconds) {
   return `${m}m ${s}s`;
 }
 
+export function formatClockTime(ts) {
+  const n = Number(ts || 0);
+  if (!Number.isFinite(n) || n <= 0) return "-";
+  return new Date(n).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+export function describeMcpProbe(runtime) {
+  const r = runtime && typeof runtime === "object" ? runtime : {};
+  const error = String(r.error || "");
+  const isTimeout = /timed out/i.test(error);
+
+  let probe = "未知";
+  let level = "muted";
+  if (r.checking === true) {
+    probe = "检测中...";
+  } else if (r.ok === true) {
+    probe = "正常";
+    level = "ok";
+  } else if (r.ok === false) {
+    probe = isTimeout ? `超时（不阻断）${error ? `: ${error}` : ""}` : `异常${error ? `: ${error}` : ""}`;
+    level = isTimeout ? "warn" : "error";
+  } else if (r.source === "active_session_missing") {
+    probe = "待检测（无活跃会话）";
+  } else if (r.source === "active_session_unavailable") {
+    probe = `会话不可用${error ? `: ${error}` : ""}`;
+    level = error ? "warn" : "muted";
+  }
+
+  const lastChecked =
+    typeof r.lastCheckedAt === "number" && r.lastCheckedAt > 0
+      ? `${formatClockTime(r.lastCheckedAt)}${typeof r.ageSeconds === "number" ? ` (${r.ageSeconds}s前)` : ""}`
+      : "未检测";
+
+  return { probe, level, lastChecked };
+}
+
 export function extractSlashCommand(text) {
   const m = String(text || "").trim().match(/^\/([a-zA-Z0-9_-]+)/);
   return m ? m[1].toLowerCase() : "";

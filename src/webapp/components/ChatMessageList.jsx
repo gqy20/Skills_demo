@@ -23,7 +23,12 @@ export default function ChatMessageList({
     const tracePhaseList = Array.isArray(trace?.phases) ? trace.phases : [];
     const unverifiedToolClaim =
       msg.role === "assistant" && traceToolEntries.length === 0 && traceSkillEntries.length === 0 && looksLikeToolClaim(text);
-    if (msg.role === "assistant" && !showProcessing && !hasVisibleText) return null;
+    const showEmptyAssistantFallback =
+      msg.role === "assistant" &&
+      !showProcessing &&
+      !hasVisibleText &&
+      (isLastAssistant || traceToolEntries.length > 0 || traceSkillEntries.length > 0 || tracePhaseList.length > 0);
+    if (msg.role === "assistant" && !showProcessing && !hasVisibleText && !showEmptyAssistantFallback) return null;
 
     return (
       <article
@@ -42,6 +47,25 @@ export default function ChatMessageList({
                 <span />
                 <span />
               </div>
+            </div>
+          ) : showEmptyAssistantFallback ? (
+            <div className="processing-card">
+              <p className="processing-title">未收到文本输出</p>
+              <p className="processing-subtitle">本轮请求已结束，但模型未返回可显示文本。可点击重试。</p>
+              {isLastAssistant && (
+                <div className="bubble-actions">
+                  <button
+                    type="button"
+                    className="bubble-action-btn"
+                    title="重试"
+                    aria-label="重试"
+                    onClick={onRetryLast}
+                    disabled={!lastUserText || isStreaming}
+                  >
+                    ↻
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="assistant-content bubble-enter">

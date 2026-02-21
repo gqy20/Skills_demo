@@ -262,6 +262,37 @@ export function extractResultText(event: SDKMessage): string {
 
 export function extractSdkLifecycle(event: SDKMessage): Record<string, unknown> | null {
   if (event.type === "system") {
+    if (event.subtype === "hook_started") {
+      return {
+        category: "hook_started",
+        hookId: event.hook_id,
+        hookName: event.hook_name,
+        hookEvent: event.hook_event
+      };
+    }
+
+    if (event.subtype === "hook_progress") {
+      return {
+        category: "hook_progress",
+        hookId: event.hook_id,
+        hookName: event.hook_name,
+        hookEvent: event.hook_event,
+        output: event.output || "",
+        stderr: event.stderr || ""
+      };
+    }
+
+    if (event.subtype === "hook_response") {
+      return {
+        category: "hook_response",
+        hookId: event.hook_id,
+        hookName: event.hook_name,
+        hookEvent: event.hook_event,
+        outcome: event.outcome,
+        exitCode: event.exit_code ?? null
+      };
+    }
+
     return {
       category: "system",
       subtype: event.subtype || "unknown"

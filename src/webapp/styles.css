@@ -417,6 +417,69 @@ body {
   gap: 8px;
 }
 
+.hook-timeline {
+  border-top: 1px dashed #e2e8f0;
+  padding-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.hook-timeline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--fs-12);
+  color: #64748b;
+}
+
+.hook-timeline-head strong {
+  color: #334155;
+}
+
+.hook-timeline-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+
+.hook-timeline-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: var(--fs-12);
+  color: #475569;
+}
+
+.hook-time {
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+}
+
+.hook-stage {
+  color: #1f2937;
+  font-weight: 600;
+}
+
+.hook-detail {
+  color: #0f766e;
+  background: rgba(15, 118, 110, 0.08);
+  border: 1px solid rgba(15, 118, 110, 0.2);
+  border-radius: 999px;
+  padding: 1px 6px;
+  max-width: 36ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hook-outcome {
+  color: #7c3aed;
+  font-weight: 600;
+}
+
 .bubble {
   border-radius: var(--r-12);
   padding: 11px 13px;

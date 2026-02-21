@@ -27,7 +27,7 @@ import {
   resetDiagnosticsForTurn
 } from "./lib/turnState.js";
 import { QUICK_PROMPTS, QUICK_CHIPS, createId } from "./lib/appConstants.js";
-import { extractSlashCommand, parseError, toolLabel } from "./lib/chatUtils.js";
+import { extractSlashCommand, parseError, shortText, toolLabel } from "./lib/chatUtils.js";
 
 export default function App() {
   const [workspaces, setWorkspaces] = useState([]);
@@ -50,6 +50,7 @@ export default function App() {
     debugSseEnabled: false
   });
   const [events, setEvents] = useState([]);
+  const [hookTimeline, setHookTimeline] = useState([]);
   const [skills, setSkills] = useState([]);
   const [files, setFiles] = useState([]);
   const [controlsOpen, setControlsOpen] = useState(false);
@@ -94,7 +95,8 @@ export default function App() {
   const [mcpRuntimeStatus, setMcpRuntimeStatus] = useState({
     ok: null,
     count: 0,
-    error: ""
+    error: "",
+    status: "unknown"
   });
   const [mcpCatalog, setMcpCatalog] = useState({
     loading: false,
@@ -110,6 +112,16 @@ export default function App() {
   const controlsRef = useRef(null);
   const textareaRef = useRef(null);
   const timelineRef = useRef(null);
+  const currentSessionIdRef = useRef(null);
+  const currentWorkspaceIdRef = useRef("");
+
+  useEffect(() => {
+    currentSessionIdRef.current = currentSessionId;
+  }, [currentSessionId]);
+
+  useEffect(() => {
+    currentWorkspaceIdRef.current = currentWorkspaceId;
+  }, [currentWorkspaceId]);
 
   const {
     usagePanelOpen,
@@ -146,13 +158,13 @@ export default function App() {
         api: "/api/chat/ui",
         prepareSendMessagesRequest: ({ messages }) => ({
           body: {
-            id: currentSessionId || undefined,
-            workspaceId: currentWorkspaceId || undefined,
+            id: currentSessionIdRef.current || undefined,
+            workspaceId: currentWorkspaceIdRef.current || undefined,
             messages
           }
         })
       }),
-    [currentSessionId, currentWorkspaceId]
+    []
   );
 
   const { messages, setMessages, sendMessage, status, stop } = useChat({
@@ -172,7 +184,8 @@ export default function App() {
         resolvePending,
         trackSkillUsage,
         toolLabel,
-        shortText
+        shortText,
+        setHookTimeline
       }),
     onError: (error) => handleChatStreamError(error, { setEvents, parseError })
   });
@@ -237,7 +250,8 @@ export default function App() {
     setExecutionState,
     setMcpRuntimeStatus,
     setLastUserText,
-    resetRuntimeUsage
+    resetRuntimeUsage,
+    setHookTimeline
   });
   const { openFile, requestOpenFile, saveOpenedFile } = useFileEditorActions({
     currentWorkspaceId,
@@ -285,11 +299,12 @@ export default function App() {
     setLastUserText(text);
     setInputText("");
     setEvents([]);
+    setHookTimeline([{ stage: "queued", at: now, source: "ui" }]);
     resetPending();
     setDiagnostics(resetDiagnosticsForTurn);
     startTurnUsage(initialSkillsState);
     setExecutionState(buildQueuedExecutionState(now));
-    setMcpRuntimeStatus({ ok: null, count: 0, error: "" });
+    setMcpRuntimeStatus({ ok: null, count: 0, error: "", status: "unknown" });
     setActiveTurnTrace(buildInitialTurnTrace(now));
     await sendMessage({ id: createId(), text });
   };
@@ -320,6 +335,42 @@ export default function App() {
     files,
     fileFilter
   });
+  const effectiveMcpRuntimeStatus = useMemo(() => {
+    const runtime = mcpCatalog?.runtime || {};
+    const connectedCount = Array.isArray(mcpCatalog?.items)
+      ? mcpCatalog.items.filter((item) => item?.runtime?.connected === true || item?.runtime?.status === "connected").length
+      : 0;
+    if (runtime.checking === true) {
+      return { ok: null, count: 0, error: "", status: "checking" };
+    }
+    if (runtime.ok === true && runtime.stale === false) {
+      return { ok: true, count: connectedCount, error: "", status: "ok" };
+    }
+    if (runtime.ok === false && runtime.stale === false) {
+      const error = String(runtime.error || "");
+      return {
+        ok: false,
+        count: 0,
+        error,
+        status: /timed out/i.test(error) ? "timeout" : "error"
+      };
+    }
+    return mcpRuntimeStatus;
+  }, [mcpCatalog, mcpRuntimeStatus]);
+  const effectiveMcpProbeRuntime = useMemo(() => {
+    const runtime = mcpCatalog?.runtime || {};
+    if (runtime.checking === true || runtime.stale === false || runtime.ok === true || runtime.ok === false) {
+      return runtime;
+    }
+    return {
+      ok: mcpRuntimeStatus.ok,
+      error: mcpRuntimeStatus.error,
+      source: "stream_probe",
+      checking: mcpRuntimeStatus.status === "checking",
+      lastCheckedAt: null,
+      ageSeconds: null
+    };
+  }, [mcpCatalog, mcpRuntimeStatus]);
 
   const toggleSidebarSection = (key) =>
     setSidebarSections((prev) => ({
@@ -376,7 +427,9 @@ export default function App() {
                   silentSeconds={silentSeconds}
                   isStreaming={isStreaming}
                   settings={settings}
-                  mcpRuntimeStatus={mcpRuntimeStatus}
+                  mcpRuntimeStatus={effectiveMcpRuntimeStatus}
+                  mcpProbeRuntime={effectiveMcpProbeRuntime}
+                  hookTimeline={hookTimeline}
                   showNoDeltaHint={showNoDeltaHint}
                   onDismissNoDelta={() => setExecutionState((prev) => ({ ...prev, dismissNoDelta: true }))}
                   onForceStopAndRetry={forceStopAndRetry}

@@ -217,12 +217,20 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
       await runDebugProbes({ queryInstance, res, traceId, debugSseEnabled, runtime });
     }
 
+    let mcpTogglePromise: Promise<void> | null = null;
     if (!settings.speedModeEnabled) {
-      await applyMcpToggle(queryInstance, workspace.root, settings.mcpEnabled);
-      if (!runtime.closed) {
-        writeSseData(res, { type: "data-mcp-toggled", data: { enabled: settings.mcpEnabled } });
-      }
-      writeDebugSse(res, runtime.closed, debugSseEnabled, traceId, "mcp_toggled", { enabled: settings.mcpEnabled });
+      mcpTogglePromise = applyMcpToggle(queryInstance, workspace.root, settings.mcpEnabled)
+        .then(() => {
+          if (!runtime.closed) {
+            writeSseData(res, { type: "data-mcp-toggled", data: { enabled: settings.mcpEnabled } });
+          }
+          writeDebugSse(res, runtime.closed, debugSseEnabled, traceId, "mcp_toggled", { enabled: settings.mcpEnabled });
+        })
+        .catch((error) => {
+          writeDebugSse(res, runtime.closed, debugSseEnabled, traceId, "mcp_toggled_error", {
+            error: error instanceof Error ? error.message : String(error)
+          });
+        });
     }
 
     const streamResult = await consumeQueryEvents({
@@ -242,7 +250,17 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
     streamEventCount = streamResult.streamEventCount;
     deltaCount = streamResult.deltaCount;
 
+    if (mcpTogglePromise) {
+      await mcpTogglePromise;
+    }
+
     if (!runtime.closed) {
+      let assistantText = streamResult.assistantText;
+      if (!assistantText.trim()) {
+        assistantText = "本轮未收到模型文本输出，请重试或检查上游模型/网络状态。";
+        writeSseData(res, { type: "text-delta", id: partId, delta: assistantText });
+      }
+
       turnTrace.completedAt = Date.now();
       const persistedTrace: StoredToolTrace = {
         startedAt: turnTrace.startedAt,
@@ -253,7 +271,7 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
         actions: turnTrace.actions
       };
 
-      await appendSessionTurn(workspace.root, sessionId, rawMessage, streamResult.assistantText, persistedTrace);
+      await appendSessionTurn(workspace.root, sessionId, rawMessage, assistantText, persistedTrace);
       logTrace(traceId, "stream_completed", {
         workspaceId: workspace.id,
         sessionId,
