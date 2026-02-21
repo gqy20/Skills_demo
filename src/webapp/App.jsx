@@ -12,12 +12,14 @@ import PreflightPanel from "./components/PreflightPanel.jsx";
 import SettingsModal from "./components/SettingsModal.jsx";
 import UsageStrip from "./components/UsageStrip.jsx";
 import { useWorkspaceApi } from "./hooks/useWorkspaceApi.js";
+import { useWorkspaceData } from "./hooks/useWorkspaceData.js";
 import { usePendingState } from "./hooks/usePendingState.js";
 import { useRuntimeUsage } from "./hooks/useRuntimeUsage.js";
+import { useFileEditorActions } from "./hooks/useFileEditorActions.js";
+import { useSessionActions } from "./hooks/useSessionActions.js";
 import {
   extractSlashCommand,
   flattenFiles,
-  normalizeSettings,
   parseError,
   shortText,
   toolLabel
@@ -407,181 +409,52 @@ export default function App() {
     setActiveTurnTrace(null);
   }, [activeTurnTrace, lastAssistantId]);
 
-  const loadWorkspaces = useCallback(async () => {
-    const data = await apiGetJson("/api/workspaces", { workspaceId: "" });
-    const items = Array.isArray(data.items) ? data.items : [];
-    setWorkspaces(items);
-    setCurrentWorkspaceId((prev) => prev || data.currentWorkspaceId || items[0]?.id || "");
-  }, [apiGetJson]);
-
-  const loadSettings = useCallback(async () => {
-    if (!currentWorkspaceId) return;
-    const data = await apiGetJson("/api/settings");
-    setSettings(normalizeSettings(data));
-    setDiagnostics((prev) => ({ ...prev, toolGateEnabled: data.toolGateEnabled !== false }));
-  }, [apiGetJson, currentWorkspaceId]);
-
-  const loadSkills = useCallback(async () => {
-    if (!currentWorkspaceId) return;
-    const data = await apiGetJson("/api/skills");
-    setSkills(Array.isArray(data.items) ? data.items : []);
-  }, [apiGetJson, currentWorkspaceId]);
-
-  const loadFiles = useCallback(async () => {
-    if (!currentWorkspaceId) return;
-    const data = await apiGetJson("/api/files", { depth: 2, path: "" });
-    setFiles(Array.isArray(data.items) ? data.items : []);
-  }, [apiGetJson, currentWorkspaceId]);
-
-  const loadMcps = useCallback(async () => {
-    if (!currentWorkspaceId) return;
-    setMcpCatalog((prev) => ({ ...prev, loading: true, error: "" }));
-    try {
-      const data = await apiGetJson("/api/mcps");
-      setMcpCatalog({
-        loading: false,
-        error: "",
-        mcpEnabled: data?.mcpEnabled !== false,
-        runtime: {
-          ok: typeof data?.runtime?.ok === "boolean" ? data.runtime.ok : null,
-          error: String(data?.runtime?.error || ""),
-          source: String(data?.runtime?.source || ""),
-          checking: data?.runtime?.checking === true,
-          lastCheckedAt: typeof data?.runtime?.lastCheckedAt === "number" ? data.runtime.lastCheckedAt : null,
-          ageSeconds: typeof data?.runtime?.ageSeconds === "number" ? data.runtime.ageSeconds : null,
-          stale: data?.runtime?.stale !== false
-        },
-        items: Array.isArray(data?.items) ? data.items : [],
-        updatedAt: Date.now()
-      });
-    } catch (error) {
-      setMcpCatalog((prev) => ({
-        ...prev,
-        loading: false,
-        error: parseError(error),
-        updatedAt: Date.now()
-      }));
-    }
-  }, [apiGetJson, currentWorkspaceId]);
-
-  const refreshMcps = useCallback(async () => {
-    if (!currentWorkspaceId) return;
-    setMcpCatalog((prev) => ({ ...prev, loading: true, error: "" }));
-    try {
-      await apiPostJson("/api/mcps/refresh", {});
-    } catch (error) {
-      setMcpCatalog((prev) => ({ ...prev, loading: false, error: parseError(error), updatedAt: Date.now() }));
-      return;
-    }
-    const delays = [0, 400, 1200, 2600];
-    for (let i = 0; i < delays.length; i += 1) {
-      if (delays[i] > 0) await new Promise((resolve) => setTimeout(resolve, delays[i]));
-      await loadMcps();
-    }
-  }, [apiPostJson, currentWorkspaceId, loadMcps]);
-
-  const openFile = useCallback(
-    async (filePath) => {
-      const nextPath = String(filePath || "").trim();
-      if (!nextPath || !currentWorkspaceId) return;
-      setFileLoading(true);
-      setFileError("");
-      try {
-        const data = await apiGetJson("/api/file", { path: nextPath });
-        const content = typeof data?.content === "string" ? data.content : "";
-        const pathValue = typeof data?.path === "string" ? data.path : nextPath;
-        setOpenedFile({
-          path: pathValue,
-          name: data?.name || pathValue.split("/").pop() || pathValue,
-          content,
-          savedContent: content,
-          mtimeMs: Number(data?.mtimeMs || 0),
-          size: Number(data?.size || 0),
-          dirty: false
-        });
-      } catch (error) {
-        setFileError(parseError(error));
-      } finally {
-        setFileLoading(false);
-      }
-    },
-    [apiGetJson, currentWorkspaceId]
-  );
-
-  const requestOpenFile = useCallback(
-    async (filePath, { force = false } = {}) => {
-      const nextPath = String(filePath || "").trim();
-      if (!nextPath) return;
-      if (openedFile?.path === nextPath && !fileLoading) return;
-      if (!force && openedFile?.dirty) {
-        const ok = window.confirm("当前文件有未保存修改，是否放弃并切换到其他文件？");
-        if (!ok) return;
-      }
-      await openFile(nextPath);
-    },
-    [fileLoading, openFile, openedFile?.dirty, openedFile?.path]
-  );
-
-  const saveOpenedFile = useCallback(async () => {
-    if (!openedFile?.path || fileLoading || fileSaving) return;
-    if (!openedFile.dirty) return;
-    setFileSaving(true);
-    setFileError("");
-    try {
-      const data = await apiPutJson("/api/file", {
-        path: openedFile.path,
-        content: openedFile.content,
-        expectedMtimeMs: openedFile.mtimeMs
-      });
-      const mtimeMs = Number(data?.mtimeMs || Date.now());
-      setOpenedFile((prev) =>
-        prev
-          ? {
-              ...prev,
-              savedContent: prev.content,
-              dirty: false,
-              mtimeMs,
-              size: Number(data?.size || prev.size || 0)
-            }
-          : prev
-      );
-      loadFiles().catch(() => {});
-    } catch (error) {
-      setFileError(parseError(error));
-    } finally {
-      setFileSaving(false);
-    }
-  }, [apiPutJson, fileLoading, fileSaving, loadFiles, openedFile]);
-
-  const loadSessions = useCallback(async () => {
-    if (!currentWorkspaceId) return;
-    setSessionsLoading(true);
-    setSessionsError("");
-    try {
-      const data = await apiGetJson("/api/sessions");
-      setSessions(Array.isArray(data.items) ? data.items : []);
-    } catch (error) {
-      setSessionsError(parseError(error));
-    } finally {
-      setSessionsLoading(false);
-    }
-  }, [apiGetJson, currentWorkspaceId]);
-
-  const loadFileSuggestions = useCallback(
-    async (rawQuery) => {
-      if (!currentWorkspaceId) return [];
-      const query = String(rawQuery || "")
-        .trim()
-        .replaceAll("\\", "/")
-        .replace(/^\/+/, "");
-      const slash = query.lastIndexOf("/");
-      const basePath = slash >= 0 ? query.slice(0, slash + 1).replace(/\/+$/, "") : "";
-      const depth = basePath ? 2 : 3;
-      const data = await apiGetJson("/api/files", { path: basePath, depth });
-      return Array.isArray(data?.items) ? data.items : [];
-    },
-    [apiGetJson, currentWorkspaceId]
-  );
+  const { loadWorkspaces, loadSettings, loadSkills, loadFiles, loadMcps, refreshMcps, loadSessions, loadFileSuggestions, saveSettings } =
+    useWorkspaceData({
+      currentWorkspaceId,
+      apiGetJson,
+      apiPostJson,
+      setWorkspaces,
+      setCurrentWorkspaceId,
+      setSettings,
+      setDiagnostics,
+      setSkills,
+      setFiles,
+      setMcpCatalog,
+      setSessions,
+      setSessionsLoading,
+      setSessionsError,
+      setCurrentSessionId
+    });
+  const { openSession, startNewSession } = useSessionActions({
+    apiGetJson,
+    isStreaming,
+    blockingPending,
+    setOpeningSessionId,
+    setMessages,
+    setTraceByAssistantId,
+    setCurrentSessionId,
+    setActiveTurnTrace,
+    resetPending,
+    setEvents,
+    setExecutionState,
+    setMcpRuntimeStatus,
+    setLastUserText,
+    resetRuntimeUsage
+  });
+  const { openFile, requestOpenFile, saveOpenedFile } = useFileEditorActions({
+    currentWorkspaceId,
+    apiGetJson,
+    apiPutJson,
+    fileLoading,
+    fileSaving,
+    openedFile,
+    setFileLoading,
+    setFileSaving,
+    setFileError,
+    setOpenedFile,
+    loadFiles
+  });
 
   useEffect(() => {
     loadWorkspaces().catch(() => {});
@@ -636,21 +509,6 @@ export default function App() {
     return () => clearInterval(timer);
   }, [isStreaming, blockingPending]);
 
-  const saveSettings = useCallback(
-    async (next) => {
-      const data = await apiPostJson("/api/settings", {
-        ...next,
-        keepExistingToken: next.authToken ? false : true,
-        keepExistingMineruKey: next.mineruApiKey ? false : true
-      });
-      setSettings(normalizeSettings(data));
-      setCurrentSessionId(null);
-      setDiagnostics((prev) => ({ ...prev, toolGateEnabled: data.toolGateEnabled !== false }));
-      return data;
-    },
-    [apiPostJson]
-  );
-
   const submitUserMessage = async (overrideText = null) => {
     const text = (overrideText ?? inputText).trim();
     if (!text || isStreaming || blockingPending) return;
@@ -700,80 +558,6 @@ export default function App() {
     } catch {
       // ignore clipboard failures in unsupported environments
     }
-  };
-
-  const openSession = async (sessionId) => {
-    if (!sessionId || isStreaming || blockingPending) return;
-    setOpeningSessionId(sessionId);
-    try {
-      const data = await apiGetJson(`/api/sessions/${encodeURIComponent(sessionId)}`);
-      const nextMessages = Array.isArray(data?.messages) ? data.messages : [];
-      setMessages(nextMessages);
-      const loadedTraceMap = {};
-      for (const msg of nextMessages) {
-        if (msg?.role !== "assistant" || !msg?.id) continue;
-        const trace = msg?.toolTrace;
-        if (!trace || typeof trace !== "object") continue;
-        loadedTraceMap[msg.id] = {
-          startedAt: Number(trace.startedAt || 0),
-          completedAt: Number(trace.completedAt || 0),
-          skills: typeof trace.skills === "object" && trace.skills ? trace.skills : {},
-          tools: typeof trace.tools === "object" && trace.tools ? trace.tools : {},
-          phases: Array.isArray(trace.phases) ? trace.phases : [],
-          actions: Array.isArray(trace.actions) ? trace.actions : []
-        };
-      }
-      setTraceByAssistantId(loadedTraceMap);
-      setCurrentSessionId(sessionId);
-      setActiveTurnTrace(null);
-      resetPending();
-      setEvents([]);
-      setExecutionState({
-        phase: "idle",
-        currentTool: "",
-        toolElapsedSeconds: 0,
-        lastDeltaAt: 0,
-        actions: [],
-        dismissNoDelta: false
-      });
-      setMcpRuntimeStatus({ ok: null, count: 0, error: "" });
-      for (let i = nextMessages.length - 1; i >= 0; i -= 1) {
-        const msg = nextMessages[i];
-        if (msg?.role !== "user" || !Array.isArray(msg?.parts)) continue;
-        const txt = msg.parts
-          .filter((p) => p?.type === "text")
-          .map((p) => p.text || "")
-          .join("")
-          .trim();
-        if (txt) {
-          setLastUserText(txt);
-          break;
-        }
-      }
-    } finally {
-      setOpeningSessionId("");
-    }
-  };
-
-  const startNewSession = () => {
-    if (isStreaming || blockingPending) return;
-    setCurrentSessionId(null);
-    setMessages([]);
-    setEvents([]);
-    setLastUserText("");
-    resetRuntimeUsage();
-    resetPending();
-    setExecutionState({
-      phase: "idle",
-      currentTool: "",
-      toolElapsedSeconds: 0,
-      lastDeltaAt: 0,
-      actions: [],
-      dismissNoDelta: false
-    });
-    setMcpRuntimeStatus({ ok: null, count: 0, error: "" });
-    setTraceByAssistantId({});
-    setActiveTurnTrace(null);
   };
 
   const forceStopAndRetry = async () => {
