@@ -32,6 +32,38 @@ export function parseEnvText(text) {
   return out;
 }
 
+export function inspectEnvText(text) {
+  const lines = String(text || "").split(/\r?\n/);
+  const invalidLineNumbers = [];
+  const seen = new Set();
+  const duplicateKeys = [];
+  let validCount = 0;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const raw = lines[i].trim();
+    if (!raw || raw.startsWith("#")) continue;
+    const idx = raw.indexOf("=");
+    if (idx <= 0) {
+      invalidLineNumbers.push(i + 1);
+      continue;
+    }
+    const key = raw.slice(0, idx).trim();
+    if (!key) {
+      invalidLineNumbers.push(i + 1);
+      continue;
+    }
+    if (seen.has(key)) duplicateKeys.push(key);
+    else seen.add(key);
+    validCount += 1;
+  }
+
+  return {
+    validCount,
+    invalidLineNumbers,
+    duplicateKeys
+  };
+}
+
 export function envMapToText(map) {
   if (!map || typeof map !== "object") return "";
   return Object.entries(map)

@@ -123,6 +123,7 @@ export function useWorkspaceData({
     async (next) => {
       const data = await apiPostJson("/api/settings", {
         ...next,
+        mcpEnvText: next.mcpEnvText,
         mcpEnvUpdates: parseEnvText(next.mcpEnvText),
         keepExistingToken: next.authToken ? false : true,
         keepExistingMineruKey: next.mineruApiKey ? false : true

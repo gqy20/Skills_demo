@@ -538,6 +538,7 @@ export default function App() {
         open={settingsOpen}
         settings={settings}
         setSettings={setSettings}
+        mcpCatalog={mcpCatalog}
         dangerConfirmText={dangerConfirmText}
         setDangerConfirmText={setDangerConfirmText}
         onClose={() => {

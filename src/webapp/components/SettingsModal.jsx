@@ -1,15 +1,63 @@
 import React from "react";
-import { permissionProfileLabel } from "../lib/chatUtils.js";
+import { inspectEnvText, parseEnvText, permissionProfileLabel } from "../lib/chatUtils.js";
 
 export default function SettingsModal({
   open,
   settings,
   setSettings,
+  mcpCatalog,
   dangerConfirmText,
   setDangerConfirmText,
   onClose,
   onSave
 }) {
+  const mcpEnvStats = React.useMemo(() => inspectEnvText(settings.mcpEnvText), [settings.mcpEnvText]);
+  const mcpEnvMap = React.useMemo(() => parseEnvText(settings.mcpEnvText), [settings.mcpEnvText]);
+  const mcpServers = Array.isArray(mcpCatalog?.items) ? mcpCatalog.items : [];
+  const requiredByServer = React.useMemo(
+    () =>
+      mcpServers
+        .map((item) => ({
+          name: String(item?.name || "unknown"),
+          requiredEnvVars: Array.isArray(item?.requiredEnvVars)
+            ? Array.from(new Set(item.requiredEnvVars.filter((k) => typeof k === "string" && k.trim()).map((k) => k.trim())))
+            : []
+        }))
+        .filter((item) => item.requiredEnvVars.length > 0),
+    [mcpServers]
+  );
+  const allRequiredKeys = React.useMemo(
+    () => Array.from(new Set(requiredByServer.flatMap((item) => item.requiredEnvVars))),
+    [requiredByServer]
+  );
+  const missingRequiredKeys = React.useMemo(
+    () => allRequiredKeys.filter((key) => !String(mcpEnvMap[key] || "").trim()),
+    [allRequiredKeys, mcpEnvMap]
+  );
+  const upsertMcpEnvKeys = React.useCallback(
+    (keys) => {
+      const normalized = Array.from(
+        new Set(
+          (Array.isArray(keys) ? keys : [])
+            .map((key) => String(key || "").trim())
+            .filter(Boolean)
+        )
+      );
+      if (normalized.length === 0) return;
+      setSettings((prev) => {
+        const current = parseEnvText(prev.mcpEnvText);
+        for (const key of normalized) {
+          if (!Object.prototype.hasOwnProperty.call(current, key)) current[key] = "";
+        }
+        const nextText = Object.entries(current)
+          .map(([key, value]) => `${key}=${value}`)
+          .join("\n");
+        return { ...prev, mcpEnvText: nextText };
+      });
+    },
+    [setSettings]
+  );
+
   return (
     <div
       className={`modal ${open ? "" : "hidden"}`}
@@ -43,11 +91,11 @@ export default function SettingsModal({
             onClose();
           }}
         >
-          <label>ANTHROPIC_MODEL</label>
+          <label>模型（ANTHROPIC_MODEL）</label>
           <input value={settings.model} onChange={(e) => setSettings((s) => ({ ...s, model: e.target.value }))} />
-          <label>ANTHROPIC_BASE_URL</label>
+          <label>接口地址（ANTHROPIC_BASE_URL）</label>
           <input value={settings.baseUrl} onChange={(e) => setSettings((s) => ({ ...s, baseUrl: e.target.value }))} />
-          <label>ANTHROPIC_AUTH_TOKEN (API Key)</label>
+          <label>API Key（ANTHROPIC_AUTH_TOKEN）</label>
           <input
             type="password"
             value={settings.authToken}
@@ -61,13 +109,73 @@ export default function SettingsModal({
             placeholder={settings.hasMineruKey ? `已保存: ${settings.mineruKeyPreview}` : "请输入 MinerU API Key"}
             onChange={(e) => setSettings((s) => ({ ...s, mineruApiKey: e.target.value }))}
           />
-          <label>MCP 环境变量（KEY=VALUE，每行一个）</label>
+          <label>MCP 环境变量</label>
+          <p className="settings-hint">每行一个 `KEY=VALUE`，支持 `#` 注释。保存时将按当前文本全量覆盖 MCP 变量。</p>
           <textarea
+            className="settings-textarea"
             rows={6}
             value={settings.mcpEnvText}
             placeholder={"NOTION_TOKEN=ntn_xxx\nZOTERO_API_KEY=xxx\nZOTERO_LIBRARY_ID=123456"}
+            spellCheck={false}
             onChange={(e) => setSettings((s) => ({ ...s, mcpEnvText: e.target.value }))}
           />
+          <div className="settings-inline-meta">
+            <span className="meta-chip">有效项: {mcpEnvStats.validCount}</span>
+            {allRequiredKeys.length > 0 && (
+              <span className="meta-chip">MCP 必需: {allRequiredKeys.length}</span>
+            )}
+            {missingRequiredKeys.length > 0 && (
+              <span className="meta-chip warn">待补齐: {missingRequiredKeys.length}</span>
+            )}
+            {mcpEnvStats.invalidLineNumbers.length > 0 && (
+              <span className="meta-chip warn">无效行: {mcpEnvStats.invalidLineNumbers.join(", ")}</span>
+            )}
+            {mcpEnvStats.duplicateKeys.length > 0 && (
+              <span className="meta-chip warn">重复 Key: {Array.from(new Set(mcpEnvStats.duplicateKeys)).join(", ")}</span>
+            )}
+          </div>
+          {requiredByServer.length > 0 && (
+            <div className="settings-mcp-required">
+              <div className="settings-mcp-required-head">
+                <p>检测到 .mcp.json 所需环境变量</p>
+                {missingRequiredKeys.length > 0 && (
+                  <button type="button" className="sidebar-mini-btn" onClick={() => upsertMcpEnvKeys(missingRequiredKeys)}>
+                    补齐全部缺失
+                  </button>
+                )}
+              </div>
+              <ul className="settings-mcp-required-list">
+                {requiredByServer.map((server) => {
+                  const serverMissing = server.requiredEnvVars.filter((key) => !String(mcpEnvMap[key] || "").trim());
+                  return (
+                    <li key={server.name} className="settings-mcp-required-item">
+                      <div className="settings-mcp-required-server">
+                        <strong>{server.name}</strong>
+                        <span className="meta-chip">
+                          {server.requiredEnvVars.length - serverMissing.length}/{server.requiredEnvVars.length} 已配置
+                        </span>
+                        {serverMissing.length > 0 && (
+                          <button type="button" className="sidebar-mini-btn" onClick={() => upsertMcpEnvKeys(serverMissing)}>
+                            补齐该服务
+                          </button>
+                        )}
+                      </div>
+                      <div className="settings-mcp-required-keys">
+                        {server.requiredEnvVars.map((key) => {
+                          const filled = Boolean(String(mcpEnvMap[key] || "").trim());
+                          return (
+                            <span key={`${server.name}:${key}`} className={`meta-chip ${filled ? "" : "warn"}`}>
+                              {key}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
           <label>权限模式</label>
           <select
             value={settings.permissionProfile}

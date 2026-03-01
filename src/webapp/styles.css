@@ -1566,6 +1566,21 @@ button:disabled {
   font: inherit;
 }
 
+.settings-form .settings-textarea {
+  width: 100%;
+  min-height: 128px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-12);
+  padding: 10px 12px;
+  font: 500 var(--fs-14) / 1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
+  resize: vertical;
+}
+
+.settings-form .settings-textarea::placeholder {
+  color: #94a3b8;
+}
+
 .settings-form select {
   width: 100%;
   border: 1px solid var(--line);
@@ -1574,6 +1589,77 @@ button:disabled {
   font: inherit;
   background: #fff;
   color: #334155;
+}
+
+.settings-hint {
+  margin: -2px 0 6px;
+  font-size: var(--fs-12);
+  color: #64748b;
+}
+
+.settings-inline-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.settings-mcp-required {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-12);
+  padding: 10px;
+  background: #f8fafc;
+}
+
+.settings-mcp-required-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.settings-mcp-required-head p {
+  margin: 0;
+  color: #334155;
+  font-size: var(--fs-14);
+}
+
+.settings-mcp-required-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-mcp-required-item {
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: var(--r-10);
+  padding: 8px;
+  background: #fff;
+}
+
+.settings-mcp-required-server {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-mcp-required-keys {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.meta-chip.warn {
+  border-color: rgba(217, 119, 6, 0.3);
+  background: rgba(255, 247, 237, 0.9);
+  color: #9a3412;
 }
 
 .settings-warning {

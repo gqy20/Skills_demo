@@ -28,6 +28,7 @@ describe("SettingsModal", () => {
         open: false,
         settings: baseSettings,
         setSettings: vi.fn(),
+        mcpCatalog: { items: [] },
         dangerConfirmText: "",
         setDangerConfirmText: vi.fn(),
         onClose: vi.fn(),
@@ -43,6 +44,9 @@ describe("SettingsModal", () => {
         open: true,
         settings: { ...baseSettings, permissionProfile: "full_auto" },
         setSettings: vi.fn(),
+        mcpCatalog: {
+          items: [{ name: "demo", requiredEnvVars: ["NOTION_TOKEN", "ZOTERO_API_KEY"] }]
+        },
         dangerConfirmText: "",
         setDangerConfirmText: vi.fn(),
         onClose: vi.fn(),
@@ -51,5 +55,7 @@ describe("SettingsModal", () => {
     );
     expect(html).toContain("I UNDERSTAND");
     expect(html).toContain("全部允许（高风险）");
+    expect(html).toContain("检测到 .mcp.json 所需环境变量");
+    expect(html).toContain("NOTION_TOKEN");
   });
 });

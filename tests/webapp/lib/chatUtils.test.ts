@@ -4,6 +4,7 @@ import {
   flattenFiles,
   formatElapsed,
   formatPhaseLabel,
+  inspectEnvText,
   looksLikeToolClaim,
   normalizeSettings,
   parseMcpToolName,
@@ -74,6 +75,15 @@ describe("chatUtils", () => {
       permissionProfile: "accept_edits",
       hasToken: true,
       tokenPreview: "a...b"
+    });
+  });
+
+  it("inspects env text stats", () => {
+    const out = inspectEnvText("A=1\nBAD\nA=2\n#c");
+    expect(out).toEqual({
+      validCount: 2,
+      invalidLineNumbers: [2],
+      duplicateKeys: ["A"]
     });
   });
 });

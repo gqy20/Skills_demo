@@ -220,6 +220,53 @@ describe("registerSystemRoutes", () => {
     });
   });
 
+  it("replaces mcp env map from mcpEnvText in POST /api/settings", async () => {
+    const ws = await makeWorkspace();
+    process.env.AGENT_WORKSPACE_ROOT = ws;
+    process.env.AGENT_WORKSPACES = "";
+    await writeSettings(ws, {
+      ...defaults,
+      mcpEnv: {
+        OLD_KEY: "old",
+        KEEP_ME: "legacy"
+      }
+    });
+
+    const registry = new WorkspaceRegistry();
+    const { app, posts, gets } = makeApp();
+    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults, activeQueries: new Map() });
+
+    const postRes = makeMockRes();
+    await posts.get("/api/settings")!(
+      {
+        body: {
+          mcpEnvText: "NEW_KEY=new-value\n# comment\nEMPTY=\nKEEP_ME=updated"
+        },
+        query: {}
+      } as Request,
+      postRes
+    );
+
+    expect(postRes.statusCode).toBe(200);
+    expect(postRes.body).toMatchObject({
+      ok: true,
+      mcpEnv: {
+        NEW_KEY: "new-value",
+        KEEP_ME: "updated"
+      }
+    });
+
+    const getRes = makeMockRes();
+    await gets.get("/api/settings")!({ body: {}, query: {} } as Request, getRes);
+    expect(getRes.statusCode).toBe(200);
+    expect(getRes.body).toMatchObject({
+      mcpEnv: {
+        NEW_KEY: "new-value",
+        KEEP_ME: "updated"
+      }
+    });
+  });
+
   it("reads and saves text file via /api/file", async () => {
     const ws = await makeWorkspace();
     await mkdir(path.join(ws, "src"), { recursive: true });

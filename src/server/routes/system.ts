@@ -41,6 +41,21 @@ type McpProbeSnapshot = {
 
 export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, activeQueries }: SystemRoutesDeps): void {
   const mcpProbeCache = new Map<string, McpProbeSnapshot>();
+  const parseMcpEnvText = (text: string): Record<string, string> => {
+    const out: Record<string, string> = {};
+    const lines = String(text || "").split(/\r?\n/);
+    for (const line of lines) {
+      const raw = line.trim();
+      if (!raw || raw.startsWith("#")) continue;
+      const idx = raw.indexOf("=");
+      if (idx <= 0) continue;
+      const key = raw.slice(0, idx).trim();
+      const value = raw.slice(idx + 1).trim();
+      if (!key || !value) continue;
+      out[key] = value;
+    }
+    return out;
+  };
   const settingsEnvValue = (name: string, settings: RuntimeSettings): string => {
     const fromMap = String(settings.mcpEnv?.[name] || "").trim();
     if (fromMap) return fromMap;
@@ -421,18 +436,24 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
     const baseUrl = typeof req.body?.baseUrl === "string" ? req.body.baseUrl.trim() : current.baseUrl;
     const tokenInput = typeof req.body?.authToken === "string" ? req.body.authToken.trim() : "";
     const mineruKeyInput = typeof req.body?.mineruApiKey === "string" ? req.body.mineruApiKey.trim() : "";
-    const mcpEnvUpdatesRaw = req.body?.mcpEnvUpdates;
-    const mcpEnvUpdates =
-      mcpEnvUpdatesRaw && typeof mcpEnvUpdatesRaw === "object" && !Array.isArray(mcpEnvUpdatesRaw)
-        ? (mcpEnvUpdatesRaw as Record<string, unknown>)
-        : {};
-    const nextMcpEnv: Record<string, string> = { ...(current.mcpEnv || {}) };
-    for (const [rawKey, rawValue] of Object.entries(mcpEnvUpdates)) {
-      const key = String(rawKey || "").trim();
-      if (!key) continue;
-      const value = typeof rawValue === "string" ? rawValue.trim() : "";
-      if (!value) delete nextMcpEnv[key];
-      else nextMcpEnv[key] = value;
+    const mcpEnvText = typeof req.body?.mcpEnvText === "string" ? req.body.mcpEnvText : null;
+    const nextMcpEnv: Record<string, string> = {};
+    if (mcpEnvText !== null) {
+      Object.assign(nextMcpEnv, parseMcpEnvText(mcpEnvText));
+    } else {
+      const mcpEnvUpdatesRaw = req.body?.mcpEnvUpdates;
+      const mcpEnvUpdates =
+        mcpEnvUpdatesRaw && typeof mcpEnvUpdatesRaw === "object" && !Array.isArray(mcpEnvUpdatesRaw)
+          ? (mcpEnvUpdatesRaw as Record<string, unknown>)
+          : {};
+      Object.assign(nextMcpEnv, current.mcpEnv || {});
+      for (const [rawKey, rawValue] of Object.entries(mcpEnvUpdates)) {
+        const key = String(rawKey || "").trim();
+        if (!key) continue;
+        const value = typeof rawValue === "string" ? rawValue.trim() : "";
+        if (!value) delete nextMcpEnv[key];
+        else nextMcpEnv[key] = value;
+      }
     }
     const permissionProfileRaw = req.body?.permissionProfile;
     const permissionProfile =
