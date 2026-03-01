@@ -26,7 +26,6 @@ describe("ChatHeader", () => {
     expect(html).toContain("Model: glm-5");
     expect(html).toContain("Key: 已配置");
     expect(html).toContain("MCP ON");
-    expect(html).toContain("MCP: ON");
     expect(html).toContain("设置");
     expect(html).toContain("权限: 标准");
   });
@@ -51,7 +50,6 @@ describe("ChatHeader", () => {
     expect(html).toContain("侧栏");
     expect(html).toContain("Key: 未配置");
     expect(html).toContain("MCP OFF");
-    expect(html).toContain("MCP: OFF");
     expect(html).toContain("权限: 全部允许");
   });
 });

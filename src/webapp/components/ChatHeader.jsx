@@ -29,7 +29,6 @@ export default function ChatHeader({
         <span className="meta-chip">Workspace: {currentWorkspaceId || "-"}</span>
         <span className="meta-chip">Model: {settings.model || "-"}</span>
         <span className="meta-chip">Key: {settings.hasToken ? "已配置" : "未配置"}</span>
-        <span className="meta-chip">MCP: {settings.mcpEnabled ? "ON" : "OFF"}</span>
         <span className="meta-chip">权限: {permissionProfileLabel(settings.permissionProfile)}</span>
       </div>
     </header>
