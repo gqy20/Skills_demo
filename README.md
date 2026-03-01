@@ -98,11 +98,6 @@ npm start
 - `ANTHROPIC_BASE_URL`：默认 `https://open.bigmodel.cn/api/anthropic`
 - `ANTHROPIC_AUTH_TOKEN`：默认空
 - `MINERU_API_KEY`：默认空
-- `NOTION_TOKEN`：Notion MCP token（默认空）
-- `ZOTERO_LOCAL`：Zotero MCP 是否走本地 API（默认建议 `true`）
-- `ZOTERO_API_KEY`：Zotero Web API key（本地模式可留空）
-- `ZOTERO_LIBRARY_ID`：Zotero 库 ID（Web API 模式必填）
-- `ZOTERO_LIBRARY_TYPE`：Zotero 库类型，`user` 或 `group`
 - `AGENT_WEB_DEBUG=1`：启用后端 debug 探针
 - `AGENT_WEB_DEBUG_SSE=1`：通过 SSE 下发 debug 事件
 
@@ -110,39 +105,6 @@ npm start
 
 - `AGENT_WORKSPACE_ROOT`：主工作区（默认当前进程目录）
 - `AGENT_WORKSPACES`：附加工作区列表（逗号或换行分隔）
-
-### Notion / Zotero Token 获取
-
-#### 1) NOTION_TOKEN（用于 `@notionhq/notion-mcp-server`）
-
-1. 打开 Notion Integrations 页面：`https://www.notion.so/profile/integrations`
-2. 创建一个 **Internal Integration**
-3. 在 Integration 页面复制 `Internal Integration Token`（形如 `ntn_...`）
-4. 将 token 填入 `.env` 的 `NOTION_TOKEN=...`
-5. 在 Notion 页面/数据库里把该 Integration 加入访问权限（否则 MCP 可连通但读不到内容）
-
-#### 2) Zotero（两种模式）
-
-- **本地模式（推荐先用）**  
-  1. 启动 Zotero 客户端，并确认本地 API 可用  
-  2. `.env` 设置：`ZOTERO_LOCAL=true`  
-  3. 该模式通常不需要 `ZOTERO_API_KEY` 和 `ZOTERO_LIBRARY_ID`
-
-- **Web API 模式（远程/无本机 Zotero）**  
-  1. 打开 `https://www.zotero.org/settings/keys` 创建 API key  
-  2. 在 `https://www.zotero.org/settings/security` 或个人主页确认 `libraryId`（用户库通常是数字 ID）  
-  3. `.env` 设置：  
-     - `ZOTERO_LOCAL=false`  
-     - `ZOTERO_API_KEY=...`  
-     - `ZOTERO_LIBRARY_ID=...`  
-     - `ZOTERO_LIBRARY_TYPE=user`（若是群组库则填 `group`）
-
-#### 3) 生效与验证
-
-1. 修改 `.env` 后重启服务（`npm run dev`）
-2. 打开侧栏 `MCP Servers`，点击“刷新”
-3. 若看到 `missing_env`，按提示补齐对应变量
-4. 若显示“在线”，即可在对话中调用相关 MCP 工具
 
 ## 运行时设置（Web 内可改）
 
