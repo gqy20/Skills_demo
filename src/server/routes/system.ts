@@ -63,7 +63,6 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
     const fromMap = String(settings.mcpEnv?.[name] || "").trim();
     if (fromMap) return fromMap;
     if (name === "ANTHROPIC_AUTH_TOKEN") return settings.authToken;
-    if (name === "MINERU_API_KEY") return settings.mineruApiKey;
     return "";
   };
 
@@ -194,9 +193,7 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
       debugEnabled: settings.debugEnabled,
       debugSseEnabled: settings.debugSseEnabled,
       hasToken: Boolean(settings.authToken),
-      tokenPreview: maskToken(settings.authToken),
-      hasMineruKey: Boolean(settings.mineruApiKey),
-      mineruKeyPreview: maskToken(settings.mineruApiKey)
+      tokenPreview: maskToken(settings.authToken)
     });
   });
 
@@ -444,7 +441,6 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
     const model = typeof req.body?.model === "string" ? req.body.model.trim() : current.model;
     const baseUrl = typeof req.body?.baseUrl === "string" ? req.body.baseUrl.trim() : current.baseUrl;
     const tokenInput = typeof req.body?.authToken === "string" ? req.body.authToken.trim() : "";
-    const mineruKeyInput = typeof req.body?.mineruApiKey === "string" ? req.body.mineruApiKey.trim() : "";
     const mcpEnvText = typeof req.body?.mcpEnvText === "string" ? req.body.mcpEnvText : null;
     const nextMcpEnv: Record<string, string> = {};
     if (mcpEnvText !== null) {
@@ -479,7 +475,6 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
     const debugSseEnabled =
       typeof req.body?.debugSseEnabled === "boolean" ? req.body.debugSseEnabled : current.debugSseEnabled;
     const keepExistingToken = req.body?.keepExistingToken !== false;
-    const keepExistingMineruKey = req.body?.keepExistingMineruKey !== false;
     const syncDotenv = req.body?.syncDotenv === true;
     const syncConfirmText = typeof req.body?.syncConfirmText === "string" ? req.body.syncConfirmText.trim() : "";
     if (syncDotenv && syncConfirmText !== ENV_SYNC_CONFIRM_TEXT) {
@@ -494,7 +489,6 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
       model: model || current.model,
       baseUrl: baseUrl || current.baseUrl,
       authToken: tokenInput ? tokenInput : keepExistingToken ? current.authToken : "",
-      mineruApiKey: mineruKeyInput ? mineruKeyInput : keepExistingMineruKey ? current.mineruApiKey : "",
       mcpEnv: nextMcpEnv,
       permissionProfile,
       mcpEnabled,
@@ -530,8 +524,6 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
       debugSseEnabled: next.debugSseEnabled,
       hasToken: Boolean(next.authToken),
       tokenPreview: maskToken(next.authToken),
-      hasMineruKey: Boolean(next.mineruApiKey),
-      mineruKeyPreview: maskToken(next.mineruApiKey),
       dotenvSync
     });
   });

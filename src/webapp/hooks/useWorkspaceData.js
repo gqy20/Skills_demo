@@ -125,8 +125,7 @@ export function useWorkspaceData({
         ...next,
         mcpEnvText: next.mcpEnvText,
         mcpEnvUpdates: parseEnvText(next.mcpEnvText),
-        keepExistingToken: next.authToken ? false : true,
-        keepExistingMineruKey: next.mineruApiKey ? false : true
+        keepExistingToken: next.authToken ? false : true
       });
       setSettings(normalizeSettings(data));
       setCurrentSessionId(null);

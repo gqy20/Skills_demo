@@ -27,9 +27,6 @@ export default function ChatHeader({
             <button className={`btn-secondary ${settings.hasToken ? "" : "is-off"}`} type="button" onClick={onOpenSettings}>
               API Key: {settings.hasToken ? "已配置" : "未配置"}
             </button>
-            <button className={`btn-secondary ${settings.hasMineruKey ? "" : "is-off"}`} type="button" onClick={onOpenSettings}>
-              MinerU: {settings.hasMineruKey ? "已配置" : "未配置"}
-            </button>
             <button className={`btn-secondary ${settings.mcpEnabled ? "" : "is-off"}`} type="button" onClick={onToggleMcp}>
               MCP: {settings.mcpEnabled ? "ON" : "OFF"}
             </button>

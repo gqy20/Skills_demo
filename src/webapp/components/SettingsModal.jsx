@@ -105,20 +105,13 @@ export default function SettingsModal({
             placeholder={settings.hasToken ? `已保存: ${settings.tokenPreview}` : "请输入 API Key"}
             onChange={(e) => setSettings((s) => ({ ...s, authToken: e.target.value }))}
           />
-          <label>MINERU_API_KEY</label>
-          <input
-            type="password"
-            value={settings.mineruApiKey}
-            placeholder={settings.hasMineruKey ? `已保存: ${settings.mineruKeyPreview}` : "请输入 MinerU API Key"}
-            onChange={(e) => setSettings((s) => ({ ...s, mineruApiKey: e.target.value }))}
-          />
           <label>MCP 环境变量</label>
-          <p className="settings-hint">每行一个 `KEY=VALUE`，支持 `#` 注释。保存时将按当前文本全量覆盖 MCP 变量。</p>
+          <p className="settings-hint">每行一个 `KEY=VALUE`，支持 `#` 注释。包含 `MINERU_API_KEY`、`NOTION_TOKEN` 等密钥。</p>
           <textarea
             className="settings-textarea"
             rows={6}
             value={settings.mcpEnvText}
-            placeholder={"NOTION_TOKEN=ntn_xxx\nZOTERO_API_KEY=xxx\nZOTERO_LIBRARY_ID=123456"}
+            placeholder={"MINERU_API_KEY=xxx\nNOTION_TOKEN=ntn_xxx\nZOTERO_API_KEY=xxx\nZOTERO_LIBRARY_ID=123456"}
             spellCheck={false}
             onChange={(e) => setSettings((s) => ({ ...s, mcpEnvText: e.target.value }))}
           />

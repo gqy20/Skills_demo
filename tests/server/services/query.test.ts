@@ -6,8 +6,7 @@ const baseSettings: RuntimeSettings = {
   model: "m1",
   baseUrl: "https://example.com",
   authToken: "token",
-  mineruApiKey: "mineru",
-  mcpEnv: {},
+  mcpEnv: { MINERU_API_KEY: "mineru" },
   permissionProfile: "standard",
   mcpEnabled: true,
   speedModeEnabled: false,
@@ -55,6 +54,7 @@ describe("query service", () => {
     expect(options.settingSources).toEqual(["project"]);
     expect(options.thinking).toBeUndefined();
     expect(options.env?.ANTHROPIC_MODEL).toBe("m1");
+    expect(options.env?.MINERU_API_KEY).toBe("mineru");
   });
 
   it("builds speed mode options with disabled thinking and sessionId", () => {

@@ -31,12 +31,18 @@ export async function readSettings(workspaceRoot: string, defaults: RuntimeSetti
       parsed.permissionProfile === "full_auto"
         ? parsed.permissionProfile
         : defaults.permissionProfile;
+    const mergedMcpEnv = { ...defaults.mcpEnv, ...normalizeMcpEnv(parsed.mcpEnv) };
+    const legacyMineru =
+      typeof (parsed as { mineruApiKey?: unknown }).mineruApiKey === "string"
+        ? (parsed as { mineruApiKey: string }).mineruApiKey.trim()
+        : "";
+    if (legacyMineru && !mergedMcpEnv.MINERU_API_KEY) mergedMcpEnv.MINERU_API_KEY = legacyMineru;
+
     return {
       model: parsed.model || defaults.model,
       baseUrl: parsed.baseUrl || defaults.baseUrl,
       authToken: parsed.authToken || defaults.authToken,
-      mineruApiKey: parsed.mineruApiKey || defaults.mineruApiKey,
-      mcpEnv: { ...defaults.mcpEnv, ...normalizeMcpEnv(parsed.mcpEnv) },
+      mcpEnv: mergedMcpEnv,
       permissionProfile,
       mcpEnabled: typeof parsed.mcpEnabled === "boolean" ? parsed.mcpEnabled : defaults.mcpEnabled,
       speedModeEnabled:

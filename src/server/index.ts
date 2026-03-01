@@ -35,7 +35,6 @@ const defaultSettings: RuntimeSettings = {
   model: process.env.ANTHROPIC_MODEL || "glm-5",
   baseUrl: process.env.ANTHROPIC_BASE_URL || "https://open.bigmodel.cn/api/anthropic",
   authToken: process.env.ANTHROPIC_AUTH_TOKEN || "",
-  mineruApiKey: process.env.MINERU_API_KEY || "",
   mcpEnv: {},
   permissionProfile: "standard",
   mcpEnabled: true,

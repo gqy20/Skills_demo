@@ -14,7 +14,6 @@ describe("ChatHeader", () => {
         controlsRef: { current: null },
         settings: {
           hasToken: true,
-          hasMineruKey: false,
           mcpEnabled: true,
           model: "glm-5",
           permissionProfile: "standard"
@@ -43,7 +42,6 @@ describe("ChatHeader", () => {
         controlsRef: { current: null },
         settings: {
           hasToken: false,
-          hasMineruKey: false,
           mcpEnabled: false,
           model: "",
           permissionProfile: "full_auto"

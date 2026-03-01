@@ -24,7 +24,6 @@ const defaults: RuntimeSettings = {
   model: "m1",
   baseUrl: "https://example.com",
   authToken: "",
-  mineruApiKey: "",
   mcpEnv: {},
   permissionProfile: "standard",
   mcpEnabled: true,
@@ -176,7 +175,6 @@ describe("registerSystemRoutes", () => {
     await writeSettings(ws, {
       ...defaults,
       authToken: "old-token",
-      mineruApiKey: "old-mineru",
       speedModeEnabled: false
     });
 
@@ -191,9 +189,7 @@ describe("registerSystemRoutes", () => {
           model: "  next-model  ",
           baseUrl: "  https://next.example  ",
           authToken: "",
-          mineruApiKey: "",
           keepExistingToken: true,
-          keepExistingMineruKey: false,
           speedModeEnabled: true
         },
         query: {}
@@ -207,8 +203,7 @@ describe("registerSystemRoutes", () => {
       model: "next-model",
       baseUrl: "https://next.example",
       speedModeEnabled: true,
-      hasToken: true,
-      hasMineruKey: false
+      hasToken: true
     });
 
     const getRes = makeMockRes();
@@ -218,8 +213,7 @@ describe("registerSystemRoutes", () => {
       model: "next-model",
       baseUrl: "https://next.example",
       speedModeEnabled: true,
-      hasToken: true,
-      hasMineruKey: false
+      hasToken: true
     });
   });
 
@@ -419,8 +413,8 @@ describe("registerSystemRoutes", () => {
       model: "model-from-settings",
       baseUrl: "https://settings.example",
       authToken: "token-from-settings",
-      mineruApiKey: "mineru-from-settings",
       mcpEnv: {
+        MINERU_API_KEY: "mineru-from-settings",
         NOTION_TOKEN: "ntn_sync_value",
         ZOTERO_API_KEY: "zotero_sync_value"
       }

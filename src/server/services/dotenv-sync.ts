@@ -22,8 +22,7 @@ function buildManagedEnv(settings: RuntimeSettings): Record<string, string> {
   const out: Record<string, string> = {
     ANTHROPIC_MODEL: normalizeEnvValue(settings.model),
     ANTHROPIC_BASE_URL: normalizeEnvValue(settings.baseUrl),
-    ANTHROPIC_AUTH_TOKEN: normalizeEnvValue(settings.authToken),
-    MINERU_API_KEY: normalizeEnvValue(settings.mineruApiKey)
+    ANTHROPIC_AUTH_TOKEN: normalizeEnvValue(settings.authToken)
   };
   for (const [rawKey, rawValue] of Object.entries(settings.mcpEnv || {})) {
     const key = String(rawKey || "").trim();

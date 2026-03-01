@@ -193,9 +193,6 @@ export function normalizeSettings(data) {
     authToken: "",
     hasToken: data?.hasToken === true,
     tokenPreview: data?.tokenPreview || "",
-    mineruApiKey: "",
-    hasMineruKey: data?.hasMineruKey === true,
-    mineruKeyPreview: data?.mineruKeyPreview || "",
     mcpEnvText: envMapToText(data?.mcpEnv),
     permissionProfile:
       data?.permissionProfile === "full_auto" || data?.permissionProfile === "accept_edits"
