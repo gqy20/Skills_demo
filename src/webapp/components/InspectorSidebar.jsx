@@ -211,7 +211,7 @@ export default function InspectorSidebar({
                   <button type="button" className="sidebar-mini-btn" onClick={reloadSessions} disabled={sessionsLoading}>
                     刷新
                   </button>
-                  <button type="button" className="sidebar-mini-btn is-primary" onClick={startNewSession}>
+                  <button type="button" className="sidebar-mini-btn" onClick={startNewSession}>
                     新会话
                   </button>
                 </div>

@@ -22,12 +22,16 @@ export default function PendingOverlay({
             <>
               <pre className="output">{JSON.stringify(activePending.input || {}, null, 2)}</pre>
               <div className="pending-actions">
-                <button type="button" onClick={() => submitPending(activePending.requestId, { behavior: "allow", alwaysAllow: false })}>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => submitPending(activePending.requestId, { behavior: "allow", alwaysAllow: false })}
+                >
                   允许
                 </button>
                 <button
                   type="button"
-                  className="btn-secondary"
+                  className="btn-danger"
                   onClick={() => submitPending(activePending.requestId, { behavior: "deny", message: "User denied from web UI." })}
                 >
                   拒绝
@@ -63,11 +67,17 @@ export default function PendingOverlay({
                   })}
               </fieldset>
               <div className="pending-actions">
-                <button type="button" disabled={draft.index <= 0} onClick={() => setAskDraft({ ...draft, index: Math.max(0, draft.index - 1) })}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={draft.index <= 0}
+                  onClick={() => setAskDraft({ ...draft, index: Math.max(0, draft.index - 1) })}
+                >
                   上一题
                 </button>
                 <button
                   type="button"
+                  className="btn-secondary"
                   disabled={draft.index >= askQuestions.length - 1}
                   onClick={() => setAskDraft({ ...draft, index: Math.min(askQuestions.length - 1, draft.index + 1) })}
                 >
@@ -75,6 +85,7 @@ export default function PendingOverlay({
                 </button>
                 <button
                   type="button"
+                  className="btn-primary"
                   onClick={() =>
                     submitPending(activePending.requestId, {
                       behavior: "allow",
@@ -86,7 +97,7 @@ export default function PendingOverlay({
                 </button>
                 <button
                   type="button"
-                  className="btn-secondary"
+                  className="btn-danger"
                   onClick={() => submitPending(activePending.requestId, { behavior: "deny", message: "User denied AskUserQuestion." })}
                 >
                   拒绝

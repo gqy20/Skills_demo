@@ -51,7 +51,6 @@ export default function App() {
   const [hookTimeline, setHookTimeline] = useState([]);
   const [skills, setSkills] = useState([]);
   const [files, setFiles] = useState([]);
-  const [controlsOpen, setControlsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sessions, setSessions] = useState([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
@@ -106,7 +105,6 @@ export default function App() {
   const [activeTurnTrace, setActiveTurnTrace] = useState(null);
   const [traceByAssistantId, setTraceByAssistantId] = useState({});
   const [nowTick, setNowTick] = useState(Date.now());
-  const controlsRef = useRef(null);
   const textareaRef = useRef(null);
   const timelineRef = useRef(null);
   const currentSessionIdRef = useRef(null);
@@ -286,8 +284,6 @@ export default function App() {
     setFileLoading,
     setFileSaving,
     setFileError,
-    controlsRef,
-    setControlsOpen,
     timelineRef,
     messages,
     isStreaming,
@@ -392,18 +388,13 @@ export default function App() {
           <ChatHeader
             sidebarOpen={sidebarOpen}
             setSidebarOpen={setSidebarOpen}
-            controlsOpen={controlsOpen}
-            setControlsOpen={setControlsOpen}
-            controlsRef={controlsRef}
             settings={settings}
             currentWorkspaceId={currentWorkspaceId}
             onOpenSettings={() => {
-              setControlsOpen(false);
               setSettingsOpen(true);
             }}
             onToggleMcp={async () => {
               await saveSettings({ ...settings, mcpEnabled: !settings.mcpEnabled });
-              setControlsOpen(false);
             }}
           />
 

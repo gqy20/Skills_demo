@@ -9,9 +9,6 @@ describe("ChatHeader", () => {
       React.createElement(ChatHeader, {
         sidebarOpen: true,
         setSidebarOpen: vi.fn(),
-        controlsOpen: true,
-        setControlsOpen: vi.fn(),
-        controlsRef: { current: null },
         settings: {
           hasToken: true,
           mcpEnabled: true,
@@ -27,8 +24,10 @@ describe("ChatHeader", () => {
     expect(html).toContain("Agent Workspace");
     expect(html).toContain("Workspace: ws-1");
     expect(html).toContain("Model: glm-5");
-    expect(html).toContain("API Key: 已配置");
+    expect(html).toContain("Key: 已配置");
+    expect(html).toContain("MCP ON");
     expect(html).toContain("MCP: ON");
+    expect(html).toContain("设置");
     expect(html).toContain("权限: 标准");
   });
 
@@ -37,9 +36,6 @@ describe("ChatHeader", () => {
       React.createElement(ChatHeader, {
         sidebarOpen: false,
         setSidebarOpen: vi.fn(),
-        controlsOpen: false,
-        setControlsOpen: vi.fn(),
-        controlsRef: { current: null },
         settings: {
           hasToken: false,
           mcpEnabled: false,
@@ -53,7 +49,8 @@ describe("ChatHeader", () => {
     );
 
     expect(html).toContain("侧栏");
-    expect(html).toContain("API Key: 未配置");
+    expect(html).toContain("Key: 未配置");
+    expect(html).toContain("MCP OFF");
     expect(html).toContain("MCP: OFF");
     expect(html).toContain("权限: 全部允许");
   });

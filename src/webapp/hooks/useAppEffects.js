@@ -19,8 +19,6 @@ export function useAppEffects({
   setFileLoading,
   setFileSaving,
   setFileError,
-  controlsRef,
-  setControlsOpen,
   timelineRef,
   messages,
   isStreaming,
@@ -55,17 +53,6 @@ export function useAppEffects({
     }, 3000);
     return () => clearInterval(timer);
   }, [loadSkills]);
-
-  useEffect(() => {
-    const onDocClick = (event) => {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      if (controlsRef.current && controlsRef.current.contains(target)) return;
-      setControlsOpen(false);
-    };
-    document.addEventListener("click", onDocClick);
-    return () => document.removeEventListener("click", onDocClick);
-  }, [controlsRef, setControlsOpen]);
 
   useEffect(() => {
     const el = timelineRef.current;

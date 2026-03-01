@@ -192,7 +192,9 @@ export default function SettingsModal({
             <option value="off">OFF</option>
           </select>
           <div className="pending-actions">
-            <button type="submit">保存配置</button>
+            <button type="submit" className="btn-primary">
+              保存配置
+            </button>
             <span className="meta-chip">权限: {permissionProfileLabel(settings.permissionProfile)}</span>
           </div>
           <label>同步到 .env</label>
@@ -202,6 +204,7 @@ export default function SettingsModal({
           <div className="pending-actions">
             <button
               type="button"
+              className="btn-secondary"
               onClick={async () => {
                 try {
                   await onSyncDotenv();

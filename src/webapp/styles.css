@@ -117,26 +117,6 @@ samp,
   font-size: var(--fs-12);
 }
 
-.controls-popover {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  z-index: 12;
-  min-width: 170px;
-  padding: 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-12);
-  background: #ffffff;
-  box-shadow: 0 6px 12px rgba(17, 24, 39, 0.08);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.controls-popover.hidden {
-  display: none;
-}
-
 .chat-head p {
   margin: 6px 0 0;
   color: var(--muted);
@@ -911,19 +891,20 @@ samp,
 }
 
 button {
-  border: 1px solid transparent;
-  border-radius: var(--r-12);
-  background: linear-gradient(145deg, var(--user), var(--accent-2));
-  color: #fff;
-  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #ffffff;
+  color: #334155;
+  padding: 8px 12px;
   font: inherit;
   font-weight: 560;
   cursor: pointer;
-  transition: filter 140ms ease, transform 120ms ease, box-shadow 160ms ease;
+  transition: background-color 140ms ease, border-color 140ms ease, transform 120ms ease, box-shadow 160ms ease;
 }
 
 button:hover {
-  filter: brightness(1.02);
+  background: #f8fafc;
+  border-color: #d8dde6;
 }
 
 button:active {
@@ -931,26 +912,46 @@ button:active {
 }
 
 button:focus-visible {
-  outline: 3px solid rgba(16, 163, 127, 0.24);
+  outline: 3px solid rgba(15, 23, 42, 0.12);
   outline-offset: 1px;
 }
 
 .btn-primary {
-  box-shadow: 0 2px 8px rgba(16, 163, 127, 0.18);
+  border-color: #0f172a;
+  background: #0f172a;
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18);
   min-width: 72px;
 }
 
+.btn-primary:hover {
+  background: #1f2937;
+  border-color: #1f2937;
+}
+
 .btn-secondary {
-  background: #f8fafc;
-  border: 1px solid var(--line);
+  background: #ffffff;
+  border: 1px solid #d7dde8;
   color: #334155;
   min-width: 60px;
+  box-shadow: none;
 }
 
 .btn-secondary.is-off {
-  color: #8c2b2b;
-  border-color: rgba(224, 70, 70, 0.35);
-  background: rgba(255, 237, 237, 0.8);
+  color: #9f1239;
+  border-color: rgba(159, 18, 57, 0.28);
+  background: rgba(255, 241, 242, 0.88);
+}
+
+.btn-danger {
+  border-color: rgba(185, 28, 28, 0.4);
+  background: rgba(254, 242, 242, 0.92);
+  color: #991b1b;
+}
+
+.btn-danger:hover {
+  background: rgba(254, 226, 226, 0.95);
+  border-color: rgba(185, 28, 28, 0.48);
 }
 
 button:disabled {
@@ -1257,21 +1258,21 @@ button:disabled {
 }
 
 .sidebar-mini-btn {
-  border: 1px solid var(--line);
+  border: 1px solid #d7dde8;
   background: #ffffff;
   color: #475569;
   border-radius: 999px;
   font-size: var(--fs-12);
   font-weight: 600;
   line-height: 1.2;
-  padding: 4px 9px;
+  padding: 4px 10px;
   box-shadow: none;
 }
 
 .sidebar-mini-btn.is-primary {
-  border-color: rgba(16, 163, 127, 0.34);
-  background: rgba(16, 163, 127, 0.12);
-  color: #0e9f6e;
+  border-color: rgba(15, 23, 42, 0.25);
+  background: rgba(15, 23, 42, 0.06);
+  color: #1f2937;
 }
 
 .sessions-empty {
@@ -1512,6 +1513,7 @@ button:disabled {
 
 .pending-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 10px;
 }
