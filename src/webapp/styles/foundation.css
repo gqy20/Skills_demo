@@ -1,0 +1,48 @@
+:root {
+  --bg-0: #f7f8fa;
+  --bg-1: #f7f8fa;
+  --ink: #111827;
+  --muted: #4b5563;
+  --line: #eaecf0;
+  --card: #ffffff;
+  --accent: #10a37f;
+  --accent-2: #0e9f6e;
+  --assistant: #ffffff;
+  --user: #10a37f;
+  --fs-12: 12px;
+  --fs-14: 14px;
+  --fs-16: 16px;
+  --fs-20: 20px;
+  --r-8: 8px;
+  --r-12: 12px;
+  --r-16: 16px;
+  --font-ui-sans: "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC",
+    -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono-code: "JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  height: 100vh;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--fs-14);
+  line-height: 1.45;
+  font-family: var(--font-ui-sans);
+  background: var(--bg-0);
+}
+
+code,
+pre,
+kbd,
+samp,
+.file-editor-body .cm-editor,
+.settings-form .settings-textarea {
+  font-family: var(--font-mono-code);
+}
+
