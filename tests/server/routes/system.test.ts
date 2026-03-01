@@ -427,7 +427,7 @@ describe("registerSystemRoutes", () => {
     const res = makeMockRes();
     await posts.get("/api/settings/sync-dotenv")!(
       {
-        body: { confirmText: "SYNC .ENV" },
+        body: {},
         query: {}
       } as Request,
       res

@@ -136,9 +136,9 @@ export function useWorkspaceData({
   );
 
   const syncSettingsToDotenv = useCallback(
-    async (confirmText) => {
+    async () => {
       if (!currentWorkspaceId) return null;
-      return apiPostJson("/api/settings/sync-dotenv", { confirmText: String(confirmText || "") });
+      return apiPostJson("/api/settings/sync-dotenv", {});
     },
     [apiPostJson, currentWorkspaceId]
   );

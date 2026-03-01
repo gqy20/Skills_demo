@@ -16,7 +16,7 @@ import { maskToken, readSettings, writeSettings } from "../services/settings.js"
 import { WorkspaceRegistry } from "../services/workspaces.js";
 import { buildQueryOptions, withTimeout } from "../services/query.js";
 import { readMcpConfig } from "../services/mcp.js";
-import { ENV_SYNC_CONFIRM_TEXT, syncSettingsToDotenv } from "../services/dotenv-sync.js";
+import { syncSettingsToDotenv } from "../services/dotenv-sync.js";
 
 type SystemRoutesDeps = {
   app: Express;
@@ -476,14 +476,6 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
       typeof req.body?.debugSseEnabled === "boolean" ? req.body.debugSseEnabled : current.debugSseEnabled;
     const keepExistingToken = req.body?.keepExistingToken !== false;
     const syncDotenv = req.body?.syncDotenv === true;
-    const syncConfirmText = typeof req.body?.syncConfirmText === "string" ? req.body.syncConfirmText.trim() : "";
-    if (syncDotenv && syncConfirmText !== ENV_SYNC_CONFIRM_TEXT) {
-      res.status(400).json({
-        ok: false,
-        error: `syncConfirmText must equal '${ENV_SYNC_CONFIRM_TEXT}' when syncDotenv=true`
-      });
-      return;
-    }
 
     const next: RuntimeSettings = {
       model: model || current.model,
@@ -531,14 +523,6 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
   app.post("/api/settings/sync-dotenv", async (req, res) => {
     const workspace = workspaceRegistry.requireWorkspace(req, res);
     if (!workspace) return;
-    const confirmText = typeof req.body?.confirmText === "string" ? req.body.confirmText.trim() : "";
-    if (confirmText !== ENV_SYNC_CONFIRM_TEXT) {
-      res.status(400).json({
-        ok: false,
-        error: `confirmText must equal '${ENV_SYNC_CONFIRM_TEXT}'`
-      });
-      return;
-    }
     const current = await readSettings(workspace.root, defaultSettings);
     const synced = await syncSettingsToDotenv(workspace.root, current);
     res.json({

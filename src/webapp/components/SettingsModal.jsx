@@ -6,10 +6,6 @@ export default function SettingsModal({
   settings,
   setSettings,
   mcpCatalog,
-  dangerConfirmText,
-  setDangerConfirmText,
-  envSyncConfirmText,
-  setEnvSyncConfirmText,
   onClose,
   onSave,
   onSyncDotenv
@@ -85,12 +81,7 @@ export default function SettingsModal({
           className="settings-form"
           onSubmit={async (event) => {
             event.preventDefault();
-            if (settings.permissionProfile === "full_auto" && dangerConfirmText.trim() !== "I UNDERSTAND") {
-              window.alert("启用“全部允许”前，请输入 I UNDERSTAND 进行确认。");
-              return;
-            }
             await onSave(settings);
-            setDangerConfirmText("");
             onClose();
           }}
         >
@@ -182,7 +173,6 @@ export default function SettingsModal({
                 permissionProfile: nextMode,
                 toolGateEnabled: nextMode === "standard" ? s.toolGateEnabled : false
               }));
-              if (nextMode !== "full_auto") setDangerConfirmText("");
             }}
           >
             <option value="standard">标准（按需审批）</option>
@@ -190,11 +180,7 @@ export default function SettingsModal({
             <option value="full_auto">全部允许（高风险）</option>
           </select>
           {settings.permissionProfile === "full_auto" && (
-            <>
-              <p className="settings-warning">该模式会跳过权限审批，工具可直接执行写文件/命令操作。请仅在可信环境使用。</p>
-              <label>输入 I UNDERSTAND 以确认</label>
-              <input value={dangerConfirmText} onChange={(e) => setDangerConfirmText(e.target.value)} placeholder="I UNDERSTAND" />
-            </>
+            <p className="settings-warning">该模式会跳过权限审批，工具可直接执行写文件/命令操作。请仅在可信环境使用。</p>
           )}
           <label>审批开关（仅标准模式）</label>
           <select
@@ -209,21 +195,16 @@ export default function SettingsModal({
             <button type="submit">保存配置</button>
             <span className="meta-chip">权限: {permissionProfileLabel(settings.permissionProfile)}</span>
           </div>
-          <label>同步到 .env（手动确认）</label>
+          <label>同步到 .env</label>
           <p className="settings-hint">
-            请输入 <code>SYNC .ENV</code> 后点击同步。该操作会把当前模型/API Key/运行时环境变量写入工作区根目录的 <code>.env</code>。
+            点击按钮即可将当前模型/API Key/运行时环境变量写入工作区根目录的 <code>.env</code>。
           </p>
-          <input
-            value={envSyncConfirmText}
-            onChange={(e) => setEnvSyncConfirmText(e.target.value)}
-            placeholder="SYNC .ENV"
-          />
           <div className="pending-actions">
             <button
               type="button"
               onClick={async () => {
                 try {
-                  await onSyncDotenv(envSyncConfirmText);
+                  await onSyncDotenv();
                   window.alert("已同步到 .env");
                 } catch (error) {
                   const msg = error instanceof Error ? error.message : String(error);

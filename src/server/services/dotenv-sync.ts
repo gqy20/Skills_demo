@@ -2,8 +2,6 @@ import path from "node:path";
 import { promises as fs } from "node:fs";
 import type { RuntimeSettings } from "../types.js";
 
-export const ENV_SYNC_CONFIRM_TEXT = "SYNC .ENV";
-
 type ParsedEnvLine =
   | { type: "pair"; key: string; value: string }
   | { type: "raw"; text: string };

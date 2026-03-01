@@ -26,10 +26,6 @@ describe("SettingsModal", () => {
         settings: baseSettings,
         setSettings: vi.fn(),
         mcpCatalog: { items: [] },
-        dangerConfirmText: "",
-        setDangerConfirmText: vi.fn(),
-        envSyncConfirmText: "",
-        setEnvSyncConfirmText: vi.fn(),
         onClose: vi.fn(),
         onSave: vi.fn(async () => {}),
         onSyncDotenv: vi.fn(async () => {})
@@ -47,17 +43,13 @@ describe("SettingsModal", () => {
         mcpCatalog: {
           items: [{ name: "demo", requiredEnvVars: ["NOTION_TOKEN", "ZOTERO_API_KEY"] }]
         },
-        dangerConfirmText: "",
-        setDangerConfirmText: vi.fn(),
-        envSyncConfirmText: "",
-        setEnvSyncConfirmText: vi.fn(),
         onClose: vi.fn(),
         onSave: vi.fn(async () => {}),
         onSyncDotenv: vi.fn(async () => {})
       })
     );
-    expect(html).toContain("I UNDERSTAND");
     expect(html).toContain("全部允许（高风险）");
+    expect(html).toContain("该模式会跳过权限审批");
     expect(html).toContain("检测到 .mcp.json 所需环境变量");
     expect(html).toContain("NOTION_TOKEN");
   });

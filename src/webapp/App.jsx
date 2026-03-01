@@ -53,8 +53,6 @@ export default function App() {
   const [files, setFiles] = useState([]);
   const [controlsOpen, setControlsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [dangerConfirmText, setDangerConfirmText] = useState("");
-  const [envSyncConfirmText, setEnvSyncConfirmText] = useState("");
   const [sessions, setSessions] = useState([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionsError, setSessionsError] = useState("");
@@ -547,22 +545,15 @@ export default function App() {
         settings={settings}
         setSettings={setSettings}
         mcpCatalog={mcpCatalog}
-        dangerConfirmText={dangerConfirmText}
-        setDangerConfirmText={setDangerConfirmText}
         onClose={() => {
-        setSettingsOpen(false);
-        setDangerConfirmText("");
-        setEnvSyncConfirmText("");
-      }}
+          setSettingsOpen(false);
+        }}
         onSave={saveSettings}
-        envSyncConfirmText={envSyncConfirmText}
-        setEnvSyncConfirmText={setEnvSyncConfirmText}
-        onSyncDotenv={async (confirmText) => {
+        onSyncDotenv={async () => {
           await saveSettings(settings);
-          await syncSettingsToDotenv(confirmText);
+          await syncSettingsToDotenv();
           await loadSettings();
           await loadMcps();
-          setEnvSyncConfirmText("");
         }}
       />
     </>

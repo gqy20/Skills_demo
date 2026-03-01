@@ -138,7 +138,7 @@ npm start
 - `toolGateEnabled`
 - `debugEnabled`
 - `debugSseEnabled`
-- 手动同步到 `.env`（需输入确认串 `SYNC .ENV`）
+- 一键同步到 `.env`
 
 配置保存位置：
 
@@ -164,7 +164,7 @@ npm start
 - `GET /api/workspaces`：可用工作区列表
 - `GET /api/settings`：读取当前工作区设置
 - `POST /api/settings`：更新当前工作区设置
-- `POST /api/settings/sync-dotenv`：将当前 UI 设置手动同步到 `<workspace>/.env`（需确认串）
+- `POST /api/settings/sync-dotenv`：将当前 UI 设置同步到 `<workspace>/.env`
 - `GET /api/skills`：读取 skills（project/user）
 - `GET /api/files`：读取工作区文件树（`path` + `depth`）
 
