@@ -1,13 +1,12 @@
 # .info/ - Runtime generated files (ignore all)
-.info/*
+/.info/*
 
 # info/ - User personal input (ignore all)
-info/*
+/info/*
 
 # Results - Task execution files (keep README.md)
 results/*
 !results/README.md
-results/*/artifacts/
 
 # Skills - Generated task/user/proven skills (keep builtin/)
 .claude/skills/k[0-9]*/
@@ -36,15 +35,13 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
+/build/
 develop-eggs/
-dist/
+/dist/
 downloads/
 eggs/
 .eggs/
-lib/
-!.claude/hooks/lib/
-!.claude/hooks/lib/*.sh
+/lib/
 lib64/
 parts/
 sdist/
@@ -70,10 +67,10 @@ venv.bak/
 uv.lock
 
 # Local data directories (user content)
-01_articles/
-02_outputs/
-articles/
-references/
+/01_articles/
+/02_outputs/
+/articles/
+/references/
 
 # Local profile snapshot
 PROFILE
