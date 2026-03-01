@@ -187,7 +187,7 @@ export function looksLikeToolClaim(text) {
 }
 
 export function normalizeSettings(data) {
-  const runtimeEnv = data?.runtimeEnv || data?.mcpEnv || {};
+  const runtimeEnv = data?.runtimeEnv || {};
   return {
     model: data?.model || "",
     baseUrl: data?.baseUrl || "",

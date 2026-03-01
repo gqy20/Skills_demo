@@ -186,7 +186,6 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
       model: settings.model,
       baseUrl: settings.baseUrl,
       runtimeEnv: runtimeEnvView,
-      mcpEnv: runtimeEnvView,
       permissionProfile: settings.permissionProfile,
       mcpEnabled: settings.mcpEnabled,
       speedModeEnabled: settings.speedModeEnabled,
@@ -442,20 +441,12 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
     const model = typeof req.body?.model === "string" ? req.body.model.trim() : current.model;
     const baseUrl = typeof req.body?.baseUrl === "string" ? req.body.baseUrl.trim() : current.baseUrl;
     const tokenInput = typeof req.body?.authToken === "string" ? req.body.authToken.trim() : "";
-    const runtimeEnvTextRaw =
-      typeof req.body?.runtimeEnvText === "string"
-        ? req.body.runtimeEnvText
-        : typeof req.body?.mcpEnvText === "string"
-          ? req.body.mcpEnvText
-          : null;
+    const runtimeEnvTextRaw = typeof req.body?.runtimeEnvText === "string" ? req.body.runtimeEnvText : null;
     const nextRuntimeEnv: Record<string, string> = {};
     if (runtimeEnvTextRaw !== null) {
       Object.assign(nextRuntimeEnv, parseRuntimeEnvText(runtimeEnvTextRaw));
     } else {
-      const runtimeEnvUpdatesRaw =
-        req.body?.runtimeEnvUpdates && typeof req.body.runtimeEnvUpdates === "object" && !Array.isArray(req.body.runtimeEnvUpdates)
-          ? req.body.runtimeEnvUpdates
-          : req.body?.mcpEnvUpdates;
+      const runtimeEnvUpdatesRaw = req.body?.runtimeEnvUpdates;
       const runtimeEnvUpdates =
         runtimeEnvUpdatesRaw && typeof runtimeEnvUpdatesRaw === "object" && !Array.isArray(runtimeEnvUpdatesRaw)
           ? (runtimeEnvUpdatesRaw as Record<string, unknown>)
@@ -525,7 +516,6 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
       model: next.model,
       baseUrl: next.baseUrl,
       runtimeEnv: next.runtimeEnv,
-      mcpEnv: next.runtimeEnv,
       permissionProfile: next.permissionProfile,
       mcpEnabled: next.mcpEnabled,
       speedModeEnabled: next.speedModeEnabled,

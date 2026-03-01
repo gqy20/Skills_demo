@@ -31,17 +31,7 @@ export async function readSettings(workspaceRoot: string, defaults: RuntimeSetti
       parsed.permissionProfile === "full_auto"
         ? parsed.permissionProfile
         : defaults.permissionProfile;
-    const legacyMcpEnv = normalizeRuntimeEnv((parsed as { mcpEnv?: unknown }).mcpEnv);
-    const mergedRuntimeEnv = {
-      ...defaults.runtimeEnv,
-      ...legacyMcpEnv,
-      ...normalizeRuntimeEnv((parsed as { runtimeEnv?: unknown }).runtimeEnv)
-    };
-    const legacyMineru =
-      typeof (parsed as { mineruApiKey?: unknown }).mineruApiKey === "string"
-        ? (parsed as { mineruApiKey: string }).mineruApiKey.trim()
-        : "";
-    if (legacyMineru && !mergedRuntimeEnv.MINERU_API_KEY) mergedRuntimeEnv.MINERU_API_KEY = legacyMineru;
+    const mergedRuntimeEnv = { ...defaults.runtimeEnv, ...normalizeRuntimeEnv((parsed as { runtimeEnv?: unknown }).runtimeEnv) };
 
     return {
       model: parsed.model || defaults.model,
