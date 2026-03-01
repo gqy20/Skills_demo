@@ -8,8 +8,11 @@ export default function SettingsModal({
   mcpCatalog,
   dangerConfirmText,
   setDangerConfirmText,
+  envSyncConfirmText,
+  setEnvSyncConfirmText,
   onClose,
-  onSave
+  onSave,
+  onSyncDotenv
 }) {
   const mcpEnvStats = React.useMemo(() => inspectEnvText(settings.mcpEnvText), [settings.mcpEnvText]);
   const mcpEnvMap = React.useMemo(() => parseEnvText(settings.mcpEnvText), [settings.mcpEnvText]);
@@ -212,6 +215,31 @@ export default function SettingsModal({
           <div className="pending-actions">
             <button type="submit">保存配置</button>
             <span className="meta-chip">权限: {permissionProfileLabel(settings.permissionProfile)}</span>
+          </div>
+          <label>同步到 .env（手动确认）</label>
+          <p className="settings-hint">
+            请输入 <code>SYNC .ENV</code> 后点击同步。该操作会把当前模型/API Key/MCP 环境变量写入工作区根目录的 <code>.env</code>。
+          </p>
+          <input
+            value={envSyncConfirmText}
+            onChange={(e) => setEnvSyncConfirmText(e.target.value)}
+            placeholder="SYNC .ENV"
+          />
+          <div className="pending-actions">
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await onSyncDotenv(envSyncConfirmText);
+                  window.alert("已同步到 .env");
+                } catch (error) {
+                  const msg = error instanceof Error ? error.message : String(error);
+                  window.alert(`同步失败: ${msg}`);
+                }
+              }}
+            >
+              同步当前配置到 .env
+            </button>
           </div>
         </form>
       </div>

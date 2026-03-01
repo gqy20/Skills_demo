@@ -1,4 +1,4 @@
-import "dotenv/config";
+import { config as loadDotenv } from "dotenv";
 import express from "express";
 import cors from "cors";
 import path from "node:path";
@@ -13,6 +13,7 @@ import { registerChatRoutes } from "./routes/chat.js";
 import { registerInputRoutes } from "./routes/input.js";
 
 const app = express();
+loadDotenv({ override: true });
 const port = Number(process.env.PORT || 3000);
 const host = process.env.HOST || "127.0.0.1";
 

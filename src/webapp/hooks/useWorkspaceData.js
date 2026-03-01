@@ -136,6 +136,14 @@ export function useWorkspaceData({
     [apiPostJson, setCurrentSessionId, setDiagnostics, setSettings]
   );
 
+  const syncSettingsToDotenv = useCallback(
+    async (confirmText) => {
+      if (!currentWorkspaceId) return null;
+      return apiPostJson("/api/settings/sync-dotenv", { confirmText: String(confirmText || "") });
+    },
+    [apiPostJson, currentWorkspaceId]
+  );
+
   return {
     loadWorkspaces,
     loadSettings,
@@ -145,6 +153,7 @@ export function useWorkspaceData({
     refreshMcps,
     loadSessions,
     loadFileSuggestions,
-    saveSettings
+    saveSettings,
+    syncSettingsToDotenv
   };
 }

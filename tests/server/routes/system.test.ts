@@ -17,6 +17,7 @@ type MockRes = Response & {
 
 const ORIGINAL_WORKSPACE_ROOT = process.env.AGENT_WORKSPACE_ROOT;
 const ORIGINAL_WORKSPACES = process.env.AGENT_WORKSPACES;
+const ORIGINAL_NOTION_TOKEN = process.env.NOTION_TOKEN;
 const tempRoots: string[] = [];
 
 const defaults: RuntimeSettings = {
@@ -60,6 +61,8 @@ function restoreEnv(): void {
   else process.env.AGENT_WORKSPACE_ROOT = ORIGINAL_WORKSPACE_ROOT;
   if (ORIGINAL_WORKSPACES === undefined) delete process.env.AGENT_WORKSPACES;
   else process.env.AGENT_WORKSPACES = ORIGINAL_WORKSPACES;
+  if (ORIGINAL_NOTION_TOKEN === undefined) delete process.env.NOTION_TOKEN;
+  else process.env.NOTION_TOKEN = ORIGINAL_NOTION_TOKEN;
 }
 
 async function makeWorkspace(): Promise<string> {
@@ -370,6 +373,83 @@ describe("registerSystemRoutes", () => {
         }
       ]
     });
+  });
+
+  it("surfaces process env values for required MCP keys in /api/settings", async () => {
+    const ws = await makeWorkspace();
+    process.env.AGENT_WORKSPACE_ROOT = ws;
+    process.env.AGENT_WORKSPACES = "";
+    process.env.NOTION_TOKEN = "ntn_live_value";
+    await writeFile(
+      path.join(ws, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          notion: {
+            type: "stdio",
+            command: "npx",
+            args: ["-y", "@notionhq/notion-mcp-server"],
+            env: {
+              NOTION_TOKEN: "${NOTION_TOKEN}"
+            }
+          }
+        }
+      })
+    );
+
+    const registry = new WorkspaceRegistry();
+    const { app, gets } = makeApp();
+    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults, activeQueries: new Map() });
+
+    const settingsRes = makeMockRes();
+    await gets.get("/api/settings")!({ body: {}, query: {} } as Request, settingsRes);
+    expect(settingsRes.statusCode).toBe(200);
+    expect(settingsRes.body).toMatchObject({
+      mcpEnv: {
+        NOTION_TOKEN: "ntn_live_value"
+      }
+    });
+  });
+
+  it("syncs current settings into workspace .env via /api/settings/sync-dotenv", async () => {
+    const ws = await makeWorkspace();
+    process.env.AGENT_WORKSPACE_ROOT = ws;
+    process.env.AGENT_WORKSPACES = "";
+    await writeSettings(ws, {
+      ...defaults,
+      model: "model-from-settings",
+      baseUrl: "https://settings.example",
+      authToken: "token-from-settings",
+      mineruApiKey: "mineru-from-settings",
+      mcpEnv: {
+        NOTION_TOKEN: "ntn_sync_value",
+        ZOTERO_API_KEY: "zotero_sync_value"
+      }
+    });
+
+    const registry = new WorkspaceRegistry();
+    const { app, posts } = makeApp();
+    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults, activeQueries: new Map() });
+
+    const res = makeMockRes();
+    await posts.get("/api/settings/sync-dotenv")!(
+      {
+        body: { confirmText: "SYNC .ENV" },
+        query: {}
+      } as Request,
+      res
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      ok: true
+    });
+
+    const dotenvRaw = await readFile(path.join(ws, ".env"), "utf-8");
+    expect(dotenvRaw).toContain("ANTHROPIC_MODEL=model-from-settings");
+    expect(dotenvRaw).toContain("ANTHROPIC_BASE_URL=https://settings.example");
+    expect(dotenvRaw).toContain("ANTHROPIC_AUTH_TOKEN=token-from-settings");
+    expect(dotenvRaw).toContain("MINERU_API_KEY=mineru-from-settings");
+    expect(dotenvRaw).toContain("NOTION_TOKEN=ntn_sync_value");
+    expect(dotenvRaw).toContain("ZOTERO_API_KEY=zotero_sync_value");
   });
 
   it("returns no_active_session for /api/mcps/refresh without active query", async () => {

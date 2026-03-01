@@ -98,6 +98,11 @@ npm start
 - `ANTHROPIC_BASE_URL`：默认 `https://open.bigmodel.cn/api/anthropic`
 - `ANTHROPIC_AUTH_TOKEN`：默认空
 - `MINERU_API_KEY`：默认空
+- `NOTION_TOKEN`：Notion MCP token（默认空）
+- `ZOTERO_LOCAL`：Zotero MCP 本地模式开关（建议 `true`）
+- `ZOTERO_API_KEY`：Zotero Web API key（本地模式可留空）
+- `ZOTERO_LIBRARY_ID`：Zotero 库 ID（Web API 模式必填）
+- `ZOTERO_LIBRARY_TYPE`：`user` 或 `group`
 - `AGENT_WEB_DEBUG=1`：启用后端 debug 探针
 - `AGENT_WEB_DEBUG_SSE=1`：通过 SSE 下发 debug 事件
 
@@ -105,6 +110,20 @@ npm start
 
 - `AGENT_WORKSPACE_ROOT`：主工作区（默认当前进程目录）
 - `AGENT_WORKSPACES`：附加工作区列表（逗号或换行分隔）
+
+### Notion / Zotero Token 获取
+
+1. `NOTION_TOKEN`
+   1. 打开 `https://www.notion.so/profile/integrations`
+   2. 创建 Internal Integration 并复制 token（`ntn_...`）
+   3. 在对应页面/数据库把该 Integration 加入权限
+
+2. Zotero（两种模式）
+   1. 本地模式：`ZOTERO_LOCAL=true`，通常无需 `ZOTERO_API_KEY`
+   2. Web API 模式：
+      1. 在 `https://www.zotero.org/settings/keys` 创建 API key
+      2. 设置 `ZOTERO_LOCAL=false`
+      3. 配置 `ZOTERO_API_KEY`、`ZOTERO_LIBRARY_ID`、`ZOTERO_LIBRARY_TYPE`
 
 ## 运行时设置（Web 内可改）
 
@@ -119,10 +138,16 @@ npm start
 - `toolGateEnabled`
 - `debugEnabled`
 - `debugSseEnabled`
+- 手动同步到 `.env`（需输入确认串 `SYNC .ENV`）
 
 配置保存位置：
 
 - `<workspace>/.info/agent-web-settings.json`
+
+环境优先级（运行时）：
+
+- `.env`（已加载到 `process.env`）高于 UI 保存配置
+- UI 保存配置可作为回退值；可通过“同步到 .env”写回并统一来源
 
 ### Speed Mode 行为
 
@@ -139,6 +164,7 @@ npm start
 - `GET /api/workspaces`：可用工作区列表
 - `GET /api/settings`：读取当前工作区设置
 - `POST /api/settings`：更新当前工作区设置
+- `POST /api/settings/sync-dotenv`：将当前 UI 设置手动同步到 `<workspace>/.env`（需确认串）
 - `GET /api/skills`：读取 skills（project/user）
 - `GET /api/files`：读取工作区文件树（`path` + `depth`）
 

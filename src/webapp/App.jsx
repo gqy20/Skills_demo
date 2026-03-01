@@ -57,6 +57,7 @@ export default function App() {
   const [controlsOpen, setControlsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [dangerConfirmText, setDangerConfirmText] = useState("");
+  const [envSyncConfirmText, setEnvSyncConfirmText] = useState("");
   const [sessions, setSessions] = useState([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionsError, setSessionsError] = useState("");
@@ -220,23 +221,33 @@ export default function App() {
     setActiveTurnTrace(null);
   }, [activeTurnTrace, lastAssistantId]);
 
-  const { loadWorkspaces, loadSettings, loadSkills, loadFiles, loadMcps, refreshMcps, loadSessions, loadFileSuggestions, saveSettings } =
-    useWorkspaceData({
-      currentWorkspaceId,
-      apiGetJson,
-      apiPostJson,
-      setWorkspaces,
-      setCurrentWorkspaceId,
-      setSettings,
-      setDiagnostics,
-      setSkills,
-      setFiles,
-      setMcpCatalog,
-      setSessions,
-      setSessionsLoading,
-      setSessionsError,
-      setCurrentSessionId
-    });
+  const {
+    loadWorkspaces,
+    loadSettings,
+    loadSkills,
+    loadFiles,
+    loadMcps,
+    refreshMcps,
+    loadSessions,
+    loadFileSuggestions,
+    saveSettings,
+    syncSettingsToDotenv
+  } = useWorkspaceData({
+    currentWorkspaceId,
+    apiGetJson,
+    apiPostJson,
+    setWorkspaces,
+    setCurrentWorkspaceId,
+    setSettings,
+    setDiagnostics,
+    setSkills,
+    setFiles,
+    setMcpCatalog,
+    setSessions,
+    setSessionsLoading,
+    setSessionsError,
+    setCurrentSessionId
+  });
   const { openSession, startNewSession } = useSessionActions({
     apiGetJson,
     isStreaming,
@@ -542,10 +553,20 @@ export default function App() {
         dangerConfirmText={dangerConfirmText}
         setDangerConfirmText={setDangerConfirmText}
         onClose={() => {
-          setSettingsOpen(false);
-          setDangerConfirmText("");
-        }}
+        setSettingsOpen(false);
+        setDangerConfirmText("");
+        setEnvSyncConfirmText("");
+      }}
         onSave={saveSettings}
+        envSyncConfirmText={envSyncConfirmText}
+        setEnvSyncConfirmText={setEnvSyncConfirmText}
+        onSyncDotenv={async (confirmText) => {
+          await saveSettings(settings);
+          await syncSettingsToDotenv(confirmText);
+          await loadSettings();
+          await loadMcps();
+          setEnvSyncConfirmText("");
+        }}
       />
     </>
   );

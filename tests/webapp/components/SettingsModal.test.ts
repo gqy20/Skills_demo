@@ -31,8 +31,11 @@ describe("SettingsModal", () => {
         mcpCatalog: { items: [] },
         dangerConfirmText: "",
         setDangerConfirmText: vi.fn(),
+        envSyncConfirmText: "",
+        setEnvSyncConfirmText: vi.fn(),
         onClose: vi.fn(),
-        onSave: vi.fn(async () => {})
+        onSave: vi.fn(async () => {}),
+        onSyncDotenv: vi.fn(async () => {})
       })
     );
     expect(html).toContain("modal hidden");
@@ -49,8 +52,11 @@ describe("SettingsModal", () => {
         },
         dangerConfirmText: "",
         setDangerConfirmText: vi.fn(),
+        envSyncConfirmText: "",
+        setEnvSyncConfirmText: vi.fn(),
         onClose: vi.fn(),
-        onSave: vi.fn(async () => {})
+        onSave: vi.fn(async () => {}),
+        onSyncDotenv: vi.fn(async () => {})
       })
     );
     expect(html).toContain("I UNDERSTAND");

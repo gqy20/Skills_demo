@@ -16,6 +16,7 @@ import { maskToken, readSettings, writeSettings } from "../services/settings.js"
 import { WorkspaceRegistry } from "../services/workspaces.js";
 import { buildQueryOptions, withTimeout } from "../services/query.js";
 import { readMcpConfig } from "../services/mcp.js";
+import { ENV_SYNC_CONFIRM_TEXT, syncSettingsToDotenv } from "../services/dotenv-sync.js";
 
 type SystemRoutesDeps = {
   app: Express;
@@ -57,6 +58,8 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
     return out;
   };
   const settingsEnvValue = (name: string, settings: RuntimeSettings): string => {
+    const fromProcess = String(process.env[name] || "").trim();
+    if (fromProcess) return fromProcess;
     const fromMap = String(settings.mcpEnv?.[name] || "").trim();
     if (fromMap) return fromMap;
     if (name === "ANTHROPIC_AUTH_TOKEN") return settings.authToken;
@@ -170,12 +173,20 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
     const workspace = workspaceRegistry.requireWorkspace(req, res);
     if (!workspace) return;
     const settings = await readSettings(workspace.root, defaultSettings);
+    const configured = await readMcpConfig(workspace.root);
+    const requiredEnvKeys = Array.from(new Set(configured.flatMap((item) => item.requiredEnvVars || [])));
+    const mcpEnvView: Record<string, string> = { ...(settings.mcpEnv || {}) };
+    for (const key of requiredEnvKeys) {
+      const value = settingsEnvValue(key, settings).trim();
+      if (!value) continue;
+      mcpEnvView[key] = value;
+    }
     res.json({
       workspaceId: workspace.id,
       workspaceRoot: workspace.root,
       model: settings.model,
       baseUrl: settings.baseUrl,
-      mcpEnv: settings.mcpEnv,
+      mcpEnv: mcpEnvView,
       permissionProfile: settings.permissionProfile,
       mcpEnabled: settings.mcpEnabled,
       speedModeEnabled: settings.speedModeEnabled,
@@ -221,8 +232,6 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
       const items = configured.map((item) => {
         const runtime = snapshot.rows.get(item.name) || null;
         const missingEnvVars = item.requiredEnvVars.filter((name) => {
-          const fromProcess = String(process.env[name] || "").trim();
-          if (fromProcess) return false;
           return !settingsEnvValue(name, settings).trim();
         });
         const defaultRuntime =
@@ -471,6 +480,15 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
       typeof req.body?.debugSseEnabled === "boolean" ? req.body.debugSseEnabled : current.debugSseEnabled;
     const keepExistingToken = req.body?.keepExistingToken !== false;
     const keepExistingMineruKey = req.body?.keepExistingMineruKey !== false;
+    const syncDotenv = req.body?.syncDotenv === true;
+    const syncConfirmText = typeof req.body?.syncConfirmText === "string" ? req.body.syncConfirmText.trim() : "";
+    if (syncDotenv && syncConfirmText !== ENV_SYNC_CONFIRM_TEXT) {
+      res.status(400).json({
+        ok: false,
+        error: `syncConfirmText must equal '${ENV_SYNC_CONFIRM_TEXT}' when syncDotenv=true`
+      });
+      return;
+    }
 
     const next: RuntimeSettings = {
       model: model || current.model,
@@ -487,6 +505,16 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
     };
 
     await writeSettings(workspace.root, next);
+    let dotenvSync: { synced: boolean; envFile?: string; keyCount?: number; error?: string } = { synced: false };
+    if (syncDotenv) {
+      try {
+        const synced = await syncSettingsToDotenv(workspace.root, next);
+        dotenvSync = { synced: true, envFile: synced.envFile, keyCount: synced.keys.length };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        dotenvSync = { synced: false, error: msg };
+      }
+    }
     res.json({
       ok: true,
       workspaceId: workspace.id,
@@ -503,7 +531,30 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
       hasToken: Boolean(next.authToken),
       tokenPreview: maskToken(next.authToken),
       hasMineruKey: Boolean(next.mineruApiKey),
-      mineruKeyPreview: maskToken(next.mineruApiKey)
+      mineruKeyPreview: maskToken(next.mineruApiKey),
+      dotenvSync
+    });
+  });
+
+  app.post("/api/settings/sync-dotenv", async (req, res) => {
+    const workspace = workspaceRegistry.requireWorkspace(req, res);
+    if (!workspace) return;
+    const confirmText = typeof req.body?.confirmText === "string" ? req.body.confirmText.trim() : "";
+    if (confirmText !== ENV_SYNC_CONFIRM_TEXT) {
+      res.status(400).json({
+        ok: false,
+        error: `confirmText must equal '${ENV_SYNC_CONFIRM_TEXT}'`
+      });
+      return;
+    }
+    const current = await readSettings(workspace.root, defaultSettings);
+    const synced = await syncSettingsToDotenv(workspace.root, current);
+    res.json({
+      ok: true,
+      workspaceId: workspace.id,
+      envFile: synced.envFile,
+      keyCount: synced.keys.length,
+      keys: synced.keys
     });
   });
 
