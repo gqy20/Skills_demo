@@ -31,13 +31,11 @@ export async function readSettings(workspaceRoot: string, defaults: RuntimeSetti
       parsed.permissionProfile === "full_auto"
         ? parsed.permissionProfile
         : defaults.permissionProfile;
-    const mergedRuntimeEnv = { ...defaults.runtimeEnv, ...normalizeRuntimeEnv((parsed as { runtimeEnv?: unknown }).runtimeEnv) };
-
     return {
       model: parsed.model || defaults.model,
       baseUrl: parsed.baseUrl || defaults.baseUrl,
       authToken: parsed.authToken || defaults.authToken,
-      runtimeEnv: mergedRuntimeEnv,
+      runtimeEnv: { ...defaults.runtimeEnv, ...normalizeRuntimeEnv((parsed as { runtimeEnv?: unknown }).runtimeEnv) },
       permissionProfile,
       mcpEnabled: typeof parsed.mcpEnabled === "boolean" ? parsed.mcpEnabled : defaults.mcpEnabled,
       speedModeEnabled:

@@ -18,6 +18,7 @@ type MockRes = Response & {
 const ORIGINAL_WORKSPACE_ROOT = process.env.AGENT_WORKSPACE_ROOT;
 const ORIGINAL_WORKSPACES = process.env.AGENT_WORKSPACES;
 const ORIGINAL_NOTION_TOKEN = process.env.NOTION_TOKEN;
+const ORIGINAL_ZHIPU_API_KEY = process.env.ZHIPU_API_KEY;
 const tempRoots: string[] = [];
 
 const defaults: RuntimeSettings = {
@@ -62,6 +63,8 @@ function restoreEnv(): void {
   else process.env.AGENT_WORKSPACES = ORIGINAL_WORKSPACES;
   if (ORIGINAL_NOTION_TOKEN === undefined) delete process.env.NOTION_TOKEN;
   else process.env.NOTION_TOKEN = ORIGINAL_NOTION_TOKEN;
+  if (ORIGINAL_ZHIPU_API_KEY === undefined) delete process.env.ZHIPU_API_KEY;
+  else process.env.ZHIPU_API_KEY = ORIGINAL_ZHIPU_API_KEY;
 }
 
 async function makeWorkspace(): Promise<string> {
@@ -142,6 +145,41 @@ describe("registerSystemRoutes", () => {
     const healthRes = makeMockRes();
     await gets.get("/api/health")!({ body: {}, query: {} } as Request, healthRes);
     expect((healthRes.body as { hooksMode: string }).hooksMode).toBe("disabled-by-speed-mode");
+  });
+
+  it("prefers workspace .env values in /api/settings response", async () => {
+    const ws = await makeWorkspace();
+    process.env.AGENT_WORKSPACE_ROOT = ws;
+    process.env.AGENT_WORKSPACES = "";
+    await writeSettings(ws, {
+      ...defaults,
+      model: "from-settings",
+      baseUrl: "https://settings.example",
+      authToken: "settings-token"
+    });
+    await writeFile(
+      path.join(ws, ".env"),
+      [
+        "ANTHROPIC_MODEL=from-dotenv",
+        "ANTHROPIC_BASE_URL=https://dotenv.example",
+        "ANTHROPIC_AUTH_TOKEN=",
+        ""
+      ].join("\n"),
+      "utf-8"
+    );
+
+    const registry = new WorkspaceRegistry();
+    const { app, gets } = makeApp();
+    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults, activeQueries: new Map() });
+
+    const settingsRes = makeMockRes();
+    await gets.get("/api/settings")!({ body: {}, query: {} } as Request, settingsRes);
+    expect(settingsRes.statusCode).toBe(200);
+    expect(settingsRes.body).toMatchObject({
+      model: "from-dotenv",
+      baseUrl: "https://dotenv.example",
+      hasToken: false
+    });
   });
 
   it("validates /api/files path and clamps depth", async () => {
@@ -476,6 +514,79 @@ describe("registerSystemRoutes", () => {
       runtime: {
         source: "active_session_missing"
       }
+    });
+  });
+
+  it("treats empty value in .env as missing even if process env has value", async () => {
+    const ws = await makeWorkspace();
+    process.env.AGENT_WORKSPACE_ROOT = ws;
+    process.env.AGENT_WORKSPACES = "";
+    process.env.ZHIPU_API_KEY = "from-process";
+    await writeFile(path.join(ws, ".env"), "ZHIPU_API_KEY=\n", "utf-8");
+    await writeFile(
+      path.join(ws, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          demo: {
+            type: "http",
+            url: "https://example.com/mcp",
+            headers: { Authorization: "Bearer ${ZHIPU_API_KEY}" }
+          }
+        }
+      })
+    );
+
+    const registry = new WorkspaceRegistry();
+    const { app, gets } = makeApp();
+    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults, activeQueries: new Map() });
+
+    const res = makeMockRes();
+    await gets.get("/api/mcps")!({ body: {}, query: {} } as Request, res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      items: [
+        {
+          name: "demo",
+          missingEnvVars: ["ZHIPU_API_KEY"],
+          runtime: { status: "missing_env" }
+        }
+      ]
+    });
+  });
+
+  it("treats non-empty value in .env as configured", async () => {
+    const ws = await makeWorkspace();
+    process.env.AGENT_WORKSPACE_ROOT = ws;
+    process.env.AGENT_WORKSPACES = "";
+    delete process.env.ZHIPU_API_KEY;
+    await writeFile(path.join(ws, ".env"), "ZHIPU_API_KEY=from-dotenv\n", "utf-8");
+    await writeFile(
+      path.join(ws, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          demo: {
+            type: "http",
+            url: "https://example.com/mcp",
+            headers: { Authorization: "Bearer ${ZHIPU_API_KEY}" }
+          }
+        }
+      })
+    );
+
+    const registry = new WorkspaceRegistry();
+    const { app, gets } = makeApp();
+    registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults, activeQueries: new Map() });
+
+    const res = makeMockRes();
+    await gets.get("/api/mcps")!({ body: {}, query: {} } as Request, res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      items: [
+        {
+          name: "demo",
+          missingEnvVars: []
+        }
+      ]
     });
   });
 });

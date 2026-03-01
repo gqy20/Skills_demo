@@ -17,6 +17,7 @@ import { WorkspaceRegistry } from "../services/workspaces.js";
 import { buildQueryOptions, withTimeout } from "../services/query.js";
 import { readMcpConfig } from "../services/mcp.js";
 import { syncSettingsToDotenv } from "../services/dotenv-sync.js";
+import { hasEffectiveEnvValue, parseEnvText, readWorkspaceDotenv } from "../services/env.js";
 
 type SystemRoutesDeps = {
   app: Express;
@@ -42,28 +43,31 @@ type McpProbeSnapshot = {
 
 export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, activeQueries }: SystemRoutesDeps): void {
   const mcpProbeCache = new Map<string, McpProbeSnapshot>();
-  const parseRuntimeEnvText = (text: string): Record<string, string> => {
-    const out: Record<string, string> = {};
-    const lines = String(text || "").split(/\r?\n/);
-    for (const line of lines) {
-      const raw = line.trim();
-      if (!raw || raw.startsWith("#")) continue;
-      const idx = raw.indexOf("=");
-      if (idx <= 0) continue;
-      const key = raw.slice(0, idx).trim();
-      const value = raw.slice(idx + 1).trim();
-      if (!key || !value) continue;
-      out[key] = value;
+  const settingsEnvValue = (
+    name: string,
+    settings: RuntimeSettings,
+    dotenvEnv: Record<string, string>
+  ): string => {
+    const fromRuntime = String(settings.runtimeEnv?.[name] || "");
+    if (hasEffectiveEnvValue(fromRuntime)) return fromRuntime.trim();
+
+    if (Object.prototype.hasOwnProperty.call(dotenvEnv, name)) {
+      const fromDotenv = String(dotenvEnv[name] || "");
+      return hasEffectiveEnvValue(fromDotenv) ? fromDotenv.trim() : "";
     }
-    return out;
-  };
-  const settingsEnvValue = (name: string, settings: RuntimeSettings): string => {
-    const fromProcess = String(process.env[name] || "").trim();
-    if (fromProcess) return fromProcess;
-    const fromMap = String(settings.runtimeEnv?.[name] || "").trim();
-    if (fromMap) return fromMap;
-    if (name === "ANTHROPIC_AUTH_TOKEN") return settings.authToken;
+
+    const fromProcess = String(process.env[name] || "");
+    if (hasEffectiveEnvValue(fromProcess)) return fromProcess.trim();
+    if (name === "ANTHROPIC_AUTH_TOKEN" && hasEffectiveEnvValue(settings.authToken)) return settings.authToken.trim();
     return "";
+  };
+
+  const coreValueFromDotenv = (name: string, fallback: string, dotenvEnv: Record<string, string>): string => {
+    if (Object.prototype.hasOwnProperty.call(dotenvEnv, name)) {
+      const fromDotenv = String(dotenvEnv[name] || "");
+      return hasEffectiveEnvValue(fromDotenv) ? fromDotenv.trim() : "";
+    }
+    return String(fallback || "").trim();
   };
 
   const getMcpSnapshot = (workspaceId: string): McpProbeSnapshot => {
@@ -172,19 +176,23 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
     const workspace = workspaceRegistry.requireWorkspace(req, res);
     if (!workspace) return;
     const settings = await readSettings(workspace.root, defaultSettings);
+    const dotenvEnv = await readWorkspaceDotenv(workspace.root);
+    const effectiveModel = coreValueFromDotenv("ANTHROPIC_MODEL", settings.model, dotenvEnv);
+    const effectiveBaseUrl = coreValueFromDotenv("ANTHROPIC_BASE_URL", settings.baseUrl, dotenvEnv);
+    const effectiveAuthToken = coreValueFromDotenv("ANTHROPIC_AUTH_TOKEN", settings.authToken, dotenvEnv);
     const configured = await readMcpConfig(workspace.root);
     const requiredEnvKeys = Array.from(new Set(configured.flatMap((item) => item.requiredEnvVars || [])));
     const runtimeEnvView: Record<string, string> = { ...(settings.runtimeEnv || {}) };
     for (const key of requiredEnvKeys) {
-      const value = settingsEnvValue(key, settings).trim();
+      const value = settingsEnvValue(key, settings, dotenvEnv).trim();
       if (!value) continue;
       runtimeEnvView[key] = value;
     }
     res.json({
       workspaceId: workspace.id,
       workspaceRoot: workspace.root,
-      model: settings.model,
-      baseUrl: settings.baseUrl,
+      model: effectiveModel,
+      baseUrl: effectiveBaseUrl,
       runtimeEnv: runtimeEnvView,
       permissionProfile: settings.permissionProfile,
       mcpEnabled: settings.mcpEnabled,
@@ -192,8 +200,8 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
       toolGateEnabled: settings.toolGateEnabled,
       debugEnabled: settings.debugEnabled,
       debugSseEnabled: settings.debugSseEnabled,
-      hasToken: Boolean(settings.authToken),
-      tokenPreview: maskToken(settings.authToken)
+      hasToken: Boolean(effectiveAuthToken),
+      tokenPreview: maskToken(effectiveAuthToken)
     });
   });
 
@@ -221,6 +229,7 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
       const workspace = workspaceRegistry.requireWorkspace(req, res);
       if (!workspace) return;
       const settings = await readSettings(workspace.root, defaultSettings);
+      const dotenvEnv = await readWorkspaceDotenv(workspace.root);
       const configured = await readMcpConfig(workspace.root);
       const snapshot = getMcpSnapshot(workspace.id);
       const ageSeconds = snapshot.checkedAt > 0 ? Math.max(0, Math.floor((Date.now() - snapshot.checkedAt) / 1000)) : null;
@@ -229,7 +238,7 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
       const items = configured.map((item) => {
         const runtime = snapshot.rows.get(item.name) || null;
         const missingEnvVars = item.requiredEnvVars.filter((name) => {
-          return !settingsEnvValue(name, settings).trim();
+          return !settingsEnvValue(name, settings, dotenvEnv).trim();
         });
         const defaultRuntime =
           settings.mcpEnabled === false
@@ -444,7 +453,11 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
     const runtimeEnvTextRaw = typeof req.body?.runtimeEnvText === "string" ? req.body.runtimeEnvText : null;
     const nextRuntimeEnv: Record<string, string> = {};
     if (runtimeEnvTextRaw !== null) {
-      Object.assign(nextRuntimeEnv, parseRuntimeEnvText(runtimeEnvTextRaw));
+      const parsedRuntimeEnv = parseEnvText(runtimeEnvTextRaw);
+      for (const [key, value] of Object.entries(parsedRuntimeEnv)) {
+        if (!hasEffectiveEnvValue(value)) continue;
+        nextRuntimeEnv[key] = String(value).trim();
+      }
     } else {
       const runtimeEnvUpdatesRaw = req.body?.runtimeEnvUpdates;
       const runtimeEnvUpdates =
@@ -491,6 +504,10 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
     };
 
     await writeSettings(workspace.root, next);
+    const dotenvEnv = await readWorkspaceDotenv(workspace.root);
+    const effectiveModel = coreValueFromDotenv("ANTHROPIC_MODEL", next.model, dotenvEnv);
+    const effectiveBaseUrl = coreValueFromDotenv("ANTHROPIC_BASE_URL", next.baseUrl, dotenvEnv);
+    const effectiveAuthToken = coreValueFromDotenv("ANTHROPIC_AUTH_TOKEN", next.authToken, dotenvEnv);
     let dotenvSync: { synced: boolean; envFile?: string; keyCount?: number; error?: string } = { synced: false };
     if (syncDotenv) {
       try {
@@ -505,8 +522,8 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
       ok: true,
       workspaceId: workspace.id,
       workspaceRoot: workspace.root,
-      model: next.model,
-      baseUrl: next.baseUrl,
+      model: effectiveModel,
+      baseUrl: effectiveBaseUrl,
       runtimeEnv: next.runtimeEnv,
       permissionProfile: next.permissionProfile,
       mcpEnabled: next.mcpEnabled,
@@ -514,8 +531,8 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
       toolGateEnabled: next.toolGateEnabled,
       debugEnabled: next.debugEnabled,
       debugSseEnabled: next.debugSseEnabled,
-      hasToken: Boolean(next.authToken),
-      tokenPreview: maskToken(next.authToken),
+      hasToken: Boolean(effectiveAuthToken),
+      tokenPreview: maskToken(effectiveAuthToken),
       dotenvSync
     });
   });
