@@ -12,6 +12,7 @@ const baseSettings = {
   mineruApiKey: "",
   hasMineruKey: false,
   mineruKeyPreview: "",
+  mcpEnvText: "",
   permissionProfile: "standard",
   mcpEnabled: true,
   speedModeEnabled: false,

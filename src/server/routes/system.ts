@@ -41,6 +41,13 @@ type McpProbeSnapshot = {
 
 export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, activeQueries }: SystemRoutesDeps): void {
   const mcpProbeCache = new Map<string, McpProbeSnapshot>();
+  const settingsEnvValue = (name: string, settings: RuntimeSettings): string => {
+    const fromMap = String(settings.mcpEnv?.[name] || "").trim();
+    if (fromMap) return fromMap;
+    if (name === "ANTHROPIC_AUTH_TOKEN") return settings.authToken;
+    if (name === "MINERU_API_KEY") return settings.mineruApiKey;
+    return "";
+  };
 
   const getMcpSnapshot = (workspaceId: string): McpProbeSnapshot => {
     const existing = mcpProbeCache.get(workspaceId);
@@ -153,6 +160,7 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
       workspaceRoot: workspace.root,
       model: settings.model,
       baseUrl: settings.baseUrl,
+      mcpEnv: settings.mcpEnv,
       permissionProfile: settings.permissionProfile,
       mcpEnabled: settings.mcpEnabled,
       speedModeEnabled: settings.speedModeEnabled,
@@ -197,7 +205,11 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
 
       const items = configured.map((item) => {
         const runtime = snapshot.rows.get(item.name) || null;
-        const missingEnvVars = item.requiredEnvVars.filter((name) => !String(process.env[name] || "").trim());
+        const missingEnvVars = item.requiredEnvVars.filter((name) => {
+          const fromProcess = String(process.env[name] || "").trim();
+          if (fromProcess) return false;
+          return !settingsEnvValue(name, settings).trim();
+        });
         const defaultRuntime =
           settings.mcpEnabled === false
             ? { connected: null, status: "disabled", error: "" }
@@ -409,6 +421,19 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
     const baseUrl = typeof req.body?.baseUrl === "string" ? req.body.baseUrl.trim() : current.baseUrl;
     const tokenInput = typeof req.body?.authToken === "string" ? req.body.authToken.trim() : "";
     const mineruKeyInput = typeof req.body?.mineruApiKey === "string" ? req.body.mineruApiKey.trim() : "";
+    const mcpEnvUpdatesRaw = req.body?.mcpEnvUpdates;
+    const mcpEnvUpdates =
+      mcpEnvUpdatesRaw && typeof mcpEnvUpdatesRaw === "object" && !Array.isArray(mcpEnvUpdatesRaw)
+        ? (mcpEnvUpdatesRaw as Record<string, unknown>)
+        : {};
+    const nextMcpEnv: Record<string, string> = { ...(current.mcpEnv || {}) };
+    for (const [rawKey, rawValue] of Object.entries(mcpEnvUpdates)) {
+      const key = String(rawKey || "").trim();
+      if (!key) continue;
+      const value = typeof rawValue === "string" ? rawValue.trim() : "";
+      if (!value) delete nextMcpEnv[key];
+      else nextMcpEnv[key] = value;
+    }
     const permissionProfileRaw = req.body?.permissionProfile;
     const permissionProfile =
       permissionProfileRaw === "standard" || permissionProfileRaw === "accept_edits" || permissionProfileRaw === "full_auto"
@@ -431,6 +456,7 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
       baseUrl: baseUrl || current.baseUrl,
       authToken: tokenInput ? tokenInput : keepExistingToken ? current.authToken : "",
       mineruApiKey: mineruKeyInput ? mineruKeyInput : keepExistingMineruKey ? current.mineruApiKey : "",
+      mcpEnv: nextMcpEnv,
       permissionProfile,
       mcpEnabled,
       speedModeEnabled,
@@ -446,6 +472,7 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
       workspaceRoot: workspace.root,
       model: next.model,
       baseUrl: next.baseUrl,
+      mcpEnv: next.mcpEnv,
       permissionProfile: next.permissionProfile,
       mcpEnabled: next.mcpEnabled,
       speedModeEnabled: next.speedModeEnabled,

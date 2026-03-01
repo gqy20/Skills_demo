@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { normalizeSettings, parseError } from "../lib/chatUtils.js";
+import { normalizeSettings, parseEnvText, parseError } from "../lib/chatUtils.js";
 
 export function normalizeMcpCatalogResponse(data, now = Date.now()) {
   return {
@@ -123,6 +123,7 @@ export function useWorkspaceData({
     async (next) => {
       const data = await apiPostJson("/api/settings", {
         ...next,
+        mcpEnvUpdates: parseEnvText(next.mcpEnvText),
         keepExistingToken: next.authToken ? false : true,
         keepExistingMineruKey: next.mineruApiKey ? false : true
       });

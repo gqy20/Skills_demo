@@ -7,6 +7,7 @@ const baseSettings: RuntimeSettings = {
   baseUrl: "https://example.com",
   authToken: "token",
   mineruApiKey: "mineru",
+  mcpEnv: {},
   permissionProfile: "standard",
   mcpEnabled: true,
   speedModeEnabled: false,

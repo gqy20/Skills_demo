@@ -61,6 +61,13 @@ export default function SettingsModal({
             placeholder={settings.hasMineruKey ? `已保存: ${settings.mineruKeyPreview}` : "请输入 MinerU API Key"}
             onChange={(e) => setSettings((s) => ({ ...s, mineruApiKey: e.target.value }))}
           />
+          <label>MCP 环境变量（KEY=VALUE，每行一个）</label>
+          <textarea
+            rows={6}
+            value={settings.mcpEnvText}
+            placeholder={"NOTION_TOKEN=ntn_xxx\nZOTERO_API_KEY=xxx\nZOTERO_LIBRARY_ID=123456"}
+            onChange={(e) => setSettings((s) => ({ ...s, mcpEnvText: e.target.value }))}
+          />
           <label>权限模式</label>
           <select
             value={settings.permissionProfile}

@@ -42,6 +42,7 @@ export default function App() {
     mineruApiKey: "",
     hasMineruKey: false,
     mineruKeyPreview: "",
+    mcpEnvText: "",
     permissionProfile: "standard",
     mcpEnabled: true,
     speedModeEnabled: false,

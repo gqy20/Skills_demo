@@ -6,6 +6,20 @@ export function settingsFileFor(workspaceRoot: string): string {
   return path.join(workspaceRoot, ".info", "agent-web-settings.json");
 }
 
+function normalizeMcpEnv(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const name = String(key || "").trim();
+    if (!name) continue;
+    if (typeof value !== "string") continue;
+    const val = value.trim();
+    if (!val) continue;
+    out[name] = val;
+  }
+  return out;
+}
+
 export async function readSettings(workspaceRoot: string, defaults: RuntimeSettings): Promise<RuntimeSettings> {
   const settingsFile = settingsFileFor(workspaceRoot);
   try {
@@ -22,6 +36,7 @@ export async function readSettings(workspaceRoot: string, defaults: RuntimeSetti
       baseUrl: parsed.baseUrl || defaults.baseUrl,
       authToken: parsed.authToken || defaults.authToken,
       mineruApiKey: parsed.mineruApiKey || defaults.mineruApiKey,
+      mcpEnv: { ...defaults.mcpEnv, ...normalizeMcpEnv(parsed.mcpEnv) },
       permissionProfile,
       mcpEnabled: typeof parsed.mcpEnabled === "boolean" ? parsed.mcpEnabled : defaults.mcpEnabled,
       speedModeEnabled:

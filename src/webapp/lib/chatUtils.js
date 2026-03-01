@@ -16,6 +16,29 @@ export function parseError(error) {
   return String(error);
 }
 
+export function parseEnvText(text) {
+  const out = {};
+  const lines = String(text || "").split(/\r?\n/);
+  for (const line of lines) {
+    const raw = line.trim();
+    if (!raw || raw.startsWith("#")) continue;
+    const idx = raw.indexOf("=");
+    if (idx <= 0) continue;
+    const key = raw.slice(0, idx).trim();
+    const value = raw.slice(idx + 1).trim();
+    if (!key) continue;
+    out[key] = value;
+  }
+  return out;
+}
+
+export function envMapToText(map) {
+  if (!map || typeof map !== "object") return "";
+  return Object.entries(map)
+    .map(([k, v]) => `${k}=${String(v ?? "")}`)
+    .join("\n");
+}
+
 export function shortText(value, max = 120) {
   const text = typeof value === "string" ? value.trim() : "";
   if (!text) return "";
@@ -141,6 +164,7 @@ export function normalizeSettings(data) {
     mineruApiKey: "",
     hasMineruKey: data?.hasMineruKey === true,
     mineruKeyPreview: data?.mineruKeyPreview || "",
+    mcpEnvText: envMapToText(data?.mcpEnv),
     permissionProfile:
       data?.permissionProfile === "full_auto" || data?.permissionProfile === "accept_edits"
         ? data.permissionProfile

@@ -24,6 +24,7 @@ const defaults: RuntimeSettings = {
   baseUrl: "https://example.com",
   authToken: "",
   mineruApiKey: "",
+  mcpEnv: {},
   permissionProfile: "standard",
   mcpEnabled: true,
   speedModeEnabled: false,

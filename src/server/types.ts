@@ -5,6 +5,7 @@ export type RuntimeSettings = {
   baseUrl: string;
   authToken: string;
   mineruApiKey: string;
+  mcpEnv: Record<string, string>;
   permissionProfile: PermissionProfile;
   mcpEnabled: boolean;
   speedModeEnabled: boolean;
