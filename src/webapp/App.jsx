@@ -39,7 +39,7 @@ export default function App() {
     authToken: "",
     hasToken: false,
     tokenPreview: "",
-    mcpEnvText: "",
+    runtimeEnvText: "",
     permissionProfile: "standard",
     mcpEnabled: true,
     speedModeEnabled: false,

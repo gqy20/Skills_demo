@@ -42,7 +42,7 @@ type McpProbeSnapshot = {
 
 export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, activeQueries }: SystemRoutesDeps): void {
   const mcpProbeCache = new Map<string, McpProbeSnapshot>();
-  const parseMcpEnvText = (text: string): Record<string, string> => {
+  const parseRuntimeEnvText = (text: string): Record<string, string> => {
     const out: Record<string, string> = {};
     const lines = String(text || "").split(/\r?\n/);
     for (const line of lines) {
@@ -60,7 +60,7 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
   const settingsEnvValue = (name: string, settings: RuntimeSettings): string => {
     const fromProcess = String(process.env[name] || "").trim();
     if (fromProcess) return fromProcess;
-    const fromMap = String(settings.mcpEnv?.[name] || "").trim();
+    const fromMap = String(settings.runtimeEnv?.[name] || "").trim();
     if (fromMap) return fromMap;
     if (name === "ANTHROPIC_AUTH_TOKEN") return settings.authToken;
     return "";
@@ -174,18 +174,19 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
     const settings = await readSettings(workspace.root, defaultSettings);
     const configured = await readMcpConfig(workspace.root);
     const requiredEnvKeys = Array.from(new Set(configured.flatMap((item) => item.requiredEnvVars || [])));
-    const mcpEnvView: Record<string, string> = { ...(settings.mcpEnv || {}) };
+    const runtimeEnvView: Record<string, string> = { ...(settings.runtimeEnv || {}) };
     for (const key of requiredEnvKeys) {
       const value = settingsEnvValue(key, settings).trim();
       if (!value) continue;
-      mcpEnvView[key] = value;
+      runtimeEnvView[key] = value;
     }
     res.json({
       workspaceId: workspace.id,
       workspaceRoot: workspace.root,
       model: settings.model,
       baseUrl: settings.baseUrl,
-      mcpEnv: mcpEnvView,
+      runtimeEnv: runtimeEnvView,
+      mcpEnv: runtimeEnvView,
       permissionProfile: settings.permissionProfile,
       mcpEnabled: settings.mcpEnabled,
       speedModeEnabled: settings.speedModeEnabled,
@@ -441,23 +442,31 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
     const model = typeof req.body?.model === "string" ? req.body.model.trim() : current.model;
     const baseUrl = typeof req.body?.baseUrl === "string" ? req.body.baseUrl.trim() : current.baseUrl;
     const tokenInput = typeof req.body?.authToken === "string" ? req.body.authToken.trim() : "";
-    const mcpEnvText = typeof req.body?.mcpEnvText === "string" ? req.body.mcpEnvText : null;
-    const nextMcpEnv: Record<string, string> = {};
-    if (mcpEnvText !== null) {
-      Object.assign(nextMcpEnv, parseMcpEnvText(mcpEnvText));
+    const runtimeEnvTextRaw =
+      typeof req.body?.runtimeEnvText === "string"
+        ? req.body.runtimeEnvText
+        : typeof req.body?.mcpEnvText === "string"
+          ? req.body.mcpEnvText
+          : null;
+    const nextRuntimeEnv: Record<string, string> = {};
+    if (runtimeEnvTextRaw !== null) {
+      Object.assign(nextRuntimeEnv, parseRuntimeEnvText(runtimeEnvTextRaw));
     } else {
-      const mcpEnvUpdatesRaw = req.body?.mcpEnvUpdates;
-      const mcpEnvUpdates =
-        mcpEnvUpdatesRaw && typeof mcpEnvUpdatesRaw === "object" && !Array.isArray(mcpEnvUpdatesRaw)
-          ? (mcpEnvUpdatesRaw as Record<string, unknown>)
+      const runtimeEnvUpdatesRaw =
+        req.body?.runtimeEnvUpdates && typeof req.body.runtimeEnvUpdates === "object" && !Array.isArray(req.body.runtimeEnvUpdates)
+          ? req.body.runtimeEnvUpdates
+          : req.body?.mcpEnvUpdates;
+      const runtimeEnvUpdates =
+        runtimeEnvUpdatesRaw && typeof runtimeEnvUpdatesRaw === "object" && !Array.isArray(runtimeEnvUpdatesRaw)
+          ? (runtimeEnvUpdatesRaw as Record<string, unknown>)
           : {};
-      Object.assign(nextMcpEnv, current.mcpEnv || {});
-      for (const [rawKey, rawValue] of Object.entries(mcpEnvUpdates)) {
+      Object.assign(nextRuntimeEnv, current.runtimeEnv || {});
+      for (const [rawKey, rawValue] of Object.entries(runtimeEnvUpdates)) {
         const key = String(rawKey || "").trim();
         if (!key) continue;
         const value = typeof rawValue === "string" ? rawValue.trim() : "";
-        if (!value) delete nextMcpEnv[key];
-        else nextMcpEnv[key] = value;
+        if (!value) delete nextRuntimeEnv[key];
+        else nextRuntimeEnv[key] = value;
       }
     }
     const permissionProfileRaw = req.body?.permissionProfile;
@@ -489,7 +498,7 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
       model: model || current.model,
       baseUrl: baseUrl || current.baseUrl,
       authToken: tokenInput ? tokenInput : keepExistingToken ? current.authToken : "",
-      mcpEnv: nextMcpEnv,
+      runtimeEnv: nextRuntimeEnv,
       permissionProfile,
       mcpEnabled,
       speedModeEnabled,
@@ -515,7 +524,8 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
       workspaceRoot: workspace.root,
       model: next.model,
       baseUrl: next.baseUrl,
-      mcpEnv: next.mcpEnv,
+      runtimeEnv: next.runtimeEnv,
+      mcpEnv: next.runtimeEnv,
       permissionProfile: next.permissionProfile,
       mcpEnabled: next.mcpEnabled,
       speedModeEnabled: next.speedModeEnabled,

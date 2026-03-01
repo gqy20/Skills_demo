@@ -123,8 +123,8 @@ export function useWorkspaceData({
     async (next) => {
       const data = await apiPostJson("/api/settings", {
         ...next,
-        mcpEnvText: next.mcpEnvText,
-        mcpEnvUpdates: parseEnvText(next.mcpEnvText),
+        runtimeEnvText: next.runtimeEnvText,
+        runtimeEnvUpdates: parseEnvText(next.runtimeEnvText),
         keepExistingToken: next.authToken ? false : true
       });
       setSettings(normalizeSettings(data));

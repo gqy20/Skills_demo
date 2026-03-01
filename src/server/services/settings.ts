@@ -6,7 +6,7 @@ export function settingsFileFor(workspaceRoot: string): string {
   return path.join(workspaceRoot, ".info", "agent-web-settings.json");
 }
 
-function normalizeMcpEnv(raw: unknown): Record<string, string> {
+function normalizeRuntimeEnv(raw: unknown): Record<string, string> {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
@@ -31,18 +31,23 @@ export async function readSettings(workspaceRoot: string, defaults: RuntimeSetti
       parsed.permissionProfile === "full_auto"
         ? parsed.permissionProfile
         : defaults.permissionProfile;
-    const mergedMcpEnv = { ...defaults.mcpEnv, ...normalizeMcpEnv(parsed.mcpEnv) };
+    const legacyMcpEnv = normalizeRuntimeEnv((parsed as { mcpEnv?: unknown }).mcpEnv);
+    const mergedRuntimeEnv = {
+      ...defaults.runtimeEnv,
+      ...legacyMcpEnv,
+      ...normalizeRuntimeEnv((parsed as { runtimeEnv?: unknown }).runtimeEnv)
+    };
     const legacyMineru =
       typeof (parsed as { mineruApiKey?: unknown }).mineruApiKey === "string"
         ? (parsed as { mineruApiKey: string }).mineruApiKey.trim()
         : "";
-    if (legacyMineru && !mergedMcpEnv.MINERU_API_KEY) mergedMcpEnv.MINERU_API_KEY = legacyMineru;
+    if (legacyMineru && !mergedRuntimeEnv.MINERU_API_KEY) mergedRuntimeEnv.MINERU_API_KEY = legacyMineru;
 
     return {
       model: parsed.model || defaults.model,
       baseUrl: parsed.baseUrl || defaults.baseUrl,
       authToken: parsed.authToken || defaults.authToken,
-      mcpEnv: mergedMcpEnv,
+      runtimeEnv: mergedRuntimeEnv,
       permissionProfile,
       mcpEnabled: typeof parsed.mcpEnabled === "boolean" ? parsed.mcpEnabled : defaults.mcpEnabled,
       speedModeEnabled:

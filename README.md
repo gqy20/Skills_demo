@@ -132,7 +132,7 @@ npm start
 - `model`
 - `baseUrl`
 - `authToken`
-- `mcpEnvText`（统一管理 `MINERU_API_KEY`、`NOTION_TOKEN`、`ZOTERO_*` 等）
+- `runtimeEnvText`（统一管理 `MINERU_API_KEY`、`NOTION_TOKEN`、`ZOTERO_*` 等）
 - `mcpEnabled`
 - `speedModeEnabled`
 - `toolGateEnabled`

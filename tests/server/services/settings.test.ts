@@ -11,7 +11,7 @@ const defaults: RuntimeSettings = {
   model: "default-model",
   baseUrl: "https://default",
   authToken: "",
-  mcpEnv: {},
+  runtimeEnv: {},
   permissionProfile: "standard",
   mcpEnabled: true,
   speedModeEnabled: false,

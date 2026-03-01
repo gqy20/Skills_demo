@@ -24,7 +24,7 @@ function buildManagedEnv(settings: RuntimeSettings): Record<string, string> {
     ANTHROPIC_BASE_URL: normalizeEnvValue(settings.baseUrl),
     ANTHROPIC_AUTH_TOKEN: normalizeEnvValue(settings.authToken)
   };
-  for (const [rawKey, rawValue] of Object.entries(settings.mcpEnv || {})) {
+  for (const [rawKey, rawValue] of Object.entries(settings.runtimeEnv || {})) {
     const key = String(rawKey || "").trim();
     const value = normalizeEnvValue(rawValue);
     if (!key || !value) continue;

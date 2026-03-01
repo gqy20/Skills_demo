@@ -24,7 +24,7 @@ const defaults: RuntimeSettings = {
   model: "m1",
   baseUrl: "https://example.com",
   authToken: "",
-  mcpEnv: {},
+  runtimeEnv: {},
   permissionProfile: "standard",
   mcpEnabled: true,
   speedModeEnabled: false,
@@ -217,13 +217,13 @@ describe("registerSystemRoutes", () => {
     });
   });
 
-  it("replaces mcp env map from mcpEnvText in POST /api/settings", async () => {
+  it("replaces runtime env map from runtimeEnvText in POST /api/settings", async () => {
     const ws = await makeWorkspace();
     process.env.AGENT_WORKSPACE_ROOT = ws;
     process.env.AGENT_WORKSPACES = "";
     await writeSettings(ws, {
       ...defaults,
-      mcpEnv: {
+      runtimeEnv: {
         OLD_KEY: "old",
         KEEP_ME: "legacy"
       }
@@ -237,7 +237,7 @@ describe("registerSystemRoutes", () => {
     await posts.get("/api/settings")!(
       {
         body: {
-          mcpEnvText: "NEW_KEY=new-value\n# comment\nEMPTY=\nKEEP_ME=updated"
+          runtimeEnvText: "NEW_KEY=new-value\n# comment\nEMPTY=\nKEEP_ME=updated"
         },
         query: {}
       } as Request,
@@ -247,7 +247,7 @@ describe("registerSystemRoutes", () => {
     expect(postRes.statusCode).toBe(200);
     expect(postRes.body).toMatchObject({
       ok: true,
-      mcpEnv: {
+      runtimeEnv: {
         NEW_KEY: "new-value",
         KEEP_ME: "updated"
       }
@@ -257,7 +257,7 @@ describe("registerSystemRoutes", () => {
     await gets.get("/api/settings")!({ body: {}, query: {} } as Request, getRes);
     expect(getRes.statusCode).toBe(200);
     expect(getRes.body).toMatchObject({
-      mcpEnv: {
+      runtimeEnv: {
         NEW_KEY: "new-value",
         KEEP_ME: "updated"
       }
@@ -398,7 +398,7 @@ describe("registerSystemRoutes", () => {
     await gets.get("/api/settings")!({ body: {}, query: {} } as Request, settingsRes);
     expect(settingsRes.statusCode).toBe(200);
     expect(settingsRes.body).toMatchObject({
-      mcpEnv: {
+      runtimeEnv: {
         NOTION_TOKEN: "ntn_live_value"
       }
     });
@@ -413,7 +413,7 @@ describe("registerSystemRoutes", () => {
       model: "model-from-settings",
       baseUrl: "https://settings.example",
       authToken: "token-from-settings",
-      mcpEnv: {
+      runtimeEnv: {
         MINERU_API_KEY: "mineru-from-settings",
         NOTION_TOKEN: "ntn_sync_value",
         ZOTERO_API_KEY: "zotero_sync_value"

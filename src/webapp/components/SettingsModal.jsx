@@ -14,8 +14,8 @@ export default function SettingsModal({
   onSave,
   onSyncDotenv
 }) {
-  const mcpEnvStats = React.useMemo(() => inspectEnvText(settings.mcpEnvText), [settings.mcpEnvText]);
-  const mcpEnvMap = React.useMemo(() => parseEnvText(settings.mcpEnvText), [settings.mcpEnvText]);
+  const runtimeEnvStats = React.useMemo(() => inspectEnvText(settings.runtimeEnvText), [settings.runtimeEnvText]);
+  const runtimeEnvMap = React.useMemo(() => parseEnvText(settings.runtimeEnvText), [settings.runtimeEnvText]);
   const mcpServers = Array.isArray(mcpCatalog?.items) ? mcpCatalog.items : [];
   const requiredByServer = React.useMemo(
     () =>
@@ -34,8 +34,8 @@ export default function SettingsModal({
     [requiredByServer]
   );
   const missingRequiredKeys = React.useMemo(
-    () => allRequiredKeys.filter((key) => !String(mcpEnvMap[key] || "").trim()),
-    [allRequiredKeys, mcpEnvMap]
+    () => allRequiredKeys.filter((key) => !String(runtimeEnvMap[key] || "").trim()),
+    [allRequiredKeys, runtimeEnvMap]
   );
   const upsertMcpEnvKeys = React.useCallback(
     (keys) => {
@@ -48,14 +48,14 @@ export default function SettingsModal({
       );
       if (normalized.length === 0) return;
       setSettings((prev) => {
-        const current = parseEnvText(prev.mcpEnvText);
+        const current = parseEnvText(prev.runtimeEnvText);
         for (const key of normalized) {
           if (!Object.prototype.hasOwnProperty.call(current, key)) current[key] = "";
         }
         const nextText = Object.entries(current)
           .map(([key, value]) => `${key}=${value}`)
           .join("\n");
-        return { ...prev, mcpEnvText: nextText };
+        return { ...prev, runtimeEnvText: nextText };
       });
     },
     [setSettings]
@@ -105,29 +105,29 @@ export default function SettingsModal({
             placeholder={settings.hasToken ? `已保存: ${settings.tokenPreview}` : "请输入 API Key"}
             onChange={(e) => setSettings((s) => ({ ...s, authToken: e.target.value }))}
           />
-          <label>MCP 环境变量</label>
-          <p className="settings-hint">每行一个 `KEY=VALUE`，支持 `#` 注释。包含 `MINERU_API_KEY`、`NOTION_TOKEN` 等密钥。</p>
+          <label>运行时环境变量（Runtime Env）</label>
+          <p className="settings-hint">每行一个 `KEY=VALUE`，支持 `#` 注释。可统一配置 `MINERU_API_KEY`、`NOTION_TOKEN`、`ZOTERO_*` 等。</p>
           <textarea
             className="settings-textarea"
             rows={6}
-            value={settings.mcpEnvText}
+            value={settings.runtimeEnvText}
             placeholder={"MINERU_API_KEY=xxx\nNOTION_TOKEN=ntn_xxx\nZOTERO_API_KEY=xxx\nZOTERO_LIBRARY_ID=123456"}
             spellCheck={false}
-            onChange={(e) => setSettings((s) => ({ ...s, mcpEnvText: e.target.value }))}
+            onChange={(e) => setSettings((s) => ({ ...s, runtimeEnvText: e.target.value }))}
           />
           <div className="settings-inline-meta">
-            <span className="meta-chip">有效项: {mcpEnvStats.validCount}</span>
+            <span className="meta-chip">有效项: {runtimeEnvStats.validCount}</span>
             {allRequiredKeys.length > 0 && (
               <span className="meta-chip">MCP 必需: {allRequiredKeys.length}</span>
             )}
             {missingRequiredKeys.length > 0 && (
               <span className="meta-chip warn">待补齐: {missingRequiredKeys.length}</span>
             )}
-            {mcpEnvStats.invalidLineNumbers.length > 0 && (
-              <span className="meta-chip warn">无效行: {mcpEnvStats.invalidLineNumbers.join(", ")}</span>
+            {runtimeEnvStats.invalidLineNumbers.length > 0 && (
+              <span className="meta-chip warn">无效行: {runtimeEnvStats.invalidLineNumbers.join(", ")}</span>
             )}
-            {mcpEnvStats.duplicateKeys.length > 0 && (
-              <span className="meta-chip warn">重复 Key: {Array.from(new Set(mcpEnvStats.duplicateKeys)).join(", ")}</span>
+            {runtimeEnvStats.duplicateKeys.length > 0 && (
+              <span className="meta-chip warn">重复 Key: {Array.from(new Set(runtimeEnvStats.duplicateKeys)).join(", ")}</span>
             )}
           </div>
           {requiredByServer.length > 0 && (
@@ -142,7 +142,7 @@ export default function SettingsModal({
               </div>
               <ul className="settings-mcp-required-list">
                 {requiredByServer.map((server) => {
-                  const serverMissing = server.requiredEnvVars.filter((key) => !String(mcpEnvMap[key] || "").trim());
+                  const serverMissing = server.requiredEnvVars.filter((key) => !String(runtimeEnvMap[key] || "").trim());
                   return (
                     <li key={server.name} className="settings-mcp-required-item">
                       <div className="settings-mcp-required-server">
@@ -158,7 +158,7 @@ export default function SettingsModal({
                       </div>
                       <div className="settings-mcp-required-keys">
                         {server.requiredEnvVars.map((key) => {
-                          const filled = Boolean(String(mcpEnvMap[key] || "").trim());
+                          const filled = Boolean(String(runtimeEnvMap[key] || "").trim());
                           return (
                             <span key={`${server.name}:${key}`} className={`meta-chip ${filled ? "" : "warn"}`}>
                               {key}
@@ -211,7 +211,7 @@ export default function SettingsModal({
           </div>
           <label>同步到 .env（手动确认）</label>
           <p className="settings-hint">
-            请输入 <code>SYNC .ENV</code> 后点击同步。该操作会把当前模型/API Key/MCP 环境变量写入工作区根目录的 <code>.env</code>。
+            请输入 <code>SYNC .ENV</code> 后点击同步。该操作会把当前模型/API Key/运行时环境变量写入工作区根目录的 <code>.env</code>。
           </p>
           <input
             value={envSyncConfirmText}

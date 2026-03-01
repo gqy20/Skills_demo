@@ -4,7 +4,7 @@ export type RuntimeSettings = {
   model: string;
   baseUrl: string;
   authToken: string;
-  mcpEnv: Record<string, string>;
+  runtimeEnv: Record<string, string>;
   permissionProfile: PermissionProfile;
   mcpEnabled: boolean;
   speedModeEnabled: boolean;

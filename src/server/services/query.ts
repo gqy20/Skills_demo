@@ -47,7 +47,7 @@ export async function applyMcpToggle(
 
 function buildQueryEnv(settings: RuntimeSettings): Record<string, string | undefined> {
   return {
-    ...(settings.mcpEnv || {}),
+    ...(settings.runtimeEnv || {}),
     ANTHROPIC_MODEL: settings.model,
     ANTHROPIC_BASE_URL: settings.baseUrl,
     ANTHROPIC_AUTH_TOKEN: settings.authToken,

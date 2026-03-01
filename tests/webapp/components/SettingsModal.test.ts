@@ -9,7 +9,7 @@ const baseSettings = {
   authToken: "",
   hasToken: true,
   tokenPreview: "abcd...wxyz",
-  mcpEnvText: "",
+  runtimeEnvText: "",
   permissionProfile: "standard",
   mcpEnabled: true,
   speedModeEnabled: false,

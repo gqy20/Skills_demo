@@ -187,13 +187,14 @@ export function looksLikeToolClaim(text) {
 }
 
 export function normalizeSettings(data) {
+  const runtimeEnv = data?.runtimeEnv || data?.mcpEnv || {};
   return {
     model: data?.model || "",
     baseUrl: data?.baseUrl || "",
     authToken: "",
     hasToken: data?.hasToken === true,
     tokenPreview: data?.tokenPreview || "",
-    mcpEnvText: envMapToText(data?.mcpEnv),
+    runtimeEnvText: envMapToText(runtimeEnv),
     permissionProfile:
       data?.permissionProfile === "full_auto" || data?.permissionProfile === "accept_edits"
         ? data.permissionProfile
