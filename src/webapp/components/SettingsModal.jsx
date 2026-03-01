@@ -1,5 +1,5 @@
 import React from "react";
-import { inspectEnvText, parseEnvText, permissionProfileLabel } from "../lib/chatUtils.js";
+import { inspectEnvText, parseEnvText } from "../lib/chatUtils.js";
 
 export default function SettingsModal({
   open,
@@ -7,8 +7,7 @@ export default function SettingsModal({
   setSettings,
   mcpCatalog,
   onClose,
-  onSave,
-  onSyncDotenv
+  onSave
 }) {
   const runtimeEnvStats = React.useMemo(() => inspectEnvText(settings.runtimeEnvText), [settings.runtimeEnvText]);
   const runtimeEnvMap = React.useMemo(() => parseEnvText(settings.runtimeEnvText), [settings.runtimeEnvText]);
@@ -29,9 +28,67 @@ export default function SettingsModal({
     () => Array.from(new Set(requiredByServer.flatMap((item) => item.requiredEnvVars))),
     [requiredByServer]
   );
+  const mcpRequiredSet = React.useMemo(() => new Set(allRequiredKeys), [allRequiredKeys]);
+  const mcpPrefixes = React.useMemo(() => {
+    const prefixes = new Set(["MCP", "NOTION", "ZOTERO"]);
+    for (const key of allRequiredKeys) {
+      const prefix = String(key || "")
+        .trim()
+        .split("_")[0];
+      if (prefix) prefixes.add(prefix);
+    }
+    for (const item of mcpServers) {
+      const prefix = String(item?.name || "")
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, "_");
+      if (prefix) prefixes.add(prefix);
+    }
+    return Array.from(prefixes);
+  }, [allRequiredKeys, mcpServers]);
+  const isMcpKey = React.useCallback(
+    (key) => {
+      const normalized = String(key || "").trim();
+      if (!normalized) return false;
+      if (mcpRequiredSet.has(normalized)) return true;
+      return mcpPrefixes.some((prefix) => normalized === prefix || normalized.startsWith(`${prefix}_`));
+    },
+    [mcpPrefixes, mcpRequiredSet]
+  );
+  const runtimeEnvSplitText = React.useMemo(() => {
+    const map = parseEnvText(settings.runtimeEnvText);
+    const mcpPairs = [];
+    const otherPairs = [];
+    for (const [key, value] of Object.entries(map)) {
+      if (isMcpKey(key)) mcpPairs.push([key, value]);
+      else otherPairs.push([key, value]);
+    }
+    return {
+      mcpText: mcpPairs.map(([key, value]) => `${key}=${value}`).join("\n"),
+      otherText: otherPairs.map(([key, value]) => `${key}=${value}`).join("\n")
+    };
+  }, [isMcpKey, settings.runtimeEnvText]);
   const missingRequiredKeys = React.useMemo(
     () => allRequiredKeys.filter((key) => !String(runtimeEnvMap[key] || "").trim()),
     [allRequiredKeys, runtimeEnvMap]
+  );
+  const updateRuntimeEnvPartition = React.useCallback(
+    (target, text) => {
+      const current = parseEnvText(settings.runtimeEnvText);
+      const input = parseEnvText(text);
+      const next = {};
+      for (const [key, value] of Object.entries(current)) {
+        if (target === "mcp" ? !isMcpKey(key) : isMcpKey(key)) next[key] = value;
+      }
+      for (const [key, value] of Object.entries(input)) {
+        if (target === "mcp" ? isMcpKey(key) : !isMcpKey(key)) next[key] = value;
+      }
+      const nextText = Object.entries(next)
+        .map(([key, value]) => `${key}=${value}`)
+        .join("\n");
+      setSettings((prev) => ({ ...prev, runtimeEnvText: nextText }));
+    },
+    [isMcpKey, setSettings, settings.runtimeEnvText]
   );
   const upsertMcpEnvKeys = React.useCallback(
     (keys) => {
@@ -56,33 +113,74 @@ export default function SettingsModal({
     },
     [setSettings]
   );
+  const snapshotOf = React.useCallback(
+    (value) =>
+      JSON.stringify({
+        model: value?.model || "",
+        baseUrl: value?.baseUrl || "",
+        authToken: value?.authToken || "",
+        runtimeEnvText: value?.runtimeEnvText || "",
+        permissionProfile: value?.permissionProfile || "standard",
+        toolGateEnabled: value?.toolGateEnabled !== false
+      }),
+    []
+  );
+  const openSnapshotRef = React.useRef("");
+  const [syncNotice, setSyncNotice] = React.useState({ type: "", message: "" });
+
+  React.useEffect(() => {
+    if (open) {
+      openSnapshotRef.current = snapshotOf(settings);
+      setSyncNotice({ type: "", message: "" });
+    }
+  }, [open, snapshotOf]);
+
+  const dirty = open && openSnapshotRef.current && snapshotOf(settings) !== openSnapshotRef.current;
+  const requestClose = React.useCallback(async () => {
+    if (!dirty) {
+      onClose();
+      return;
+    }
+    const shouldSave = window.confirm("检测到未保存改动。点击“确定”保存并关闭；点击“取消”继续选择。");
+    if (shouldSave) {
+      try {
+        await onSave(settings);
+        onClose();
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        setSyncNotice({ type: "error", message: `保存失败: ${msg}` });
+      }
+      return;
+    }
+    const shouldDiscard = window.confirm("确认放弃未保存改动并关闭吗？");
+    if (shouldDiscard) onClose();
+  }, [dirty, onClose, onSave, settings]);
 
   return (
     <div
       className={`modal ${open ? "" : "hidden"}`}
       onClick={() => {
-        onClose();
+        requestClose().catch(() => {});
       }}
     >
       <div className="modal-card" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>运行配置</h2>
           <button
-            className="btn-secondary"
             type="button"
+            className="modal-close-btn"
+            aria-label="关闭设置"
             onClick={() => {
-              onClose();
+              requestClose().catch(() => {});
             }}
           >
-            关闭
+            ×
           </button>
         </div>
         <form
           className="settings-form"
-          onSubmit={async (event) => {
+          onSubmit={(event) => {
             event.preventDefault();
-            await onSave(settings);
-            onClose();
           }}
         >
           <div className="settings-section">
@@ -102,16 +200,30 @@ export default function SettingsModal({
 
           <div className="settings-section">
             <h3 className="settings-section-title">运行时变量</h3>
-            <label>运行时环境变量（Runtime Env）</label>
-            <p className="settings-hint">每行一个 `KEY=VALUE`，支持 `#` 注释。可统一配置 `MINERU_API_KEY`、`NOTION_TOKEN`、`ZOTERO_*` 等。</p>
-            <textarea
-              className="settings-textarea"
-              rows={6}
-              value={settings.runtimeEnvText}
-              placeholder={"MINERU_API_KEY=xxx\nNOTION_TOKEN=ntn_xxx\nZOTERO_API_KEY=xxx\nZOTERO_LIBRARY_ID=123456"}
-              spellCheck={false}
-              onChange={(e) => setSettings((s) => ({ ...s, runtimeEnvText: e.target.value }))}
-            />
+            <div className="settings-env-grid">
+              <div>
+                <label>MCP 变量</label>
+                <textarea
+                  className="settings-textarea"
+                  rows={6}
+                  value={runtimeEnvSplitText.mcpText}
+                  placeholder={"NOTION_TOKEN=\nZOTERO_API_KEY=\nZOTERO_LIBRARY_ID="}
+                  spellCheck={false}
+                  onChange={(e) => updateRuntimeEnvPartition("mcp", e.target.value)}
+                />
+              </div>
+              <div>
+                <label>其他变量</label>
+                <textarea
+                  className="settings-textarea"
+                  rows={6}
+                  value={runtimeEnvSplitText.otherText}
+                  placeholder={"MINERU_API_KEY=\nCUSTOM_KEY="}
+                  spellCheck={false}
+                  onChange={(e) => updateRuntimeEnvPartition("other", e.target.value)}
+                />
+              </div>
+            </div>
             <div className="settings-inline-meta">
               <span className="meta-chip">有效项: {runtimeEnvStats.validCount}</span>
               {allRequiredKeys.length > 0 && (
@@ -172,7 +284,7 @@ export default function SettingsModal({
           </div>
 
           <div className="settings-section">
-            <h3 className="settings-section-title">权限与同步</h3>
+            <h3 className="settings-section-title">权限</h3>
             <label>权限模式</label>
             <select
               value={settings.permissionProfile}
@@ -202,31 +314,10 @@ export default function SettingsModal({
               <option value="off">OFF</option>
             </select>
             <div className="pending-actions">
-              <button type="submit" className="btn-primary">
-                保存配置
-              </button>
-              <span className="meta-chip">权限: {permissionProfileLabel(settings.permissionProfile)}</span>
-            </div>
-            <label>同步到 .env</label>
-            <p className="settings-hint">
-              点击按钮即可将当前模型/API Key/运行时环境变量写入工作区根目录的 <code>.env</code>。
-            </p>
-            <div className="pending-actions">
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={async () => {
-                  try {
-                    await onSyncDotenv();
-                    window.alert("已同步到 .env");
-                  } catch (error) {
-                    const msg = error instanceof Error ? error.message : String(error);
-                    window.alert(`同步失败: ${msg}`);
-                  }
-                }}
-              >
-                同步当前配置到 .env
-              </button>
+              {dirty && <span className="meta-chip warn">存在未保存改动</span>}
+              {syncNotice.message && (
+                <span className={`meta-chip ${syncNotice.type === "error" ? "warn" : ""}`}>{syncNotice.message}</span>
+              )}
             </div>
           </div>
         </form>

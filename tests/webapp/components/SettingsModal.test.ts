@@ -27,8 +27,7 @@ describe("SettingsModal", () => {
         setSettings: vi.fn(),
         mcpCatalog: { items: [] },
         onClose: vi.fn(),
-        onSave: vi.fn(async () => {}),
-        onSyncDotenv: vi.fn(async () => {})
+        onSave: vi.fn(async () => {})
       })
     );
     expect(html).toContain("modal hidden");
@@ -44,8 +43,7 @@ describe("SettingsModal", () => {
           items: [{ name: "demo", requiredEnvVars: ["NOTION_TOKEN", "ZOTERO_API_KEY"] }]
         },
         onClose: vi.fn(),
-        onSave: vi.fn(async () => {}),
-        onSyncDotenv: vi.fn(async () => {})
+        onSave: vi.fn(async () => {})
       })
     );
     expect(html).toContain("全部允许（高风险）");

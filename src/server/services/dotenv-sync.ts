@@ -20,7 +20,13 @@ function buildManagedEnv(settings: RuntimeSettings): Record<string, string> {
   const out: Record<string, string> = {
     ANTHROPIC_MODEL: normalizeEnvValue(settings.model),
     ANTHROPIC_BASE_URL: normalizeEnvValue(settings.baseUrl),
-    ANTHROPIC_AUTH_TOKEN: normalizeEnvValue(settings.authToken)
+    ANTHROPIC_AUTH_TOKEN: normalizeEnvValue(settings.authToken),
+    AGENT_WEB_PERMISSION_PROFILE: normalizeEnvValue(settings.permissionProfile),
+    AGENT_WEB_MCP_ENABLED: settings.mcpEnabled ? "1" : "0",
+    AGENT_WEB_SPEED_MODE_ENABLED: settings.speedModeEnabled ? "1" : "0",
+    AGENT_WEB_TOOL_GATE_ENABLED: settings.toolGateEnabled ? "1" : "0",
+    AGENT_WEB_DEBUG_ENABLED: settings.debugEnabled ? "1" : "0",
+    AGENT_WEB_DEBUG_SSE_ENABLED: settings.debugSseEnabled ? "1" : "0"
   };
   for (const [rawKey, rawValue] of Object.entries(settings.runtimeEnv || {})) {
     const key = String(rawKey || "").trim();

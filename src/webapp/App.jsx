@@ -223,8 +223,7 @@ export default function App() {
     refreshMcps,
     loadSessions,
     loadFileSuggestions,
-    saveSettings,
-    syncSettingsToDotenv
+    saveSettings
   } = useWorkspaceData({
     currentWorkspaceId,
     apiGetJson,
@@ -539,11 +538,8 @@ export default function App() {
         onClose={() => {
           setSettingsOpen(false);
         }}
-        onSave={saveSettings}
-        onSyncDotenv={async () => {
-          await saveSettings(settings);
-          await syncSettingsToDotenv();
-          await loadSettings();
+        onSave={async (next) => {
+          await saveSettings(next);
           await loadMcps();
         }}
       />

@@ -442,30 +442,31 @@ describe("registerSystemRoutes", () => {
     });
   });
 
-  it("syncs current settings into workspace .env via /api/settings/sync-dotenv", async () => {
+  it("writes current settings into workspace .env via POST /api/settings", async () => {
     const ws = await makeWorkspace();
     process.env.AGENT_WORKSPACE_ROOT = ws;
     process.env.AGENT_WORKSPACES = "";
-    await writeSettings(ws, {
-      ...defaults,
-      model: "model-from-settings",
-      baseUrl: "https://settings.example",
-      authToken: "token-from-settings",
-      runtimeEnv: {
-        MINERU_API_KEY: "mineru-from-settings",
-        NOTION_TOKEN: "ntn_sync_value",
-        ZOTERO_API_KEY: "zotero_sync_value"
-      }
-    });
-
     const registry = new WorkspaceRegistry();
     const { app, posts } = makeApp();
     registerSystemRoutes({ app: app as never, workspaceRegistry: registry, defaultSettings: defaults, activeQueries: new Map() });
 
     const res = makeMockRes();
-    await posts.get("/api/settings/sync-dotenv")!(
+    await posts.get("/api/settings")!(
       {
-        body: {},
+        body: {
+          model: "model-from-settings",
+          baseUrl: "https://settings.example",
+          authToken: "token-from-settings",
+          runtimeEnvText: ["MINERU_API_KEY=mineru-from-settings", "NOTION_TOKEN=ntn_sync_value", "ZOTERO_API_KEY=zotero_sync_value"].join(
+            "\n"
+          ),
+          permissionProfile: "standard",
+          mcpEnabled: true,
+          speedModeEnabled: false,
+          toolGateEnabled: true,
+          debugEnabled: false,
+          debugSseEnabled: false
+        },
         query: {}
       } as Request,
       res

@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { normalizeSettings, parseEnvText, parseError } from "../lib/chatUtils.js";
+import { normalizeSettings, parseError } from "../lib/chatUtils.js";
 
 export function normalizeMcpCatalogResponse(data, now = Date.now()) {
   return {
@@ -124,7 +124,6 @@ export function useWorkspaceData({
       const data = await apiPostJson("/api/settings", {
         ...next,
         runtimeEnvText: next.runtimeEnvText,
-        runtimeEnvUpdates: parseEnvText(next.runtimeEnvText),
         keepExistingToken: next.authToken ? false : true
       });
       setSettings(normalizeSettings(data));
@@ -133,14 +132,6 @@ export function useWorkspaceData({
       return data;
     },
     [apiPostJson, setCurrentSessionId, setDiagnostics, setSettings]
-  );
-
-  const syncSettingsToDotenv = useCallback(
-    async () => {
-      if (!currentWorkspaceId) return null;
-      return apiPostJson("/api/settings/sync-dotenv", {});
-    },
-    [apiPostJson, currentWorkspaceId]
   );
 
   return {
@@ -152,7 +143,6 @@ export function useWorkspaceData({
     refreshMcps,
     loadSessions,
     loadFileSuggestions,
-    saveSettings,
-    syncSettingsToDotenv
+    saveSettings
   };
 }

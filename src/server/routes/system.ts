@@ -16,7 +16,6 @@ import { maskToken, readSettings, writeSettings } from "../services/settings.js"
 import { WorkspaceRegistry } from "../services/workspaces.js";
 import { buildQueryOptions, withTimeout } from "../services/query.js";
 import { readMcpConfig } from "../services/mcp.js";
-import { syncSettingsToDotenv } from "../services/dotenv-sync.js";
 import { hasEffectiveEnvValue, parseEnvText, readWorkspaceDotenv } from "../services/env.js";
 
 type SystemRoutesDeps = {
@@ -60,14 +59,6 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
     if (hasEffectiveEnvValue(fromProcess)) return fromProcess.trim();
     if (name === "ANTHROPIC_AUTH_TOKEN" && hasEffectiveEnvValue(settings.authToken)) return settings.authToken.trim();
     return "";
-  };
-
-  const coreValueFromDotenv = (name: string, fallback: string, dotenvEnv: Record<string, string>): string => {
-    if (Object.prototype.hasOwnProperty.call(dotenvEnv, name)) {
-      const fromDotenv = String(dotenvEnv[name] || "");
-      return hasEffectiveEnvValue(fromDotenv) ? fromDotenv.trim() : "";
-    }
-    return String(fallback || "").trim();
   };
 
   const getMcpSnapshot = (workspaceId: string): McpProbeSnapshot => {
@@ -177,9 +168,6 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
     if (!workspace) return;
     const settings = await readSettings(workspace.root, defaultSettings);
     const dotenvEnv = await readWorkspaceDotenv(workspace.root);
-    const effectiveModel = coreValueFromDotenv("ANTHROPIC_MODEL", settings.model, dotenvEnv);
-    const effectiveBaseUrl = coreValueFromDotenv("ANTHROPIC_BASE_URL", settings.baseUrl, dotenvEnv);
-    const effectiveAuthToken = coreValueFromDotenv("ANTHROPIC_AUTH_TOKEN", settings.authToken, dotenvEnv);
     const configured = await readMcpConfig(workspace.root);
     const requiredEnvKeys = Array.from(new Set(configured.flatMap((item) => item.requiredEnvVars || [])));
     const runtimeEnvView: Record<string, string> = { ...(settings.runtimeEnv || {}) };
@@ -191,8 +179,8 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
     res.json({
       workspaceId: workspace.id,
       workspaceRoot: workspace.root,
-      model: effectiveModel,
-      baseUrl: effectiveBaseUrl,
+      model: settings.model,
+      baseUrl: settings.baseUrl,
       runtimeEnv: runtimeEnvView,
       permissionProfile: settings.permissionProfile,
       mcpEnabled: settings.mcpEnabled,
@@ -200,8 +188,8 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
       toolGateEnabled: settings.toolGateEnabled,
       debugEnabled: settings.debugEnabled,
       debugSseEnabled: settings.debugSseEnabled,
-      hasToken: Boolean(effectiveAuthToken),
-      tokenPreview: maskToken(effectiveAuthToken)
+      hasToken: Boolean(settings.authToken),
+      tokenPreview: maskToken(settings.authToken)
     });
   });
 
@@ -459,19 +447,7 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
         nextRuntimeEnv[key] = String(value).trim();
       }
     } else {
-      const runtimeEnvUpdatesRaw = req.body?.runtimeEnvUpdates;
-      const runtimeEnvUpdates =
-        runtimeEnvUpdatesRaw && typeof runtimeEnvUpdatesRaw === "object" && !Array.isArray(runtimeEnvUpdatesRaw)
-          ? (runtimeEnvUpdatesRaw as Record<string, unknown>)
-          : {};
       Object.assign(nextRuntimeEnv, current.runtimeEnv || {});
-      for (const [rawKey, rawValue] of Object.entries(runtimeEnvUpdates)) {
-        const key = String(rawKey || "").trim();
-        if (!key) continue;
-        const value = typeof rawValue === "string" ? rawValue.trim() : "";
-        if (!value) delete nextRuntimeEnv[key];
-        else nextRuntimeEnv[key] = value;
-      }
     }
     const permissionProfileRaw = req.body?.permissionProfile;
     const permissionProfile =
@@ -488,8 +464,6 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
     const debugSseEnabled =
       typeof req.body?.debugSseEnabled === "boolean" ? req.body.debugSseEnabled : current.debugSseEnabled;
     const keepExistingToken = req.body?.keepExistingToken !== false;
-    const syncDotenv = req.body?.syncDotenv === true;
-
     const next: RuntimeSettings = {
       model: model || current.model,
       baseUrl: baseUrl || current.baseUrl,
@@ -504,26 +478,12 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
     };
 
     await writeSettings(workspace.root, next);
-    const dotenvEnv = await readWorkspaceDotenv(workspace.root);
-    const effectiveModel = coreValueFromDotenv("ANTHROPIC_MODEL", next.model, dotenvEnv);
-    const effectiveBaseUrl = coreValueFromDotenv("ANTHROPIC_BASE_URL", next.baseUrl, dotenvEnv);
-    const effectiveAuthToken = coreValueFromDotenv("ANTHROPIC_AUTH_TOKEN", next.authToken, dotenvEnv);
-    let dotenvSync: { synced: boolean; envFile?: string; keyCount?: number; error?: string } = { synced: false };
-    if (syncDotenv) {
-      try {
-        const synced = await syncSettingsToDotenv(workspace.root, next);
-        dotenvSync = { synced: true, envFile: synced.envFile, keyCount: synced.keys.length };
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        dotenvSync = { synced: false, error: msg };
-      }
-    }
     res.json({
       ok: true,
       workspaceId: workspace.id,
       workspaceRoot: workspace.root,
-      model: effectiveModel,
-      baseUrl: effectiveBaseUrl,
+      model: next.model,
+      baseUrl: next.baseUrl,
       runtimeEnv: next.runtimeEnv,
       permissionProfile: next.permissionProfile,
       mcpEnabled: next.mcpEnabled,
@@ -531,23 +491,9 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
       toolGateEnabled: next.toolGateEnabled,
       debugEnabled: next.debugEnabled,
       debugSseEnabled: next.debugSseEnabled,
-      hasToken: Boolean(effectiveAuthToken),
-      tokenPreview: maskToken(effectiveAuthToken),
-      dotenvSync
-    });
-  });
-
-  app.post("/api/settings/sync-dotenv", async (req, res) => {
-    const workspace = workspaceRegistry.requireWorkspace(req, res);
-    if (!workspace) return;
-    const current = await readSettings(workspace.root, defaultSettings);
-    const synced = await syncSettingsToDotenv(workspace.root, current);
-    res.json({
-      ok: true,
-      workspaceId: workspace.id,
-      envFile: synced.envFile,
-      keyCount: synced.keys.length,
-      keys: synced.keys
+      hasToken: Boolean(next.authToken),
+      tokenPreview: maskToken(next.authToken),
+      dotenvSync: { synced: true }
     });
   });
 

@@ -40,8 +40,8 @@ const defaultSettings: RuntimeSettings = {
   mcpEnabled: true,
   speedModeEnabled: false,
   toolGateEnabled: true,
-  debugEnabled: process.env.AGENT_WEB_DEBUG === "1",
-  debugSseEnabled: process.env.AGENT_WEB_DEBUG_SSE === "1"
+  debugEnabled: process.env.AGENT_WEB_DEBUG_ENABLED === "1",
+  debugSseEnabled: process.env.AGENT_WEB_DEBUG_SSE_ENABLED === "1"
 };
 
 app.use(cors());
