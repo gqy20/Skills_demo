@@ -1522,8 +1522,10 @@ button:disabled {
   inset: 0;
   z-index: 20;
   background: rgba(12, 19, 36, 0.42);
-  display: grid;
-  place-items: center;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  overflow-y: auto;
   padding: 14px;
 }
 
@@ -1533,10 +1535,12 @@ button:disabled {
 
 .modal-card {
   width: min(620px, 100%);
+  max-height: calc(100vh - 28px);
   background: rgba(255, 255, 255, 0.96);
   border: 1px solid var(--line);
   border-radius: var(--r-16);
   padding: 14px;
+  overflow-y: auto;
 }
 
 .modal-head {
