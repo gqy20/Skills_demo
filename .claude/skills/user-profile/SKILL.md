@@ -123,6 +123,23 @@ description: 分析 info/ 目录下的用户文件，生成结构化用户画像
 | `.pdf` | 简历、文档 | 使用 `scripts/extract_pdf.py` 提取 |
 | `.txt` | 笔记、随笔 | 详见 [文件格式说明](references/) |
 
+### Zotero 高可信增强（自动）
+
+当 `zotero-mcp` 已配置且相关环境变量可用时，`/user-profile` 自动追加 Zotero 高可信画像增强：
+
+- 数据性质：仅使用 Zotero metadata 的聚合统计（主题、作者、期刊、年份分布、总条目数）
+- 边界：不做“性格/消费/职业能力”类强推断，不把 Zotero 当唯一来源
+
+启用条件：
+1. 存在可用 `zotero-mcp` 服务配置。
+2. 环境变量有效：
+   - `ZOTERO_LOCAL=true`：允许本地模式
+   - `ZOTERO_LOCAL=false`：要求 `ZOTERO_API_KEY`、`ZOTERO_LIBRARY_ID`、`ZOTERO_LIBRARY_TYPE`
+
+降级策略：
+1. 连接失败、密钥缺失或工具报错时，跳过 Zotero 增强。
+2. 基础画像流程继续执行，不中断 `.info/usr.json` 生成。
+
 ### 对话记录分析
 
 **特殊文件类型**：AI 对话记录（如 Continue.dev、Cursor、Claude Code 的会话导出）
@@ -185,6 +202,7 @@ conversation_analysis:
 - **preferences**: 代码风格、沟通方式
 - **behavioral_patterns**: 工作风格、协作偏好
 - **goals**: 当前焦点、痛点、志向
+- **research_profile**: 基于 Zotero 聚合统计的研究画像（高可信，新增）
 - **experience**: 项目经验的可执行化方案
 - **conversation_patterns**: 从对话记录中提取的行为模式（新增）
   - `ai_tools`: 使用的 AI 工具（Continue、Cursor、Claude 等）
@@ -210,7 +228,7 @@ conversation_analysis:
    - 解析返回的 JSON（包含 text、pages、metadata）
    - 按简历类/文档类/表格类识别并提取信息
 5. 按类型提取其他文件信息，详见 [提取规则](references/extraction-rules.md)
-6. 合并多源信息（对话记录 + PDF + 其他文件）
+6. 合并多源信息（对话记录 + PDF + 其他文件 + 自动 Zotero 增强）
 7. 提取项目经验并生成可执行化方案
 8. 生成结构化 JSON
 9. **用户确认**：展示画像摘要，等待用户确认

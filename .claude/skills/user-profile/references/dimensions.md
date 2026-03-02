@@ -117,3 +117,17 @@
 **示例**:
 - "成为全栈架构师"
 - "开源项目维护者"
+
+## 研究画像 (research_profile)
+
+> 来源：`zotero-mcp` 运行时聚合统计。  
+> 可信度策略：仅接受可验证的聚合统计，不做强推断。
+
+| 字段 | 说明 | 示例 |
+|------|------|------|
+| `source` | 数据来源标识 | `"zotero"` |
+| `item_count` | 文献总条目数 | `428` |
+| `top_topics` | 高频主题（标签/关键词） | `["llm", "rag", "nlp"]` |
+| `top_authors` | 高频作者 | `["Author A", "Author B"]` |
+| `top_journals` | 高频期刊/会议 | `["Nature", "NeurIPS"]` |
+| `year_distribution` | 年份分布统计 | `{"2022": 36, "2023": 58, "2024": 74}` |

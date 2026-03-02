@@ -138,6 +138,28 @@ def merge_profile(existing, new_data):
 }
 ```
 
+### Zotero 聚合载荷（高可信增强）
+
+用途：`/user-profile` 运行时通过 `zotero-mcp` 生成该聚合结构并直接合并到画像（无需中间文件）。
+
+示例结构：
+
+```json
+{
+  "source": "zotero",
+  "exported_at": "2026-03-02T10:00:00Z",
+  "item_count": 428,
+  "top_topics": ["llm", "rag", "nlp"],
+  "top_authors": ["Author A", "Author B"],
+  "top_journals": ["Nature", "NeurIPS"],
+  "year_distribution": {
+    "2022": 36,
+    "2023": 58,
+    "2024": 74
+  }
+}
+```
+
 ## PDF 文件 (.pdf)
 
 ### 适用场景

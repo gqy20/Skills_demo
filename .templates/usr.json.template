@@ -25,11 +25,25 @@
     "collaboration": null,
     "time_management": null
   },
+  "conversation_patterns": {
+    "ai_tools": [],
+    "collaboration_style": null,
+    "output_preferences": [],
+    "conversation_domains": []
+  },
   "goals": {
     "current_focus": null,
     "learning_goals": [],
     "pain_points": [],
     "aspirations": null
+  },
+  "research_profile": {
+    "source": null,
+    "item_count": null,
+    "top_topics": [],
+    "top_authors": [],
+    "top_journals": [],
+    "year_distribution": {}
   },
   "experience": [
     {
@@ -54,6 +68,11 @@
     "last_checked_at": null,
     "source_files": [],
     "source_mtimes": {},
+    "source_systems": [],
+    "confidence_breakdown": {
+      "file_based": "high",
+      "zotero_based": "unknown"
+    },
     "confidence": "high"
   }
 }

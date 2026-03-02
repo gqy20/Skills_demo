@@ -1,7 +1,7 @@
 import React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { formatElapsed, formatPhaseLabel, looksLikeToolClaim, textFromMessage } from "../lib/chatUtils.js";
+import { formatElapsed, formatPhaseLabel, textFromMessage } from "../lib/chatUtils.js";
 
 export default function ChatMessageList({
   messages,
@@ -21,8 +21,6 @@ export default function ChatMessageList({
     const traceToolEntries = trace ? Object.entries(trace.tools || {}) : [];
     const traceSkillEntries = trace ? Object.entries(trace.skills || {}) : [];
     const tracePhaseList = Array.isArray(trace?.phases) ? trace.phases : [];
-    const unverifiedToolClaim =
-      msg.role === "assistant" && traceToolEntries.length === 0 && traceSkillEntries.length === 0 && looksLikeToolClaim(text);
     const showEmptyAssistantFallback =
       msg.role === "assistant" &&
       !showProcessing &&
@@ -114,7 +112,6 @@ export default function ChatMessageList({
                   )}
                 </div>
               )}
-              {unverifiedToolClaim && <div className="bubble-trace-warning">未检测到真实工具事件，当前内容可能是模型自述结果。</div>}
               {isLastAssistant && (
                 <div className="bubble-actions">
                   <button type="button" className="bubble-action-btn" title="复制" aria-label="复制" onClick={() => onCopyText(text)}>

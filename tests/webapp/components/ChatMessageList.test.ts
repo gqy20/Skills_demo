@@ -23,7 +23,7 @@ describe("ChatMessageList", () => {
     expect(html).toContain("world");
   });
 
-  it("shows unverified tool warning when no trace", () => {
+  it("does not render unverified tool warning", () => {
     const html = renderToStaticMarkup(
       React.createElement(ChatMessageList, {
         messages: [{ id: "a1", role: "assistant", parts: [{ type: "text", text: "已调用工具并保存到文件" }] }],
@@ -35,7 +35,7 @@ describe("ChatMessageList", () => {
         lastUserText: "q"
       })
     );
-    expect(html).toContain("未检测到真实工具事件");
+    expect(html).not.toContain("未检测到真实工具事件");
   });
 
   it("shows fallback card when assistant message has no visible text", () => {
