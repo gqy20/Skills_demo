@@ -1,4 +1,3 @@
-import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Express, Response } from "express";
 import type { RuntimeSettings } from "../types.js";
 import { writeSseData } from "../services/chat.js";
@@ -14,7 +13,6 @@ export type ChatRoutesDeps = {
   defaultSettings: RuntimeSettings;
   sessionMap: Map<string, string>;
   sessionSeedMap: Map<string, string>;
-  activeQueries: Map<string, ReturnType<typeof query>>;
   sessionRuntimeManager?: SessionRuntimeManager;
 };
 

@@ -60,7 +60,6 @@ describe("handleChatUiRequest guard", () => {
         sessionMap: new Map(),
         sessionSeedMap: new Map(),
         pendingStore: { createPendingRequest: vi.fn() } as never,
-        activeQueries: new Map(),
         sessionRuntimeManager: { acquireTurn, endTurn: vi.fn() } as never
       }
     );

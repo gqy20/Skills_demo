@@ -1,5 +1,4 @@
 import type { Express } from "express";
-import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { RuntimeSettings } from "../types.js";
 import { fetchSkills, invalidateSkillsCache } from "../services/skills.js";
 import {
@@ -18,12 +17,14 @@ import { WorkspaceRegistry } from "../services/workspaces.js";
 import { buildQueryOptions, withTimeout } from "../services/query.js";
 import { readMcpConfig } from "../services/mcp.js";
 import { hasEffectiveEnvValue, parseEnvText, readWorkspaceDotenv } from "../services/env.js";
+import type { SessionRuntimeManager } from "../services/session-runtime.js";
 
 type SystemRoutesDeps = {
   app: Express;
   workspaceRegistry: WorkspaceRegistry;
   defaultSettings: RuntimeSettings;
-  activeQueries: Map<string, ReturnType<typeof query>>;
+  activeQueries?: Map<string, { mcpServerStatus: () => Promise<unknown[]> }>;
+  sessionRuntimeManager?: SessionRuntimeManager;
 };
 
 type McpRuntimeRow = {
@@ -41,7 +42,13 @@ type McpProbeSnapshot = {
   rows: Map<string, McpRuntimeRow>;
 };
 
-export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, activeQueries }: SystemRoutesDeps): void {
+export function registerSystemRoutes({
+  app,
+  workspaceRegistry,
+  defaultSettings,
+  activeQueries,
+  sessionRuntimeManager
+}: SystemRoutesDeps): void {
   const mcpProbeCache = new Map<string, McpProbeSnapshot>();
   const mcpProbeTtlMsRaw = Number(process.env.AGENT_WEB_MCP_PROBE_TTL_MS || "");
   const mcpProbeTtlMs = Number.isFinite(mcpProbeTtlMsRaw) && mcpProbeTtlMsRaw > 0 ? Math.floor(mcpProbeTtlMsRaw) : 60_000;
@@ -81,8 +88,9 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
     return created;
   };
 
-  const findActiveWorkspaceQuery = (workspaceId: string): ReturnType<typeof query> | null => {
-    let activeQuery: ReturnType<typeof query> | null = null;
+  const findActiveWorkspaceQuery = (workspaceId: string): { mcpServerStatus: () => Promise<unknown[]> } | null => {
+    let activeQuery: { mcpServerStatus: () => Promise<unknown[]> } | null = null;
+    if (!activeQueries) return null;
     for (const [key, value] of activeQueries) {
       if (key.startsWith(`${workspaceId}:`)) activeQuery = value;
     }
@@ -93,21 +101,25 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
     const snapshot = getMcpSnapshot(workspaceId);
     if (snapshot.checking) return { started: false, reason: "already_checking" };
 
-    const activeQuery = findActiveWorkspaceQuery(workspaceId);
-    if (!activeQuery) {
+    const runtimeSession = sessionRuntimeManager?.findWorkspaceRuntime(workspaceId) || null;
+    const mcpStatusSource = (runtimeSession?.session || findActiveWorkspaceQuery(workspaceId) || null) as
+      | { mcpServerStatus?: () => Promise<unknown[]> }
+      | null;
+    if (!mcpStatusSource || typeof mcpStatusSource.mcpServerStatus !== "function") {
       snapshot.ok = null;
       snapshot.error = "No active chat session.";
       snapshot.source = "active_session_missing";
       snapshot.checkedAt = Date.now();
       return { started: false, reason: "no_active_session" };
     }
+    const getMcpStatus = mcpStatusSource.mcpServerStatus;
 
     snapshot.checking = true;
     snapshot.error = "";
-    snapshot.source = "active_session";
+    snapshot.source = runtimeSession ? "persistent_session" : "active_session";
     void (async () => {
       try {
-        const rawStatus = await withTimeout(activeQuery.mcpServerStatus(), 180000, "mcpServerStatus");
+        const rawStatus = await withTimeout(getMcpStatus(), 180000, "mcpServerStatus");
         snapshot.rows.clear();
         for (const entry of Array.isArray(rawStatus) ? rawStatus : []) {
           if (!entry || typeof entry !== "object") continue;
@@ -126,7 +138,7 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
         }
         snapshot.ok = true;
         snapshot.error = "";
-        snapshot.source = "active_session";
+        snapshot.source = runtimeSession ? "persistent_session" : "active_session";
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         snapshot.error = msg;

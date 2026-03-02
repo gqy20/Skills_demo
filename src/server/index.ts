@@ -4,7 +4,6 @@ import cors from "cors";
 import path from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { RuntimeSettings } from "./types.js";
 import { PendingRequestStore } from "./services/pending.js";
 import { WorkspaceRegistry } from "./services/workspaces.js";
@@ -30,25 +29,18 @@ const workspaceRegistry = new WorkspaceRegistry();
 const pendingStore = new PendingRequestStore();
 const sessionMap = new Map<string, string>();
 const sessionSeedMap = new Map<string, string>();
-const activeQueries = new Map<string, ReturnType<typeof query>>();
-const enablePersistentSession = process.env.CHAT_ENABLE_PERSISTENT_SESSION === "1";
-const sessionRuntimeManager = enablePersistentSession
-  ? new SessionRuntimeManager({
-      maxSessions: Number(process.env.CHAT_PERSISTENT_MAX_SESSIONS || 100),
-      idleTtlMs: Number(process.env.CHAT_PERSISTENT_IDLE_TTL_MS || 10 * 60_000)
-    })
-  : null;
-
-if (sessionRuntimeManager) {
-  const cleanupIntervalMs = Number(process.env.CHAT_PERSISTENT_CLEANUP_INTERVAL_MS || 60_000);
-  const timer = setInterval(() => {
-    const closed = sessionRuntimeManager.closeIdle();
-    if (closed > 0) {
-      console.log(JSON.stringify({ ts: new Date().toISOString(), phase: "persistent_session_cleanup", closed }));
-    }
-  }, cleanupIntervalMs);
-  if (typeof timer.unref === "function") timer.unref();
-}
+const sessionRuntimeManager = new SessionRuntimeManager({
+  maxSessions: Number(process.env.CHAT_PERSISTENT_MAX_SESSIONS || 100),
+  idleTtlMs: Number(process.env.CHAT_PERSISTENT_IDLE_TTL_MS || 10 * 60_000)
+});
+const cleanupIntervalMs = Number(process.env.CHAT_PERSISTENT_CLEANUP_INTERVAL_MS || 60_000);
+const timer = setInterval(() => {
+  const closed = sessionRuntimeManager.closeIdle();
+  if (closed > 0) {
+    console.log(JSON.stringify({ ts: new Date().toISOString(), phase: "persistent_session_cleanup", closed }));
+  }
+}, cleanupIntervalMs);
+if (typeof timer.unref === "function") timer.unref();
 
 const defaultSettings: RuntimeSettings = {
   model: process.env.ANTHROPIC_MODEL || "glm-5",
@@ -71,7 +63,7 @@ registerSystemRoutes({
   app,
   workspaceRegistry,
   defaultSettings,
-  activeQueries
+  sessionRuntimeManager
 });
 
 registerChatRoutes({
@@ -81,8 +73,7 @@ registerChatRoutes({
   defaultSettings,
   sessionMap,
   sessionSeedMap,
-  activeQueries,
-  sessionRuntimeManager: sessionRuntimeManager || undefined
+  sessionRuntimeManager
 });
 
 registerInputRoutes({ app, pendingStore });

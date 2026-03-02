@@ -48,6 +48,26 @@ export class SessionRuntimeManager {
     return this.map.get(key) || null;
   }
 
+  findWorkspaceRuntime(workspaceId: string): SessionRuntime | null {
+    let picked: SessionRuntime | null = null;
+    for (const runtime of this.map.values()) {
+      if (runtime.workspaceId !== workspaceId) continue;
+      if (runtime.state === "closed") continue;
+      if (!picked) {
+        picked = runtime;
+        continue;
+      }
+      if (runtime.state === "running" && picked.state !== "running") {
+        picked = runtime;
+        continue;
+      }
+      if (runtime.lastActiveAt > picked.lastActiveAt) {
+        picked = runtime;
+      }
+    }
+    return picked;
+  }
+
   getOrCreate(input: GetOrCreateInput): { runtime: SessionRuntime; created: boolean } {
     const now = input.now ? input.now() : Date.now();
     const key = `${input.workspaceId}:${input.sessionId}`;

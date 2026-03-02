@@ -2,7 +2,7 @@ import { type Request, type Response } from "express";
 import { type ChatRoutesDeps, sessionKey } from "./chat-shared.js";
 import { handleChatUiRequest } from "./chat-ui.js";
 
-function registerChatStopRoute({ app, workspaceRegistry, activeQueries, sessionRuntimeManager }: ChatRoutesDeps): void {
+function registerChatStopRoute({ app, workspaceRegistry, sessionRuntimeManager }: ChatRoutesDeps): void {
   app.post("/api/chat/stop", async (req: Request, res: Response) => {
     const workspace = workspaceRegistry.requireWorkspace(req, res);
     if (!workspace) return;
@@ -14,33 +14,14 @@ function registerChatStopRoute({ app, workspaceRegistry, activeQueries, sessionR
     }
 
     const key = sessionKey(workspace.id, sessionId);
-    const queryInstance = activeQueries.get(key);
-    if (!queryInstance) {
-      const runtimeClosed = sessionRuntimeManager?.close(key) === true;
-      res.json({
-        ok: true,
-        workspaceId: workspace.id,
-        id: sessionId,
-        stopped: runtimeClosed,
-        reason: runtimeClosed ? "runtime_closed" : "no_active_query"
-      });
-      return;
-    }
-
-    try {
-      await queryInstance.interrupt();
-    } catch {
-      // ignore interrupt errors and proceed to close
-    }
-
-    try {
-      queryInstance.close();
-    } catch {
-      // ignore close errors
-    }
-    activeQueries.delete(key);
-    sessionRuntimeManager?.close(key);
-    res.json({ ok: true, workspaceId: workspace.id, id: sessionId, stopped: true });
+    const runtimeClosed = sessionRuntimeManager?.close(key) === true;
+    res.json({
+      ok: true,
+      workspaceId: workspace.id,
+      id: sessionId,
+      stopped: runtimeClosed,
+      reason: runtimeClosed ? "runtime_closed" : "no_active_session"
+    });
   });
 }
 

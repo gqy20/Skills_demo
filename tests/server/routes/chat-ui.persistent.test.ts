@@ -130,7 +130,6 @@ describe("handleChatUiRequest persistent path", () => {
       sessionMap,
       sessionSeedMap: new Map(),
       pendingStore: { createPendingRequest: vi.fn() } as never,
-      activeQueries: new Map(),
       sessionRuntimeManager: sessionRuntimeManager as never
     });
 
@@ -146,7 +145,7 @@ describe("handleChatUiRequest persistent path", () => {
     expect(res.end).toHaveBeenCalledOnce();
   });
 
-  it("falls back to query path when persistent session creation fails", async () => {
+  it("returns 500 when persistent session creation fails", async () => {
     queryMock.mockReset();
     createSessionMock.mockReset();
     resumeSessionMock.mockReset();
@@ -154,35 +153,6 @@ describe("handleChatUiRequest persistent path", () => {
     createSessionMock.mockImplementation(() => {
       throw new Error("create failed");
     });
-
-    queryMock.mockReturnValue(
-      streamFrom([
-        {
-          type: "system",
-          subtype: "init",
-          model: "m1",
-          permissionMode: "default",
-          tools: [],
-          session_id: "sdk-query-1"
-        },
-        {
-          type: "stream_event",
-          event: {
-            type: "content_block_delta",
-            delta: { type: "text_delta", text: "fallback query path" }
-          },
-          session_id: "sdk-query-1"
-        },
-        {
-          type: "result",
-          subtype: "success",
-          result: "",
-          is_error: false,
-          stop_reason: null,
-          session_id: "sdk-query-1"
-        }
-      ])
-    );
 
     const sessionRuntimeManager = {
       acquireTurn: vi.fn(({ createSession }) => {
@@ -210,14 +180,15 @@ describe("handleChatUiRequest persistent path", () => {
       sessionMap,
       sessionSeedMap: new Map(),
       pendingStore: { createPendingRequest: vi.fn() } as never,
-      activeQueries: new Map(),
       sessionRuntimeManager: sessionRuntimeManager as never
     });
 
     expect(createSessionMock).toHaveBeenCalledOnce();
-    expect(queryMock).toHaveBeenCalledOnce();
+    expect(queryMock).not.toHaveBeenCalled();
     expect(sessionRuntimeManager.endTurn).not.toHaveBeenCalled();
-    expect(sessionMap.get("ws1:s2")).toBe("sdk-query-1");
-    expect(res.end).toHaveBeenCalledOnce();
+    expect(sessionMap.get("ws1:s2")).toBeUndefined();
+    expect(res.statusCode).toBe(500);
+    expect(res.body).toEqual({ ok: false, error: "create failed" });
+    expect(res.end).not.toHaveBeenCalled();
   });
 });

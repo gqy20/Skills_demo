@@ -66,7 +66,6 @@ function registerRoutes() {
     defaultSettings,
     sessionMap: new Map(),
     sessionSeedMap: new Map(),
-    activeQueries: new Map(),
     sessionRuntimeManager: undefined
   });
   return { posts, workspaceRegistry };
@@ -105,7 +104,7 @@ describe("registerChatRoutes", () => {
       workspaceId: "ws1",
       id: "session-a",
       stopped: false,
-      reason: "no_active_query"
+      reason: "no_active_session"
     });
   });
 
@@ -124,7 +123,6 @@ describe("registerChatRoutes", () => {
       defaultSettings,
       sessionMap: new Map(),
       sessionSeedMap: new Map(),
-      activeQueries: new Map(),
       sessionRuntimeManager: { close } as never
     });
     const handler = posts.get("/api/chat/stop");
@@ -142,19 +140,14 @@ describe("registerChatRoutes", () => {
     });
   });
 
-  it("interrupts and closes active query for /api/chat/stop", async () => {
+  it("returns stopped=false when runtime close reports not found", async () => {
     const posts = new Map<string, Handler>();
     const app = {
       post(route: string, handler: Handler) {
         posts.set(route, handler);
       }
     };
-    const activeQuery = {
-      interrupt: vi.fn(async () => undefined),
-      close: vi.fn()
-    };
-    const runtimeClose = vi.fn(() => true);
-    const activeQueries = new Map<string, unknown>([["ws1:session-a", activeQuery]]);
+    const runtimeClose = vi.fn(() => false);
     registerChatRoutes({
       app: app as never,
       workspaceRegistry: { requireWorkspace: () => ({ id: "ws1", root: "/tmp/ws1", label: "ws1" }) } as never,
@@ -162,7 +155,6 @@ describe("registerChatRoutes", () => {
       defaultSettings,
       sessionMap: new Map(),
       sessionSeedMap: new Map(),
-      activeQueries: activeQueries as never,
       sessionRuntimeManager: { close: runtimeClose } as never
     });
 
@@ -171,10 +163,13 @@ describe("registerChatRoutes", () => {
     const res = makeMockRes();
     await handler!(req, res);
 
-    expect(activeQuery.interrupt).toHaveBeenCalledOnce();
-    expect(activeQuery.close).toHaveBeenCalledOnce();
     expect(runtimeClose).toHaveBeenCalledWith("ws1:session-a");
-    expect(activeQueries.has("ws1:session-a")).toBe(false);
-    expect(res.body).toEqual({ ok: true, workspaceId: "ws1", id: "session-a", stopped: true });
+    expect(res.body).toEqual({
+      ok: true,
+      workspaceId: "ws1",
+      id: "session-a",
+      stopped: false,
+      reason: "no_active_session"
+    });
   });
 });
