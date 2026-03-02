@@ -426,6 +426,27 @@ export default function App() {
       [key]: !prev[key]
     }));
 
+  const loadDirectoryChildren = async (dirPath) => {
+    const target = String(dirPath || "").trim();
+    if (!target || !currentWorkspaceId) return;
+    const data = await apiGetJson("/api/files", { path: target, depth: 2 });
+    const children = Array.isArray(data?.items) ? data.items : [];
+    const patchTree = (items) =>
+      (Array.isArray(items) ? items : []).map((item) => {
+        if (!item || typeof item !== "object") return item;
+        if (item.type === "directory" && item.path === target) {
+          return { ...item, children, hasChildren: children.length > 0 };
+        }
+        if (item.type === "directory" && Array.isArray(item.children)) {
+          return { ...item, children: patchTree(item.children) };
+        }
+        return item;
+      });
+    setFiles((prev) => patchTree(prev));
+  };
+
+  const fileFocused = Boolean(openedFile?.path);
+
   return (
     <>
       <main className={`workspace ${sidebarOpen ? "workspace-with-sidebar" : "workspace-chat-only"}${sessionSidebarCollapsed ? " session-sidebar-collapsed" : ""}`}>
@@ -441,74 +462,80 @@ export default function App() {
           blockingPending={blockingPending}
           collapsed={sessionSidebarCollapsed}
           onToggleCollapse={() => setSessionSidebarCollapsed((v) => !v)}
+          files={files}
           filteredFiles={filteredFiles}
           fileFilter={fileFilter}
           setFileFilter={setFileFilter}
           openFile={(filePath) => requestOpenFile(filePath).catch(() => {})}
+          loadDirectoryChildren={(dirPath) => loadDirectoryChildren(dirPath).catch(() => {})}
           openedFilePath={openedFile?.path || ""}
         />
-        <section className="chat-shell">
-          <ChatHeader
-            sidebarOpen={sidebarOpen}
-            setSidebarOpen={setSidebarOpen}
-            settings={settings}
-            currentWorkspaceId={currentWorkspaceId}
-            onOpenSettings={() => {
-              setSettingsOpen(true);
-            }}
-            onToggleMcp={async () => {
-              await saveSettings({ ...settings, mcpEnabled: !settings.mcpEnabled });
-            }}
-          />
+        <section className={`chat-shell ${fileFocused ? "file-focus-mode" : ""}`}>
+          {!openedFile?.path && (
+            <ChatHeader
+              sidebarOpen={sidebarOpen}
+              setSidebarOpen={setSidebarOpen}
+              settings={settings}
+              currentWorkspaceId={currentWorkspaceId}
+              onOpenSettings={() => {
+                setSettingsOpen(true);
+              }}
+              onToggleMcp={async () => {
+                await saveSettings({ ...settings, mcpEnabled: !settings.mcpEnabled });
+              }}
+            />
+          )}
 
-          <section className="timeline-wrap">
-            <section className="timeline" ref={timelineRef}>
-              <div className="timeline-inner">
-                <PreflightPanel
-                  show={showPreflight}
-                  quickPrompts={QUICK_PROMPTS}
-                  quickChips={QUICK_CHIPS}
-                  onSubmitPrompt={(text) => submitUserMessage(text).catch(() => {})}
-                  onSelectChip={setInputText}
-                />
+          {!fileFocused && (
+            <section className="timeline-wrap">
+              <section className="timeline" ref={timelineRef}>
+                <div className="timeline-inner">
+                  <PreflightPanel
+                    show={showPreflight}
+                    quickPrompts={QUICK_PROMPTS}
+                    quickChips={QUICK_CHIPS}
+                    onSubmitPrompt={(text) => submitUserMessage(text).catch(() => {})}
+                    onSelectChip={setInputText}
+                  />
 
-                <UsageStrip
-                  skillUsageList={skillUsageList}
-                  mcpUsageList={mcpUsageList}
-                  usagePanelOpen={usagePanelOpen}
-                  usageExpanded={usageExpanded}
-                  setUsagePanelOpen={setUsagePanelOpen}
-                  setUsageExpanded={setUsageExpanded}
-                />
+                  <UsageStrip
+                    skillUsageList={skillUsageList}
+                    mcpUsageList={mcpUsageList}
+                    usagePanelOpen={usagePanelOpen}
+                    usageExpanded={usageExpanded}
+                    setUsagePanelOpen={setUsagePanelOpen}
+                    setUsageExpanded={setUsageExpanded}
+                  />
 
-                <ExecutionPanel
-                  show={showExecutionPanel}
-                  blockingPending={blockingPending}
-                  executionState={executionState}
-                  silentSeconds={silentSeconds}
-                  isStreaming={isStreaming}
-                  settings={settings}
-                  mcpRuntimeStatus={effectiveMcpRuntimeStatus}
-                  mcpProbeRuntime={effectiveMcpProbeRuntime}
-                  hookTimeline={hookTimeline}
-                  showNoDeltaHint={showNoDeltaHint}
-                  onDismissNoDelta={() => setExecutionState((prev) => ({ ...prev, dismissNoDelta: true }))}
-                  onForceStopAndRetry={forceStopAndRetry}
-                  showHookTimeline={settings.debugEnabled}
-                />
+                  <ExecutionPanel
+                    show={showExecutionPanel}
+                    blockingPending={blockingPending}
+                    executionState={executionState}
+                    silentSeconds={silentSeconds}
+                    isStreaming={isStreaming}
+                    settings={settings}
+                    mcpRuntimeStatus={effectiveMcpRuntimeStatus}
+                    mcpProbeRuntime={effectiveMcpProbeRuntime}
+                    hookTimeline={hookTimeline}
+                    showNoDeltaHint={showNoDeltaHint}
+                    onDismissNoDelta={() => setExecutionState((prev) => ({ ...prev, dismissNoDelta: true }))}
+                    onForceStopAndRetry={forceStopAndRetry}
+                    showHookTimeline={settings.debugEnabled}
+                  />
 
-                <ChatMessageList
-                  messages={messages}
-                  lastAssistantId={lastAssistantId}
-                  isStreaming={isStreaming}
-                  traceByAssistantId={traceByAssistantId}
-                  onCopyText={copyText}
-                  onRetryLast={retryLast}
-                  lastUserText={lastUserText}
-                />
-              </div>
+                  <ChatMessageList
+                    messages={messages}
+                    lastAssistantId={lastAssistantId}
+                    isStreaming={isStreaming}
+                    traceByAssistantId={traceByAssistantId}
+                    onCopyText={copyText}
+                    onRetryLast={retryLast}
+                    lastUserText={lastUserText}
+                  />
+                </div>
+              </section>
             </section>
-          </section>
+          )}
 
           <FileEditorPane
             openedFile={openedFile}
@@ -542,18 +569,20 @@ export default function App() {
             cancelPending={cancelPending}
           />
 
-          <Composer
-            blockingPending={blockingPending}
-            isStreaming={isStreaming}
-            inputText={inputText}
-            setInputText={setInputText}
-            submitUserMessage={submitUserMessage}
-            stop={stop}
-            textareaRef={textareaRef}
-            skills={skills}
-            files={files}
-            loadFileSuggestions={loadFileSuggestions}
-          />
+          {!fileFocused && (
+            <Composer
+              blockingPending={blockingPending}
+              isStreaming={isStreaming}
+              inputText={inputText}
+              setInputText={setInputText}
+              submitUserMessage={submitUserMessage}
+              stop={stop}
+              textareaRef={textareaRef}
+              skills={skills}
+              files={files}
+              loadFileSuggestions={loadFileSuggestions}
+            />
+          )}
         </section>
         <InspectorSidebar
           sidebarOpen={sidebarOpen}

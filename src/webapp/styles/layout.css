@@ -41,6 +41,10 @@
   overflow: hidden;
 }
 
+.chat-shell.file-focus-mode {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
 .timeline-wrap {
   position: relative;
   min-height: 0;
@@ -48,7 +52,7 @@
 
 .chat-head {
   padding: 14px 20px 10px;
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
+  box-shadow: none;
   background: #ffffff;
 }
 

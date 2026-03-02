@@ -12,6 +12,29 @@ function formatRelativeDate(ts) {
   return `${d.getFullYear()} 年 ${d.getMonth() + 1} 月`;
 }
 
+function searchScore(query, item) {
+  const q = String(query || "").toLowerCase();
+  const name = String(item?.name || "").toLowerCase();
+  const filePath = String(item?.path || "").toLowerCase();
+  if (!q) return 0;
+
+  let score = 0;
+  if (name === q) score += 160;
+  else if (name.startsWith(q)) score += 110;
+  else if (name.includes(q)) score += 85;
+
+  if (filePath.startsWith(q)) score += 40;
+  else if (filePath.includes(q)) score += 24;
+
+  let j = 0;
+  for (let i = 0; i < name.length && j < q.length; i += 1) {
+    if (name[i] === q[j]) j += 1;
+  }
+  if (j === q.length) score += 14;
+
+  return score;
+}
+
 export default function SessionSidebar({
   sessions = [],
   sessionsLoading = false,
@@ -24,13 +47,16 @@ export default function SessionSidebar({
   blockingPending,
   collapsed = false,
   onToggleCollapse,
+  files = [],
   filteredFiles = [],
   fileFilter = "",
   setFileFilter = () => {},
   openFile = () => {},
+  loadDirectoryChildren = () => {},
   openedFilePath = ""
 }) {
   const [activeTab, setActiveTab] = useState("sessions");
+  const [expandedDirs, setExpandedDirs] = useState(() => new Set());
   const grouped = useMemo(() => {
     const buckets = new Map();
     const sorted = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
@@ -43,6 +69,73 @@ export default function SessionSidebar({
   }, [sessions]);
 
   const disabled = isStreaming || blockingPending;
+  const searchMode = String(fileFilter || "").trim().length > 0;
+  const searchFiles = useMemo(() => {
+    const q = String(fileFilter || "").trim().toLowerCase();
+    return filteredFiles
+      .filter((item) => item?.type === "file")
+      .map((item) => ({ item, score: searchScore(q, item) }))
+      .sort((a, b) => b.score - a.score || a.item.path.localeCompare(b.item.path))
+      .map((row) => row.item);
+  }, [fileFilter, filteredFiles]);
+
+  const toggleDir = async (dir) => {
+    if (!dir?.path) return;
+    const path = dir.path;
+    const willExpand = !expandedDirs.has(path);
+    setExpandedDirs((prev) => {
+      const next = new Set(prev);
+      if (willExpand) next.add(path);
+      else next.delete(path);
+      return next;
+    });
+    if (willExpand && dir.hasChildren && (!Array.isArray(dir.children) || dir.children.length === 0)) {
+      await loadDirectoryChildren(path);
+    }
+  };
+
+  const renderTreeNodes = (nodes, level = 0) =>
+    (Array.isArray(nodes) ? nodes : []).map((node) => {
+      if (!node || typeof node !== "object") return null;
+      const isDir = node.type === "directory";
+      const isExpanded = isDir && expandedDirs.has(node.path);
+      const canExpand = isDir && (node.hasChildren || (Array.isArray(node.children) && node.children.length > 0));
+      return (
+        <React.Fragment key={node.path}>
+          <div
+            className={`file-tree-row ${isDir ? "is-dir" : "is-file"} ${openedFilePath === node.path ? "is-active" : ""}`}
+            style={{ paddingLeft: `${8 + level * 14}px` }}
+          >
+            {isDir ? (
+              <button
+                type="button"
+                className="file-tree-btn"
+                onClick={() => toggleDir(node).catch(() => {})}
+                title={node.path}
+              >
+                <span className={`tree-chevron ${isExpanded ? "is-open" : ""}`} aria-hidden="true">
+                  {canExpand ? "▸" : "·"}
+                </span>
+                <span className="tree-icon is-folder" aria-hidden="true" />
+                <span className="tree-name">{node.name}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="file-tree-btn"
+                onClick={() => openFile(node.path)}
+                title={node.path}
+              >
+                <span className="tree-chevron tree-leaf" aria-hidden="true">·</span>
+                <span className="tree-icon is-file" aria-hidden="true" />
+                <span className="tree-name">{node.name}</span>
+              </button>
+            )}
+          </div>
+          {isDir && isExpanded && Array.isArray(node.children) && node.children.length > 0 ? renderTreeNodes(node.children, level + 1) : null}
+        </React.Fragment>
+      );
+    });
 
   return (
     <aside className={`session-sidebar${collapsed ? " is-collapsed" : ""}`}>
@@ -190,33 +283,35 @@ export default function SessionSidebar({
                 className="session-file-filter"
                 value={fileFilter}
                 onChange={(event) => setFileFilter(event.target.value)}
-                placeholder="筛选文件"
+                placeholder="筛选文件名或路径"
               />
-              {filteredFiles.length === 0 ? (
-                <p className="session-empty">暂无匹配文件</p>
-              ) : (
-                <ul className="session-files-list">
-                  {filteredFiles.map((file) => (
-                    <li key={file.path}>
-                      {file.type === "file" ? (
+              {searchMode ? (
+                searchFiles.length === 0 ? (
+                  <p className="session-empty">暂无匹配文件</p>
+                ) : (
+                  <ul className="file-search-list">
+                    {searchFiles.map((file) => (
+                      <li key={file.path}>
                         <button
                           type="button"
-                          className={`session-file-item ${openedFilePath === file.path ? "is-active" : ""}`}
+                          className={`file-search-item ${openedFilePath === file.path ? "is-active" : ""}`}
                           onClick={() => openFile(file.path)}
                           title={file.path}
                         >
-                          <span className="session-file-name" style={{ paddingLeft: `${(file.level || 0) * 14}px` }}>
-                            · {file.name}
-                          </span>
+                          <span className="file-search-name">{file.name}</span>
+                          <span className="file-search-path">{file.path}</span>
                         </button>
-                      ) : (
-                        <span className="session-file-name session-file-dir" style={{ paddingLeft: `${(file.level || 0) * 14}px` }}>
-                          ▸ {file.name}
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
+                      </li>
+                    ))}
+                  </ul>
+                )
+              ) : !Array.isArray(files) || files.length === 0 ? (
+                <p className="session-empty">暂无匹配文件</p>
+              ) : (
+                <section className="file-tree-section">
+                  <p className="recent-files-title">文件树</p>
+                  <div className="file-tree">{renderTreeNodes(files)}</div>
+                </section>
               )}
             </div>
           )}
