@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 const MAX_SUGGESTIONS = 20;
 
 function flattenFiles(items, out = []) {
@@ -201,10 +201,19 @@ export default function Composer({
   }, [activeToken, skills, fileCandidates, remoteFileCandidates]);
 
   const suggestOpen = Boolean(activeToken && suggestions.length > 0 && !blockingPending);
+  const suggestListRef = useRef(null);
 
   useEffect(() => {
     setActiveIndex(0);
   }, [suggestOpen, inputText, tokenKey]);
+
+  // 键盘导航时将活跃条目滚入可视区域
+  useEffect(() => {
+    const container = suggestListRef.current;
+    if (!container) return;
+    const item = container.querySelector(`[data-suggest-idx="${activeIndex}"]`);
+    if (item) item.scrollIntoView({ block: "nearest" });
+  }, [activeIndex]);
 
   useEffect(() => {
     if (!insertedHint) return undefined;
@@ -309,12 +318,13 @@ export default function Composer({
               }
             }}
           />
-          <div className={`composer-suggest ${showSuggest ? "" : "hidden"}`}>
+          <div className={`composer-suggest ${showSuggest ? "" : "hidden"}`} ref={suggestListRef}>
             {suggestions.length > 0 ? (
               suggestions.map((item, idx) => (
                 <button
                   key={`${item.kind}-${item.key}`}
                   type="button"
+                  data-suggest-idx={idx}
                   className={`composer-suggest-item ${idx === activeIndex ? "is-active" : ""}`}
                   onMouseDown={(event) => {
                     event.preventDefault();
