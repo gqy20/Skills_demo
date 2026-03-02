@@ -31,8 +31,8 @@ const CODING_PLAN_PRESETS = [
     planNamePrefix: "DashScope",
     envKey: "ANTHROPIC_BASE_URL",
     baseUrl: "https://coding.dashscope.aliyuncs.com/apps/anthropic",
-    model: "qwen3-coder-plus",
-    models: ["qwen3-coder-plus", "qwen3-coder-flash", "qwen3-max", "qwen-plus", "qwen-flash"]
+    model: "qwen3.5-plus",
+    models: ["qwen3.5-plus", "kimi-k2.5", "glm-5", "MiniMax-M2.5"]
   },
   {
     key: "volc-anthropic",

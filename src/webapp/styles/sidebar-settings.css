@@ -1322,6 +1322,13 @@
   gap: 8px;
 }
 
+.session-files-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
 .session-file-filter {
   width: 100%;
   border: 1px solid var(--line);
@@ -1338,6 +1345,28 @@
   outline: none;
   border-color: rgba(16, 163, 127, 0.4);
   box-shadow: 0 0 0 3px rgba(16, 163, 127, 0.12);
+}
+
+.session-files-refresh-btn {
+  border: 1px solid #d7d7e0;
+  background: #ffffff;
+  color: #202123;
+  border-radius: 999px;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+
+.session-files-refresh-btn:hover:enabled {
+  border-color: #c6cad6;
+  background: #f9fafc;
+}
+
+.session-files-refresh-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .session-files-list {

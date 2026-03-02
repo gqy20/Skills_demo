@@ -53,6 +53,8 @@ export default function SessionSidebar({
   setFileFilter = () => {},
   openFile = () => {},
   loadDirectoryChildren = () => {},
+  onRefreshFiles = () => {},
+  filesRefreshing = false,
   openedFilePath = ""
 }) {
   const [activeTab, setActiveTab] = useState("sessions");
@@ -279,12 +281,23 @@ export default function SessionSidebar({
             )
           ) : (
             <div className="session-files-wrap">
-              <input
-                className="session-file-filter"
-                value={fileFilter}
-                onChange={(event) => setFileFilter(event.target.value)}
-                placeholder="筛选文件名或路径"
-              />
+              <div className="session-files-toolbar">
+                <input
+                  className="session-file-filter"
+                  value={fileFilter}
+                  onChange={(event) => setFileFilter(event.target.value)}
+                  placeholder="筛选文件名或路径"
+                />
+                <button
+                  type="button"
+                  className="session-files-refresh-btn"
+                  onClick={onRefreshFiles}
+                  disabled={filesRefreshing}
+                  title="刷新文件树"
+                >
+                  {filesRefreshing ? "刷新中..." : "刷新"}
+                </button>
+              </div>
               {searchMode ? (
                 searchFiles.length === 0 ? (
                   <p className="session-empty">暂无匹配文件</p>

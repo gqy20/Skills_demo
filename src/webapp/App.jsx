@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import Composer from "./components/Composer.jsx";
@@ -67,6 +67,7 @@ export default function App() {
   const [fileLoading, setFileLoading] = useState(false);
   const [fileSaving, setFileSaving] = useState(false);
   const [fileError, setFileError] = useState("");
+  const [filesRefreshing, setFilesRefreshing] = useState(false);
   const [inputText, setInputText] = useState("");
   const [lastUserText, setLastUserText] = useState("");
   const [diagnostics, setDiagnostics] = useState({
@@ -278,6 +279,16 @@ export default function App() {
     loadFiles
   });
 
+  const refreshFiles = useCallback(async () => {
+    if (!currentWorkspaceId || filesRefreshing) return;
+    setFilesRefreshing(true);
+    try {
+      await loadFiles();
+    } finally {
+      setFilesRefreshing(false);
+    }
+  }, [currentWorkspaceId, filesRefreshing, loadFiles]);
+
   useAppEffects({
     loadWorkspaces,
     currentWorkspaceId,
@@ -407,6 +418,15 @@ export default function App() {
 
   useEffect(() => {
     if (!currentWorkspaceId) return;
+    const timer = setInterval(() => {
+      if (document.hidden || filesRefreshing) return;
+      refreshFiles().catch(() => {});
+    }, 10000);
+    return () => clearInterval(timer);
+  }, [currentWorkspaceId, filesRefreshing, refreshFiles]);
+
+  useEffect(() => {
+    if (!currentWorkspaceId) return;
     if (mcpCatalog?.runtime?.checking !== true) return;
     const timer = setInterval(() => {
       if (document.hidden) return;
@@ -457,6 +477,8 @@ export default function App() {
           setFileFilter={setFileFilter}
           openFile={(filePath) => requestOpenFile(filePath).catch(() => {})}
           loadDirectoryChildren={(dirPath) => loadDirectoryChildren(dirPath).catch(() => {})}
+          onRefreshFiles={() => refreshFiles().catch(() => {})}
+          filesRefreshing={filesRefreshing}
           openedFilePath={openedFile?.path || ""}
         />
         <section className={`chat-shell ${fileFocused ? "file-focus-mode" : ""}`}>
