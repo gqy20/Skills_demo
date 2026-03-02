@@ -77,6 +77,7 @@ function makeApp() {
   const gets = new Map<string, Handler>();
   const posts = new Map<string, Handler>();
   const puts = new Map<string, Handler>();
+  const deletes = new Map<string, Handler>();
   return {
     app: {
       get(route: string, handler: Handler) {
@@ -87,11 +88,15 @@ function makeApp() {
       },
       put(route: string, handler: Handler) {
         puts.set(route, handler);
+      },
+      delete(route: string, handler: Handler) {
+        deletes.set(route, handler);
       }
     },
     gets,
     posts,
-    puts
+    puts,
+    deletes
   };
 }
 

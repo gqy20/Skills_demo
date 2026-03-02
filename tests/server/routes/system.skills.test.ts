@@ -59,7 +59,8 @@ function makeApp() {
         gets.set(route, handler);
       },
       post() {},
-      put() {}
+      put() {},
+      delete() {}
     },
     gets
   };

@@ -1,10 +1,10 @@
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Response } from "express";
 import { extractDeltaText, extractResultText, extractSdkLifecycle, writeSseData } from "../services/chat.js";
 import { type MutableTurnTrace, normalizeToolLabel, writeDebugSse } from "./chat-shared.js";
 
 type ConsumeQueryEventsParams = {
-  queryInstance: ReturnType<typeof query>;
+  eventStream: AsyncIterable<SDKMessage>;
   key: string;
   partId: string;
   traceId: string;
@@ -15,6 +15,7 @@ type ConsumeQueryEventsParams = {
   sessionMap: Map<string, string>;
   sessionSeedMap: Map<string, string>;
   turnTrace: MutableTurnTrace;
+  stopOnResult?: boolean;
 };
 
 type ConsumeQueryEventsResult = {
@@ -50,7 +51,7 @@ function writeHookStage(
 }
 
 export async function consumeQueryEvents({
-  queryInstance,
+  eventStream,
   key,
   partId,
   traceId,
@@ -60,7 +61,8 @@ export async function consumeQueryEvents({
   settingsDebugEnabled,
   sessionMap,
   sessionSeedMap,
-  turnTrace
+  turnTrace,
+  stopOnResult = false
 }: ConsumeQueryEventsParams): Promise<ConsumeQueryEventsResult> {
   let streamEventCount = 0;
   let deltaCount = 0;
@@ -69,7 +71,7 @@ export async function consumeQueryEvents({
   const streamStartedAt = Date.now();
   let firstTextTimeoutNotified = false;
 
-  for await (const event of queryInstance) {
+  for await (const event of eventStream) {
     if (runtime.closed) break;
     streamEventCount += 1;
 
@@ -253,6 +255,10 @@ export async function consumeQueryEvents({
       const firstError = Array.isArray(maybeErrors) && maybeErrors.length > 0 ? String(maybeErrors[0]) : "";
       const message = firstError || `SDK result error: ${event.subtype}`;
       writeSseData(res, { type: "error", error: message });
+    }
+
+    if (stopOnResult && event.type === "result") {
+      break;
     }
 
     if (settingsDebugEnabled && debugSseEnabled && streamEventCount <= 60) {

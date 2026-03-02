@@ -21,7 +21,7 @@ describe("ChatHeader", () => {
       })
     );
 
-    expect(html).toContain("Agent Workspace");
+    expect(html).toContain("AI Workspace");
     expect(html).toContain("Workspace: ws-1");
     expect(html).toContain("Model: glm-5");
     expect(html).toContain("Key: 已配置");

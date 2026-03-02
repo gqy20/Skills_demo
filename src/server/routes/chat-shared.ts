@@ -5,6 +5,7 @@ import { writeSseData } from "../services/chat.js";
 import { type StoredToolTrace } from "../services/sessions.js";
 import { type PendingRequestStore } from "../services/pending.js";
 import { type WorkspaceRegistry } from "../services/workspaces.js";
+import { type SessionRuntimeManager } from "../services/session-runtime.js";
 
 export type ChatRoutesDeps = {
   app: Express;
@@ -14,6 +15,7 @@ export type ChatRoutesDeps = {
   sessionMap: Map<string, string>;
   sessionSeedMap: Map<string, string>;
   activeQueries: Map<string, ReturnType<typeof query>>;
+  sessionRuntimeManager?: SessionRuntimeManager;
 };
 
 export type MutableTurnTrace = StoredToolTrace & {

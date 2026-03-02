@@ -8,6 +8,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { RuntimeSettings } from "./types.js";
 import { PendingRequestStore } from "./services/pending.js";
 import { WorkspaceRegistry } from "./services/workspaces.js";
+import { SessionRuntimeManager } from "./services/session-runtime.js";
 import { registerSystemRoutes } from "./routes/system.js";
 import { registerChatRoutes } from "./routes/chat.js";
 import { registerInputRoutes } from "./routes/input.js";
@@ -30,6 +31,24 @@ const pendingStore = new PendingRequestStore();
 const sessionMap = new Map<string, string>();
 const sessionSeedMap = new Map<string, string>();
 const activeQueries = new Map<string, ReturnType<typeof query>>();
+const enablePersistentSession = process.env.CHAT_ENABLE_PERSISTENT_SESSION === "1";
+const sessionRuntimeManager = enablePersistentSession
+  ? new SessionRuntimeManager({
+      maxSessions: Number(process.env.CHAT_PERSISTENT_MAX_SESSIONS || 100),
+      idleTtlMs: Number(process.env.CHAT_PERSISTENT_IDLE_TTL_MS || 10 * 60_000)
+    })
+  : null;
+
+if (sessionRuntimeManager) {
+  const cleanupIntervalMs = Number(process.env.CHAT_PERSISTENT_CLEANUP_INTERVAL_MS || 60_000);
+  const timer = setInterval(() => {
+    const closed = sessionRuntimeManager.closeIdle();
+    if (closed > 0) {
+      console.log(JSON.stringify({ ts: new Date().toISOString(), phase: "persistent_session_cleanup", closed }));
+    }
+  }, cleanupIntervalMs);
+  if (typeof timer.unref === "function") timer.unref();
+}
 
 const defaultSettings: RuntimeSettings = {
   model: process.env.ANTHROPIC_MODEL || "glm-5",
@@ -62,7 +81,8 @@ registerChatRoutes({
   defaultSettings,
   sessionMap,
   sessionSeedMap,
-  activeQueries
+  activeQueries,
+  sessionRuntimeManager: sessionRuntimeManager || undefined
 });
 
 registerInputRoutes({ app, pendingStore });

@@ -9,17 +9,16 @@ describe("PreflightPanel", () => {
       React.createElement(PreflightPanel, {
         show: true,
         quickPrompts: [
-          { title: "A", text: "Prompt A" },
-          { title: "B", text: "Prompt B" }
+          { title: "A", text: "Prompt A", desc: "Desc A", icon: "A+" },
+          { title: "B", text: "Prompt B", desc: "Desc B", icon: "B+" }
         ],
-        quickChips: ["c1", "c2"],
-        onSubmitPrompt: vi.fn(),
-        onSelectChip: vi.fn()
+        onSubmitPrompt: vi.fn()
       })
     );
-    expect(html).toContain("开始你的科研任务");
-    expect(html).toContain("Prompt A");
-    expect(html).toContain("c1");
+    expect(html).toContain("有什么可以帮你研究的？");
+    expect(html).toContain("选择下方模板快速开始");
+    expect(html).toContain("Desc A");
+    expect(html).toContain("开始 →");
   });
 
   it("returns null when hidden", () => {
@@ -27,9 +26,7 @@ describe("PreflightPanel", () => {
       React.createElement(PreflightPanel, {
         show: false,
         quickPrompts: [],
-        quickChips: [],
-        onSubmitPrompt: vi.fn(),
-        onSelectChip: vi.fn()
+        onSubmitPrompt: vi.fn()
       })
     );
     expect(html).toBe("");

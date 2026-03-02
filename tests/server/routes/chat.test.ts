@@ -66,7 +66,8 @@ function registerRoutes() {
     defaultSettings,
     sessionMap: new Map(),
     sessionSeedMap: new Map(),
-    activeQueries: new Map()
+    activeQueries: new Map(),
+    sessionRuntimeManager: undefined
   });
   return { posts, workspaceRegistry };
 }
@@ -108,6 +109,39 @@ describe("registerChatRoutes", () => {
     });
   });
 
+  it("closes runtime when no active query exists but persistent runtime is present", async () => {
+    const posts = new Map<string, Handler>();
+    const app = {
+      post(route: string, handler: Handler) {
+        posts.set(route, handler);
+      }
+    };
+    const close = vi.fn(() => true);
+    registerChatRoutes({
+      app: app as never,
+      workspaceRegistry: { requireWorkspace: () => ({ id: "ws1", root: "/tmp/ws1", label: "ws1" }) } as never,
+      pendingStore: { createPendingRequest: vi.fn() } as never,
+      defaultSettings,
+      sessionMap: new Map(),
+      sessionSeedMap: new Map(),
+      activeQueries: new Map(),
+      sessionRuntimeManager: { close } as never
+    });
+    const handler = posts.get("/api/chat/stop");
+    const req = { body: { id: "session-a" } } as Request;
+    const res = makeMockRes();
+    await handler!(req, res);
+
+    expect(close).toHaveBeenCalledWith("ws1:session-a");
+    expect(res.body).toEqual({
+      ok: true,
+      workspaceId: "ws1",
+      id: "session-a",
+      stopped: true,
+      reason: "runtime_closed"
+    });
+  });
+
   it("interrupts and closes active query for /api/chat/stop", async () => {
     const posts = new Map<string, Handler>();
     const app = {
@@ -119,6 +153,7 @@ describe("registerChatRoutes", () => {
       interrupt: vi.fn(async () => undefined),
       close: vi.fn()
     };
+    const runtimeClose = vi.fn(() => true);
     const activeQueries = new Map<string, unknown>([["ws1:session-a", activeQuery]]);
     registerChatRoutes({
       app: app as never,
@@ -127,7 +162,8 @@ describe("registerChatRoutes", () => {
       defaultSettings,
       sessionMap: new Map(),
       sessionSeedMap: new Map(),
-      activeQueries: activeQueries as never
+      activeQueries: activeQueries as never,
+      sessionRuntimeManager: { close: runtimeClose } as never
     });
 
     const handler = posts.get("/api/chat/stop");
@@ -137,6 +173,7 @@ describe("registerChatRoutes", () => {
 
     expect(activeQuery.interrupt).toHaveBeenCalledOnce();
     expect(activeQuery.close).toHaveBeenCalledOnce();
+    expect(runtimeClose).toHaveBeenCalledWith("ws1:session-a");
     expect(activeQueries.has("ws1:session-a")).toBe(false);
     expect(res.body).toEqual({ ok: true, workspaceId: "ws1", id: "session-a", stopped: true });
   });
