@@ -99,7 +99,7 @@ npm start
 - `ANTHROPIC_AUTH_TOKEN`：默认空
 - `MINERU_API_KEY`：默认空
 - `NOTION_TOKEN`：Notion MCP token（默认空）
-- `ZOTERO_LOCAL`：Zotero MCP 本地模式开关（建议 `true`）
+- `ZOTERO_LOCAL`：Zotero MCP 本地模式开关（默认 `false`，即 Web API 模式）
 - `ZOTERO_API_KEY`：Zotero Web API key（本地模式可留空）
 - `ZOTERO_LIBRARY_ID`：Zotero 库 ID（Web API 模式必填）
 - `ZOTERO_LIBRARY_TYPE`：`user` 或 `group`
@@ -119,11 +119,10 @@ npm start
    3. 在对应页面/数据库把该 Integration 加入权限
 
 2. Zotero（两种模式）
-   1. 本地模式：`ZOTERO_LOCAL=true`，通常无需 `ZOTERO_API_KEY`
-   2. Web API 模式：
-      1. 在 `https://www.zotero.org/settings/keys` 创建 API key
-      2. 设置 `ZOTERO_LOCAL=false`
-      3. 配置 `ZOTERO_API_KEY`、`ZOTERO_LIBRARY_ID`、`ZOTERO_LIBRARY_TYPE`
+   1. Web API 模式（默认）：`ZOTERO_LOCAL=false`
+      1. 在 `https://www.zotero.org/settings/security#applications` 创建 API key
+      2. 配置 `ZOTERO_API_KEY`、`ZOTERO_LIBRARY_ID`、`ZOTERO_LIBRARY_TYPE`
+   2. 本地模式：`ZOTERO_LOCAL=true`，通常无需 `ZOTERO_API_KEY`
 
 ## 运行时设置（Web 内可改）
 

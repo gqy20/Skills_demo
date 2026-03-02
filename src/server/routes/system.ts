@@ -42,6 +42,7 @@ type McpProbeSnapshot = {
 
 export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, activeQueries }: SystemRoutesDeps): void {
   const mcpProbeCache = new Map<string, McpProbeSnapshot>();
+
   const settingsEnvValue = (
     name: string,
     settings: RuntimeSettings,
@@ -102,7 +103,7 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
     snapshot.source = "active_session";
     void (async () => {
       try {
-        const rawStatus = await withTimeout(activeQuery.mcpServerStatus(), 10000, "mcpServerStatus");
+        const rawStatus = await withTimeout(activeQuery.mcpServerStatus(), 180000, "mcpServerStatus");
         snapshot.rows.clear();
         for (const entry of Array.isArray(rawStatus) ? rawStatus : []) {
           if (!entry || typeof entry !== "object") continue;

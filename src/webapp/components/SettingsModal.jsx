@@ -1,6 +1,9 @@
 import React from "react";
 import { inspectEnvText, parseEnvText } from "../lib/chatUtils.js";
 
+const BUSINESS_ENV_KEYS = ["MINERU_API_KEY", "PDF_ENABLE_PARALLEL", "PDF_MAX_WORKERS"];
+const BUSINESS_ENV_PREFIXES = ["MINERU", "PDF"];
+
 export default function SettingsModal({
   open,
   settings,
@@ -29,6 +32,7 @@ export default function SettingsModal({
     [requiredByServer]
   );
   const mcpRequiredSet = React.useMemo(() => new Set(allRequiredKeys), [allRequiredKeys]);
+  const businessRequiredSet = React.useMemo(() => new Set(BUSINESS_ENV_KEYS), []);
   const mcpPrefixes = React.useMemo(() => {
     const prefixes = new Set(["MCP", "NOTION", "ZOTERO"]);
     for (const key of allRequiredKeys) {
@@ -55,22 +59,39 @@ export default function SettingsModal({
     },
     [mcpPrefixes, mcpRequiredSet]
   );
+  const isBusinessKey = React.useCallback(
+    (key) => {
+      const normalized = String(key || "").trim();
+      if (!normalized) return false;
+      if (isMcpKey(normalized)) return false;
+      if (businessRequiredSet.has(normalized)) return true;
+      return BUSINESS_ENV_PREFIXES.some((prefix) => normalized === prefix || normalized.startsWith(`${prefix}_`));
+    },
+    [businessRequiredSet, isMcpKey]
+  );
   const runtimeEnvSplitText = React.useMemo(() => {
     const map = parseEnvText(settings.runtimeEnvText);
     const mcpPairs = [];
+    const businessPairs = [];
     const otherPairs = [];
     for (const [key, value] of Object.entries(map)) {
       if (isMcpKey(key)) mcpPairs.push([key, value]);
+      else if (isBusinessKey(key)) businessPairs.push([key, value]);
       else otherPairs.push([key, value]);
     }
     return {
       mcpText: mcpPairs.map(([key, value]) => `${key}=${value}`).join("\n"),
+      businessText: businessPairs.map(([key, value]) => `${key}=${value}`).join("\n"),
       otherText: otherPairs.map(([key, value]) => `${key}=${value}`).join("\n")
     };
-  }, [isMcpKey, settings.runtimeEnvText]);
+  }, [isBusinessKey, isMcpKey, settings.runtimeEnvText]);
   const missingRequiredKeys = React.useMemo(
     () => allRequiredKeys.filter((key) => !String(runtimeEnvMap[key] || "").trim()),
     [allRequiredKeys, runtimeEnvMap]
+  );
+  const missingBusinessKeys = React.useMemo(
+    () => BUSINESS_ENV_KEYS.filter((key) => !String(runtimeEnvMap[key] || "").trim()),
+    [runtimeEnvMap]
   );
   const updateRuntimeEnvPartition = React.useCallback(
     (target, text) => {
@@ -78,17 +99,33 @@ export default function SettingsModal({
       const input = parseEnvText(text);
       const next = {};
       for (const [key, value] of Object.entries(current)) {
-        if (target === "mcp" ? !isMcpKey(key) : isMcpKey(key)) next[key] = value;
+        if (
+          target === "mcp"
+            ? !isMcpKey(key)
+            : target === "business"
+              ? !isBusinessKey(key)
+              : isMcpKey(key) || isBusinessKey(key)
+        ) {
+          next[key] = value;
+        }
       }
       for (const [key, value] of Object.entries(input)) {
-        if (target === "mcp" ? isMcpKey(key) : !isMcpKey(key)) next[key] = value;
+        if (
+          target === "mcp"
+            ? isMcpKey(key)
+            : target === "business"
+              ? isBusinessKey(key)
+              : !isMcpKey(key) && !isBusinessKey(key)
+        ) {
+          next[key] = value;
+        }
       }
       const nextText = Object.entries(next)
         .map(([key, value]) => `${key}=${value}`)
         .join("\n");
       setSettings((prev) => ({ ...prev, runtimeEnvText: nextText }));
     },
-    [isMcpKey, setSettings, settings.runtimeEnvText]
+    [isBusinessKey, isMcpKey, setSettings, settings.runtimeEnvText]
   );
   const upsertMcpEnvKeys = React.useCallback(
     (keys) => {
@@ -213,12 +250,23 @@ export default function SettingsModal({
                 />
               </div>
               <div>
+                <label>业务变量</label>
+                <textarea
+                  className="settings-textarea"
+                  rows={6}
+                  value={runtimeEnvSplitText.businessText}
+                  placeholder={"MINERU_API_KEY=\nPDF_ENABLE_PARALLEL=\nPDF_MAX_WORKERS="}
+                  spellCheck={false}
+                  onChange={(e) => updateRuntimeEnvPartition("business", e.target.value)}
+                />
+              </div>
+              <div>
                 <label>其他变量</label>
                 <textarea
                   className="settings-textarea"
                   rows={6}
                   value={runtimeEnvSplitText.otherText}
-                  placeholder={"MINERU_API_KEY=\nCUSTOM_KEY="}
+                  placeholder={"CUSTOM_KEY=\nANOTHER_KEY="}
                   spellCheck={false}
                   onChange={(e) => updateRuntimeEnvPartition("other", e.target.value)}
                 />
@@ -229,8 +277,12 @@ export default function SettingsModal({
               {allRequiredKeys.length > 0 && (
                 <span className="meta-chip">MCP 必需: {allRequiredKeys.length}</span>
               )}
+              <span className="meta-chip">业务必需: {BUSINESS_ENV_KEYS.length}</span>
               {missingRequiredKeys.length > 0 && (
                 <span className="meta-chip warn">待补齐: {missingRequiredKeys.length}</span>
+              )}
+              {missingBusinessKeys.length > 0 && (
+                <span className="meta-chip warn">业务待补齐: {missingBusinessKeys.length}</span>
               )}
               {runtimeEnvStats.invalidLineNumbers.length > 0 && (
                 <span className="meta-chip warn">无效行: {runtimeEnvStats.invalidLineNumbers.join(", ")}</span>

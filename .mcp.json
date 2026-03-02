@@ -52,8 +52,8 @@
       "type": "stdio",
       "command": "npx",
       "args": [
-        "-y",
-        "@notionhq/notion-mcp-server"
+        "--yes",
+        "@notionhq/notion-mcp-server@2.2.0"
       ],
       "env": {
         "NOTION_TOKEN": "${NOTION_TOKEN}"
@@ -61,8 +61,8 @@
     },
     "zotero-mcp": {
       "type": "stdio",
-      "command": "zotero-mcp",
-      "args": [],
+      "command": "uvx",
+      "args": ["--upgrade", "zotero-mcp"],
       "env": {
         "ZOTERO_LOCAL": "${ZOTERO_LOCAL}",
         "ZOTERO_API_KEY": "${ZOTERO_API_KEY}",
