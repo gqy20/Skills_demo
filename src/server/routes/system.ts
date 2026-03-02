@@ -1,4 +1,6 @@
 import type { Express } from "express";
+import { randomUUID } from "node:crypto";
+import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { RuntimeSettings } from "../types.js";
 import { fetchSkills, invalidateSkillsCache } from "../services/skills.js";
 import {
@@ -98,29 +100,46 @@ export function registerSystemRoutes({
     return activeQuery;
   };
 
-  const startMcpProbe = (workspaceId: string): { started: boolean; reason: string } => {
+  const startMcpProbe = (
+    workspaceId: string,
+    workspaceRoot?: string,
+    settingsForProbe?: RuntimeSettings
+  ): { started: boolean; reason: string } => {
     const snapshot = getMcpSnapshot(workspaceId);
     if (snapshot.checking) return { started: false, reason: "already_checking" };
 
     const runtimeSession = sessionRuntimeManager?.findWorkspaceRuntime(workspaceId) || null;
-    const mcpStatusSource = (runtimeSession?.session || findActiveWorkspaceQuery(workspaceId) || null) as
+    let mcpStatusSource = (runtimeSession?.session || findActiveWorkspaceQuery(workspaceId) || null) as
       | { mcpServerStatus?: () => Promise<unknown[]> }
       | null;
-    if (!mcpStatusSource || typeof mcpStatusSource.mcpServerStatus !== "function") {
-      snapshot.ok = null;
-      snapshot.error = "No active chat session.";
-      snapshot.source = "active_session_missing";
-      snapshot.checkedAt = Date.now();
-      return { started: false, reason: "no_active_session" };
-    }
-    const getMcpStatus = mcpStatusSource.mcpServerStatus;
+    let ephemeralProbeQuery: (ReturnType<typeof query> & { close?: () => void }) | null = null;
 
     snapshot.checking = true;
     snapshot.error = "";
-    snapshot.source = runtimeSession ? "persistent_session" : "active_session";
+    snapshot.source = runtimeSession ? "persistent_session" : mcpStatusSource ? "active_session" : "initializing_probe";
     void (async () => {
       try {
-        const rawStatus = await withTimeout(getMcpStatus(), 180000, "mcpServerStatus");
+        if ((!mcpStatusSource || typeof mcpStatusSource.mcpServerStatus !== "function") && workspaceRoot && settingsForProbe) {
+          const probeOptions = buildQueryOptions(workspaceRoot, settingsForProbe, randomUUID(), undefined, {
+            includePartialMessages: false
+          });
+          ephemeralProbeQuery = query({
+            prompt: "MCP health probe",
+            options: probeOptions
+          }) as ReturnType<typeof query> & { close?: () => void };
+          mcpStatusSource = ephemeralProbeQuery as unknown as { mcpServerStatus?: () => Promise<unknown[]> };
+          snapshot.source = "ephemeral_query";
+        }
+
+        if (!mcpStatusSource || typeof mcpStatusSource.mcpServerStatus !== "function") {
+          snapshot.ok = null;
+          snapshot.error = "No active chat session.";
+          snapshot.source = "active_session_missing";
+          return;
+        }
+
+        // Keep method bound to source object; extracting then calling can break internal state.
+        const rawStatus = await withTimeout(mcpStatusSource.mcpServerStatus.call(mcpStatusSource), 180000, "mcpServerStatus");
         snapshot.rows.clear();
         for (const entry of Array.isArray(rawStatus) ? rawStatus : []) {
           if (!entry || typeof entry !== "object") continue;
@@ -151,6 +170,11 @@ export function registerSystemRoutes({
           snapshot.source = "active_session_error";
         }
       } finally {
+        try {
+          ephemeralProbeQuery?.close?.();
+        } catch {
+          // ignore close errors
+        }
         snapshot.checkedAt = Date.now();
         snapshot.checking = false;
       }
@@ -246,14 +270,14 @@ export function registerSystemRoutes({
       let refreshResult: { started: boolean; reason: string } | null = null;
       let autoRefreshTriggered = false;
       if (forceRefresh && settings.mcpEnabled && configured.length > 0) {
-        refreshResult = startMcpProbe(workspace.id);
+        refreshResult = startMcpProbe(workspace.id, workspace.root, settings);
         autoRefreshTriggered = true;
       } else if (forceRefresh && !settings.mcpEnabled) {
         refreshResult = { started: false, reason: "mcp_disabled" };
       } else if (forceRefresh && configured.length === 0) {
         refreshResult = { started: false, reason: "config_empty" };
       } else if (!forceRefresh && mcpAutoRefreshEnabled && stale && settings.mcpEnabled && configured.length > 0 && !snapshot.checking) {
-        refreshResult = startMcpProbe(workspace.id);
+        refreshResult = startMcpProbe(workspace.id, workspace.root, settings);
         autoRefreshTriggered = true;
       }
       const effectiveSnapshot = forceRefresh || autoRefreshTriggered ? getMcpSnapshot(workspace.id) : snapshot;
@@ -345,7 +369,7 @@ export function registerSystemRoutes({
         return;
       }
 
-      const result = startMcpProbe(workspace.id);
+      const result = startMcpProbe(workspace.id, workspace.root, settings);
       const fresh = getMcpSnapshot(workspace.id);
       res.json({
         ok: true,
@@ -574,7 +598,7 @@ export function registerSystemRoutes({
     } else {
       const configured = await readMcpConfig(workspace.root);
       if (configured.length > 0) {
-        mcpRefresh = startMcpProbe(workspace.id);
+        mcpRefresh = startMcpProbe(workspace.id, workspace.root, next);
       } else {
         snapshot.ok = null;
         snapshot.error = "";

@@ -490,7 +490,7 @@ describe("registerSystemRoutes", () => {
     expect(dotenvRaw).toContain("ZOTERO_API_KEY=zotero_sync_value");
   });
 
-  it("returns no_active_session for /api/mcps/refresh without active query", async () => {
+  it("starts probe via ephemeral query for /api/mcps/refresh without active query", async () => {
     const ws = await makeWorkspace();
     process.env.AGENT_WORKSPACE_ROOT = ws;
     process.env.AGENT_WORKSPACES = "";
@@ -515,10 +515,10 @@ describe("registerSystemRoutes", () => {
     expect(res.statusCode).toBe(200);
     expect(res.body).toMatchObject({
       ok: true,
-      started: false,
-      reason: "no_active_session",
+      started: true,
+      reason: "started",
       runtime: {
-        source: "active_session_missing"
+        source: "ephemeral_query"
       }
     });
   });
