@@ -22,6 +22,63 @@
   padding: 14px 16px;
 }
 
+.inspector-tabs-wrap {
+  padding-top: 12px;
+  padding-bottom: 6px;
+}
+
+.inspector-main-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.inspector-main-tab {
+  border: 1px solid #dde4ef;
+  border-radius: 10px;
+  padding: 6px 8px;
+  background: #f8fafc;
+  color: #475569;
+  box-shadow: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: var(--fs-12);
+  font-weight: 650;
+}
+
+.inspector-main-tab:hover {
+  background: #f1f5f9;
+  border-color: #d2dbe8;
+}
+
+.inspector-main-tab.is-active {
+  background: rgba(16, 163, 127, 0.1);
+  border-color: rgba(16, 163, 127, 0.34);
+  color: #0e9f6e;
+}
+
+.inspector-main-tab.is-warn:not(.is-active) {
+  color: #92400e;
+  background: #fff7ed;
+  border-color: rgba(217, 119, 6, 0.28);
+}
+
+.inspector-main-tab-count {
+  border-radius: 999px;
+  padding: 1px 6px;
+  background: rgba(15, 23, 42, 0.08);
+  color: #334155;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.inspector-main-tab.is-active .inspector-main-tab-count {
+  background: rgba(16, 163, 127, 0.18);
+  color: #0e9f6e;
+}
+
 .panel h2 {
   margin: 0 0 10px;
   font-size: var(--fs-16);
@@ -195,6 +252,10 @@
   box-shadow: none;
 }
 
+.inspector-more-btn {
+  margin-top: 8px;
+}
+
 .mcps-list {
   list-style: none;
   margin: 8px 0 0;
@@ -275,6 +336,15 @@
 
 .mcp-issues {
   margin-top: 2px;
+}
+
+.mcp-healthy {
+  margin-top: 8px;
+}
+
+.mcp-healthy-toggle {
+  padding-left: 0;
+  padding-right: 0;
 }
 
 .mcp-actions {
@@ -969,6 +1039,10 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.settings-required-editor {
+  margin-top: 8px;
 }
 
 .meta-chip.warn {

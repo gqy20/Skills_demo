@@ -59,11 +59,6 @@ export default function App() {
   const [openingSessionId, setOpeningSessionId] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sessionSidebarCollapsed, setSessionSidebarCollapsed] = useState(false);
-  const [sidebarSections, setSidebarSections] = useState({
-    mcps: true,
-    pending: false,
-    events: false
-  });
   const [skillExpanded, setSkillExpanded] = useState({});
   const [skillFilter, setSkillFilter] = useState("");
   const [skillSourceTab, setSkillSourceTab] = useState("all");
@@ -420,12 +415,6 @@ export default function App() {
     return () => clearInterval(timer);
   }, [currentWorkspaceId, loadMcps, mcpCatalog?.runtime?.checking]);
 
-  const toggleSidebarSection = (key) =>
-    setSidebarSections((prev) => ({
-      ...prev,
-      [key]: !prev[key]
-    }));
-
   const loadDirectoryChildren = async (dirPath) => {
     const target = String(dirPath || "").trim();
     if (!target || !currentWorkspaceId) return;
@@ -586,9 +575,6 @@ export default function App() {
         </section>
         <InspectorSidebar
           sidebarOpen={sidebarOpen}
-          currentWorkspaceId={currentWorkspaceId}
-          setCurrentWorkspaceId={setCurrentWorkspaceId}
-          workspaces={workspaces}
           skills={skills}
           filteredSkills={filteredSkills}
           skillFilter={skillFilter}
@@ -601,8 +587,6 @@ export default function App() {
           mcpCatalog={mcpCatalog}
           reloadMcps={() => refreshMcps().catch(() => {})}
           onOpenSettings={() => setSettingsOpen(true)}
-          sidebarSections={sidebarSections}
-          toggleSidebarSection={toggleSidebarSection}
           pendingState={pendingState}
           blockingPending={blockingPending}
           diagnostics={diagnostics}

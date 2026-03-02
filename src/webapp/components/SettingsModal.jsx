@@ -14,6 +14,7 @@ export default function SettingsModal({
 }) {
   const runtimeEnvStats = React.useMemo(() => inspectEnvText(settings.runtimeEnvText), [settings.runtimeEnvText]);
   const runtimeEnvMap = React.useMemo(() => parseEnvText(settings.runtimeEnvText), [settings.runtimeEnvText]);
+  const [onlyShowMissing, setOnlyShowMissing] = React.useState(false);
   const mcpServers = Array.isArray(mcpCatalog?.items) ? mcpCatalog.items : [];
   const requiredByServer = React.useMemo(
     () =>
@@ -127,7 +128,7 @@ export default function SettingsModal({
     },
     [isBusinessKey, isMcpKey, setSettings, settings.runtimeEnvText]
   );
-  const upsertMcpEnvKeys = React.useCallback(
+  const upsertEnvKeys = React.useCallback(
     (keys) => {
       const normalized = Array.from(
         new Set(
@@ -149,6 +150,19 @@ export default function SettingsModal({
       });
     },
     [setSettings]
+  );
+  const filteredRequiredByServer = React.useMemo(() => {
+    if (!onlyShowMissing) return requiredByServer;
+    return requiredByServer
+      .map((server) => ({
+        ...server,
+        requiredEnvVars: server.requiredEnvVars.filter((key) => !String(runtimeEnvMap[key] || "").trim())
+      }))
+      .filter((server) => server.requiredEnvVars.length > 0);
+  }, [onlyShowMissing, requiredByServer, runtimeEnvMap]);
+  const businessRequiredKeysShown = React.useMemo(
+    () => (onlyShowMissing ? missingBusinessKeys : BUSINESS_ENV_KEYS),
+    [missingBusinessKeys, onlyShowMissing]
   );
   const snapshotOf = React.useCallback(
     (value) =>
@@ -237,41 +251,6 @@ export default function SettingsModal({
 
           <div className="settings-section">
             <h3 className="settings-section-title">运行时变量</h3>
-            <div className="settings-env-grid">
-              <div>
-                <label>MCP 变量</label>
-                <textarea
-                  className="settings-textarea"
-                  rows={6}
-                  value={runtimeEnvSplitText.mcpText}
-                  placeholder={"NOTION_TOKEN=\nZOTERO_API_KEY=\nZOTERO_LIBRARY_ID="}
-                  spellCheck={false}
-                  onChange={(e) => updateRuntimeEnvPartition("mcp", e.target.value)}
-                />
-              </div>
-              <div>
-                <label>业务变量</label>
-                <textarea
-                  className="settings-textarea"
-                  rows={6}
-                  value={runtimeEnvSplitText.businessText}
-                  placeholder={"MINERU_API_KEY=\nPDF_ENABLE_PARALLEL=\nPDF_MAX_WORKERS="}
-                  spellCheck={false}
-                  onChange={(e) => updateRuntimeEnvPartition("business", e.target.value)}
-                />
-              </div>
-              <div>
-                <label>其他变量</label>
-                <textarea
-                  className="settings-textarea"
-                  rows={6}
-                  value={runtimeEnvSplitText.otherText}
-                  placeholder={"CUSTOM_KEY=\nANOTHER_KEY="}
-                  spellCheck={false}
-                  onChange={(e) => updateRuntimeEnvPartition("other", e.target.value)}
-                />
-              </div>
-            </div>
             <div className="settings-inline-meta">
               <span className="meta-chip">有效项: {runtimeEnvStats.validCount}</span>
               {allRequiredKeys.length > 0 && (
@@ -290,49 +269,104 @@ export default function SettingsModal({
               {runtimeEnvStats.duplicateKeys.length > 0 && (
                 <span className="meta-chip warn">重复 Key: {Array.from(new Set(runtimeEnvStats.duplicateKeys)).join(", ")}</span>
               )}
+              <button type="button" className={`sidebar-mini-btn ${onlyShowMissing ? "is-primary" : ""}`} onClick={() => setOnlyShowMissing((v) => !v)}>
+                {onlyShowMissing ? "显示全部" : "只看缺失"}
+              </button>
             </div>
-            {requiredByServer.length > 0 && (
-              <div className="settings-mcp-required">
-                <div className="settings-mcp-required-head">
-                  <p>检测到 .mcp.json 所需环境变量</p>
-                  {missingRequiredKeys.length > 0 && (
-                    <button type="button" className="sidebar-mini-btn" onClick={() => upsertMcpEnvKeys(missingRequiredKeys)}>
-                      补齐全部缺失
-                    </button>
-                  )}
-                </div>
-                <ul className="settings-mcp-required-list">
-                  {requiredByServer.map((server) => {
-                    const serverMissing = server.requiredEnvVars.filter((key) => !String(runtimeEnvMap[key] || "").trim());
-                    return (
-                      <li key={server.name} className="settings-mcp-required-item">
-                        <div className="settings-mcp-required-server">
-                          <strong>{server.name}</strong>
-                          <span className="meta-chip">
-                            {server.requiredEnvVars.length - serverMissing.length}/{server.requiredEnvVars.length} 已配置
-                          </span>
-                          {serverMissing.length > 0 && (
-                            <button type="button" className="sidebar-mini-btn" onClick={() => upsertMcpEnvKeys(serverMissing)}>
-                              补齐该服务
-                            </button>
-                          )}
-                        </div>
-                        <div className="settings-mcp-required-keys">
-                          {server.requiredEnvVars.map((key) => {
-                            const filled = Boolean(String(runtimeEnvMap[key] || "").trim());
-                            return (
-                              <span key={`${server.name}:${key}`} className={`meta-chip ${filled ? "" : "warn"}`}>
-                                {key}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
+            <div className="settings-mcp-required">
+              <div className="settings-mcp-required-head">
+                <p>检测到 .mcp.json 所需环境变量</p>
+                {missingRequiredKeys.length > 0 && (
+                  <button type="button" className="sidebar-mini-btn" onClick={() => upsertEnvKeys(missingRequiredKeys)}>
+                    补齐全部缺失
+                  </button>
+                )}
               </div>
-            )}
+              <ul className="settings-mcp-required-list">
+                {filteredRequiredByServer.map((server) => {
+                  const serverMissing = server.requiredEnvVars.filter((key) => !String(runtimeEnvMap[key] || "").trim());
+                  return (
+                    <li key={server.name} className="settings-mcp-required-item">
+                      <div className="settings-mcp-required-server">
+                        <strong>{server.name}</strong>
+                        <span className="meta-chip">
+                          {server.requiredEnvVars.length - serverMissing.length}/{server.requiredEnvVars.length} 已配置
+                        </span>
+                        {serverMissing.length > 0 && (
+                          <button type="button" className="sidebar-mini-btn" onClick={() => upsertEnvKeys(serverMissing)}>
+                            补齐该服务
+                          </button>
+                        )}
+                      </div>
+                      <div className="settings-mcp-required-keys">
+                        {server.requiredEnvVars.map((key) => {
+                          const filled = Boolean(String(runtimeEnvMap[key] || "").trim());
+                          return (
+                            <span key={`${server.name}:${key}`} className={`meta-chip ${filled ? "" : "warn"}`}>
+                              {key}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </li>
+                  );
+                })}
+                {requiredByServer.length === 0 && <li className="sessions-empty">未检测到 MCP 必需变量</li>}
+                {requiredByServer.length > 0 && filteredRequiredByServer.length === 0 && <li className="sessions-empty">当前筛选下无缺失项</li>}
+              </ul>
+              <label>MCP 变量（可直接修改）</label>
+              <textarea
+                className="settings-textarea settings-required-editor"
+                rows={5}
+                value={runtimeEnvSplitText.mcpText}
+                placeholder={"NOTION_TOKEN=\nZOTERO_API_KEY=\nZOTERO_LIBRARY_ID="}
+                spellCheck={false}
+                onChange={(e) => updateRuntimeEnvPartition("mcp", e.target.value)}
+              />
+            </div>
+            <div className="settings-mcp-required">
+              <div className="settings-mcp-required-head">
+                <p>业务必需变量</p>
+                {missingBusinessKeys.length > 0 && (
+                  <button type="button" className="sidebar-mini-btn" onClick={() => upsertEnvKeys(missingBusinessKeys)}>
+                    补齐业务缺失
+                  </button>
+                )}
+              </div>
+              <div className="settings-mcp-required-keys">
+                {businessRequiredKeysShown.map((key) => {
+                  const filled = Boolean(String(runtimeEnvMap[key] || "").trim());
+                  return (
+                    <span key={`biz:${key}`} className={`meta-chip ${filled ? "" : "warn"}`}>
+                      {key}
+                    </span>
+                  );
+                })}
+                {businessRequiredKeysShown.length === 0 && <span className="sessions-empty">当前筛选下无缺失项</span>}
+              </div>
+              <label>业务变量（可直接修改）</label>
+              <textarea
+                className="settings-textarea settings-required-editor"
+                rows={5}
+                value={runtimeEnvSplitText.businessText}
+                placeholder={"MINERU_API_KEY=\nPDF_ENABLE_PARALLEL=\nPDF_MAX_WORKERS="}
+                spellCheck={false}
+                onChange={(e) => updateRuntimeEnvPartition("business", e.target.value)}
+              />
+            </div>
+            <div className="settings-mcp-required">
+              <div className="settings-mcp-required-head">
+                <p>其他变量</p>
+              </div>
+              <textarea
+                className="settings-textarea settings-required-editor"
+                rows={5}
+                value={runtimeEnvSplitText.otherText}
+                placeholder={"CUSTOM_KEY=\nANOTHER_KEY="}
+                spellCheck={false}
+                onChange={(e) => updateRuntimeEnvPartition("other", e.target.value)}
+              />
+            </div>
           </div>
 
           <div className="settings-section">
