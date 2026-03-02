@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+const MAX_SUGGESTIONS = 20;
 
 function flattenFiles(items, out = []) {
   if (!Array.isArray(items)) return out;
@@ -50,14 +51,27 @@ function scorePathSuggestion(pathValue, type, rawQuery) {
   let score = 0;
 
   if (!rawQuery) score += 1;
-  if (rawQuery && pathLower.startsWith(rawQuery)) score += 24;
-  if (rawQuery && pathLower.includes(rawQuery)) score += 12;
+  if (leafQuery && baseName === leafQuery) score += 60;
   if (leafQuery && baseName.startsWith(leafQuery)) score += 26;
   if (leafQuery && baseName.includes(leafQuery)) score += 16;
+  if (rawQuery && pathLower.startsWith(rawQuery)) score += 24;
+  if (rawQuery && pathLower.includes(rawQuery)) score += 12;
   if (basePrefix && pathLower.startsWith(basePrefix)) score += 10;
   if (type === "file") score += 4;
 
   return score;
+}
+
+function pathBaseName(pathValue) {
+  const pathSafe = String(pathValue || "").trim();
+  if (!pathSafe) return "";
+  const segments = pathSafe.split("/");
+  return segments[segments.length - 1] || pathSafe;
+}
+
+function toErrorMessage(error) {
+  if (error instanceof Error && error.message) return error.message;
+  return "联想加载失败";
 }
 
 export default function Composer({
@@ -75,6 +89,7 @@ export default function Composer({
   const [caretPos, setCaretPos] = useState(0);
   const [activeIndex, setActiveIndex] = useState(0);
   const [remoteFileCandidates, setRemoteFileCandidates] = useState([]);
+  const [suggestError, setSuggestError] = useState("");
   const [dismissedTokenKey, setDismissedTokenKey] = useState("");
   const [insertedHint, setInsertedHint] = useState("");
   const fileCandidates = useMemo(() => flattenFiles(files || []), [files]);
@@ -84,10 +99,12 @@ export default function Composer({
   useEffect(() => {
     if (!activeToken || activeToken.trigger !== "@") {
       setRemoteFileCandidates([]);
+      setSuggestError("");
       return;
     }
     if (typeof loadFileSuggestions !== "function") {
       setRemoteFileCandidates([]);
+      setSuggestError("未配置文件联想接口");
       return;
     }
 
@@ -96,10 +113,12 @@ export default function Composer({
       loadFileSuggestions(activeToken.query)
         .then((items) => {
           if (cancelled) return;
+          setSuggestError("");
           setRemoteFileCandidates(flattenFiles(items || []));
         })
-        .catch(() => {
+        .catch((error) => {
           if (cancelled) return;
+          setSuggestError(toErrorMessage(error));
           setRemoteFileCandidates([]);
         });
     }, 120);
@@ -128,7 +147,7 @@ export default function Composer({
         if (!q) return true;
         return item.value.toLowerCase().includes(q) || item.desc.toLowerCase().includes(q);
       });
-      return filtered.slice(0, 8);
+      return filtered.slice(0, MAX_SUGGESTIONS);
     }
 
     const merged = new Map();
@@ -163,12 +182,12 @@ export default function Composer({
         if (sa !== sb) return sb - sa;
         return a.path.length - b.path.length;
       })
-      .slice(0, 8)
+      .slice(0, MAX_SUGGESTIONS)
       .map((item) => ({
         key: item.path,
         value: item.path,
-        title: `@${item.path}`,
-        desc: item.type === "directory" ? "目录" : "文件",
+        title: `@${pathBaseName(item.path)}`,
+        desc: item.type === "directory" ? `${item.path} · 目录` : `${item.path} · 文件`,
         kind: "path"
       }));
     return ranked;
@@ -300,7 +319,9 @@ export default function Composer({
                 </button>
               ))
             ) : (
-              <div className="composer-suggest-empty">无匹配项，按 Enter 可直接发送当前内容</div>
+              <div className={`composer-suggest-empty ${suggestError ? "is-error" : ""}`}>
+                {suggestError ? `联想失败：${suggestError}` : "无匹配项，按 Enter 可直接发送当前内容"}
+              </div>
             )}
           </div>
           <div className="composer-right">

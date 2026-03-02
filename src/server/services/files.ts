@@ -165,6 +165,78 @@ export async function listWorkspaceFiles(
   return items;
 }
 
+export async function searchWorkspaceFilesByName(
+  workspaceRoot: string,
+  rawQuery: string,
+  rules: IgnoreRuleSet,
+  limit = 60,
+  maxScan = 8000
+): Promise<FileTreeItem[]> {
+  const query = String(rawQuery || "").trim().toLowerCase();
+  if (!query) return [];
+
+  const normalizedLimit = Math.min(Math.max(Math.floor(limit), 1), 100);
+  const normalizedMaxScan = Math.min(Math.max(Math.floor(maxScan), 200), 20000);
+  const out: FileTreeItem[] = [];
+  const dirs: string[] = [""];
+  let scanned = 0;
+
+  while (dirs.length > 0 && out.length < normalizedLimit && scanned < normalizedMaxScan) {
+    const currentRel = dirs.pop() || "";
+    const abs = resolveWorkspacePath(workspaceRoot, currentRel);
+    if (!abs) continue;
+
+    let entries;
+    try {
+      entries = await fs.readdir(abs, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    const visible = entries
+      .filter((entry) => !shouldExcludeEntry(currentRel, entry.name, rules))
+      .sort((a, b) => {
+        if (a.isDirectory() && !b.isDirectory()) return -1;
+        if (!a.isDirectory() && b.isDirectory()) return 1;
+        return a.name.localeCompare(b.name);
+      });
+
+    for (const entry of visible) {
+      if (out.length >= normalizedLimit || scanned >= normalizedMaxScan) break;
+      scanned += 1;
+
+      const itemPath = normalizeRelativePath(currentRel ? `${currentRel}/${entry.name}` : entry.name);
+      const itemAbs = resolveWorkspacePath(workspaceRoot, itemPath);
+      if (!itemAbs) continue;
+
+      let stat;
+      try {
+        stat = await fs.stat(itemAbs);
+      } catch {
+        continue;
+      }
+
+      if (entry.isDirectory()) {
+        dirs.push(itemPath);
+        continue;
+      }
+
+      if (!stat.isFile()) continue;
+      if (!entry.name.toLowerCase().includes(query)) continue;
+
+      out.push({
+        name: entry.name,
+        path: itemPath,
+        type: "file",
+        size: stat.size,
+        mtimeMs: stat.mtimeMs
+      });
+    }
+  }
+
+  return out;
+}
+
 type TextFileData = {
   path: string;
   name: string;

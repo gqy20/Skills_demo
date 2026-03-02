@@ -20,7 +20,7 @@ export function useWorkspaceApi(currentWorkspaceId) {
 
   const apiGetJson = useCallback(
     async (pathname, query = {}) => {
-      const url = new URL(workspaceQuery(pathname), window.location.origin);
+      const url = new URL(workspaceQuery(pathname, query), window.location.origin);
       const res = await fetch(url, { method: "GET" });
       const data = await res.json();
       if (!res.ok) {

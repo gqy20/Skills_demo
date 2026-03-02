@@ -9,6 +9,7 @@ import {
   normalizeRelativePath,
   readWorkspaceTextFile,
   resolveWorkspacePath,
+  searchWorkspaceFilesByName,
   writeWorkspaceTextFile
 } from "../services/files.js";
 import { listSessionSummaries, readSessionMessages, deleteSession } from "../services/sessions.js";
@@ -353,6 +354,33 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
         root: workspace.root,
         path: relativePath,
         depth,
+        count: items.length,
+        items
+      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "unknown error";
+      res.status(500).json({ ok: false, error: msg, items: [] });
+    }
+  });
+
+  app.get("/api/files/search", async (req, res) => {
+    try {
+      const workspace = workspaceRegistry.requireWorkspace(req, res);
+      if (!workspace) return;
+      const q = typeof req.query?.q === "string" ? req.query.q.trim() : "";
+      const limitRaw = Number(req.query?.limit ?? 60);
+      const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.floor(limitRaw), 1), 100) : 60;
+      if (!q) {
+        res.json({ ok: true, workspaceId: workspace.id, q: "", count: 0, items: [] });
+        return;
+      }
+
+      const rules = await loadIgnoreRules(workspace.root);
+      const items = await searchWorkspaceFilesByName(workspace.root, q, rules, limit);
+      res.json({
+        ok: true,
+        workspaceId: workspace.id,
+        q,
         count: items.length,
         items
       });

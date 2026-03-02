@@ -120,6 +120,10 @@ export function useWorkspaceData({
         .replace(/^\/+/, "");
       const slash = query.lastIndexOf("/");
       const basePath = slash >= 0 ? query.slice(0, slash + 1).replace(/\/+$/, "") : "";
+      if (!basePath && query) {
+        const searchData = await apiGetJson("/api/files/search", { q: query, limit: 60 });
+        return Array.isArray(searchData?.items) ? searchData.items : [];
+      }
       const depth = basePath ? 2 : 3;
       const data = await apiGetJson("/api/files", { path: basePath, depth });
       return Array.isArray(data?.items) ? data.items : [];

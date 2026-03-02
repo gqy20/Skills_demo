@@ -820,6 +820,12 @@
   background: rgba(248, 250, 252, 0.85);
 }
 
+.composer-suggest-empty.is-error {
+  border-color: rgba(185, 28, 28, 0.35);
+  color: #991b1b;
+  background: rgba(254, 242, 242, 0.9);
+}
+
 .pending-overlay {
   position: absolute;
   left: 14px;
