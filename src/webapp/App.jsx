@@ -27,7 +27,7 @@ import {
   buildInitialTurnTrace,
   resetDiagnosticsForTurn
 } from "./lib/turnState.js";
-import { QUICK_PROMPTS, QUICK_CHIPS, createId } from "./lib/appConstants.js";
+import { QUICK_PROMPTS, createId } from "./lib/appConstants.js";
 import { extractSlashCommand, parseError, shortText, toolLabel } from "./lib/chatUtils.js";
 
 export default function App() {
@@ -482,9 +482,7 @@ export default function App() {
                   <PreflightPanel
                     show={showPreflight}
                     quickPrompts={QUICK_PROMPTS}
-                    quickChips={QUICK_CHIPS}
                     onSubmitPrompt={(text) => submitUserMessage(text).catch(() => {})}
-                    onSelectChip={setInputText}
                   />
 
                   <UsageStrip

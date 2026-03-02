@@ -35,6 +35,7 @@
 .chat-shell {
   position: relative;
   height: 100vh;
+  background: radial-gradient(ellipse 70% 55% at 50% 0%, rgba(16, 163, 127, 0.055) 0%, transparent 70%), #ffffff;
   min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
