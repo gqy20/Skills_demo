@@ -66,16 +66,16 @@ describe("query service", () => {
     expect(options.thinking).toEqual({ type: "disabled" });
   });
 
-  it("prefers process env over settings env for core model keys", () => {
+  it("prefers settings env for core model keys while keeping process env fallback for others", () => {
     process.env.ANTHROPIC_MODEL = "from-env";
     process.env.ANTHROPIC_BASE_URL = "https://env.example";
     process.env.ANTHROPIC_AUTH_TOKEN = "env-token";
     process.env.MINERU_API_KEY = "env-mineru";
     const options = buildQueryOptions("/tmp/ws", baseSettings, "web-session", undefined);
-    expect(options.env?.ANTHROPIC_MODEL).toBe("from-env");
-    expect(options.env?.ANTHROPIC_BASE_URL).toBe("https://env.example");
-    expect(options.env?.ANTHROPIC_AUTH_TOKEN).toBe("env-token");
-    expect(options.env?.MINERU_API_KEY).toBe("env-mineru");
+    expect(options.env?.ANTHROPIC_MODEL).toBe("m1");
+    expect(options.env?.ANTHROPIC_BASE_URL).toBe("https://example.com");
+    expect(options.env?.ANTHROPIC_AUTH_TOKEN).toBe("token");
+    expect(options.env?.MINERU_API_KEY).toBe("mineru");
     resetCoreEnv();
   });
 });

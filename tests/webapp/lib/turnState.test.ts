@@ -26,10 +26,24 @@ describe("turnState", () => {
   it("builds queued execution state", () => {
     expect(buildQueuedExecutionState(100)).toEqual({
       phase: "queued",
+      phaseDetail: "请求已提交，等待执行",
+      phaseStartedAt: 100,
+      phaseEtaSeconds: 3,
+      lastActivityAt: 100,
+      currentAgent: "",
       currentTool: "",
       toolElapsedSeconds: 0,
       lastDeltaAt: 100,
+      taskRuntime: {
+        tasks: {},
+        running: 0,
+        completed: 0,
+        failed: 0,
+        stopped: 0,
+        parallelPeak: 0
+      },
       actions: [],
+      warnings: [],
       dismissNoDelta: false
     });
   });

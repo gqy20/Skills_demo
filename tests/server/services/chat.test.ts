@@ -56,7 +56,8 @@ describe("chat service helpers", () => {
       category: "tool_progress",
       toolName: "bash",
       toolUseId: "u1",
-      elapsedSeconds: 1.2
+      elapsedSeconds: 1.2,
+      taskId: ""
     });
     expect(
       extractSdkLifecycle({
@@ -74,7 +75,9 @@ describe("chat service helpers", () => {
       hookName: "update-status.sh",
       hookEvent: "PostToolUse",
       outcome: "success",
-      exitCode: 0
+      exitCode: 0,
+      agentId: "",
+      agentType: ""
     });
   });
 

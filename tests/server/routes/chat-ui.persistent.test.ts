@@ -2,16 +2,12 @@ import type { Request } from "express";
 import { describe, expect, it, vi } from "vitest";
 import type { RuntimeSettings } from "../../../src/server/types.js";
 
-const { queryMock, createSessionMock, resumeSessionMock } = vi.hoisted(() => ({
-  queryMock: vi.fn(),
-  createSessionMock: vi.fn(),
-  resumeSessionMock: vi.fn()
+const { queryMock } = vi.hoisted(() => ({
+  queryMock: vi.fn()
 }));
 
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
-  query: queryMock,
-  unstable_v2_createSession: createSessionMock,
-  unstable_v2_resumeSession: resumeSessionMock
+  query: queryMock
 }));
 
 type MockRes = {
@@ -63,56 +59,41 @@ function streamFrom(events: Array<Record<string, unknown>>) {
   })();
 }
 
-describe("handleChatUiRequest persistent path", () => {
-  it("uses persistent session send/stream when runtime manager is provided", async () => {
+describe("handleChatUiRequest query path", () => {
+  it("uses query send/stream with canUseTool handler", async () => {
     queryMock.mockReset();
-    createSessionMock.mockReset();
-    resumeSessionMock.mockReset();
 
-    const fakeSession = {
-      send: vi.fn(async () => undefined),
-      stream: vi.fn(() =>
-        streamFrom([
-          {
-            type: "system",
-            subtype: "init",
-            model: "m1",
-            permissionMode: "default",
-            tools: [],
-            session_id: "sdk-session-1"
+    const close = vi.fn();
+    queryMock.mockImplementation(({ options }) => {
+      expect(typeof options?.canUseTool).toBe("function");
+      const eventStream = streamFrom([
+        {
+          type: "system",
+          subtype: "init",
+          model: "m1",
+          permissionMode: "default",
+          tools: [],
+          session_id: "sdk-session-1"
+        },
+        {
+          type: "stream_event",
+          event: {
+            type: "content_block_delta",
+            delta: { type: "text_delta", text: "hello from query" }
           },
-          {
-            type: "stream_event",
-            event: {
-              type: "content_block_delta",
-              delta: { type: "text_delta", text: "hello from persistent" }
-            },
-            session_id: "sdk-session-1"
-          },
-          {
-            type: "result",
-            subtype: "success",
-            result: "",
-            is_error: false,
-            stop_reason: null,
-            session_id: "sdk-session-1"
-          }
-        ])
-      ),
-      close: vi.fn()
-    };
-    createSessionMock.mockReturnValue(fakeSession);
-
-    const runtime = { key: "ws1:s1", session: fakeSession };
-    const sessionRuntimeManager = {
-      acquireTurn: vi.fn(({ createSession }) => {
-        createSession();
-        return { runtime, created: true, acquired: true };
-      }),
-      get: vi.fn(() => runtime),
-      endTurn: vi.fn(),
-      close: vi.fn()
-    };
+          session_id: "sdk-session-1"
+        },
+        {
+          type: "result",
+          subtype: "success",
+          result: "",
+          is_error: false,
+          stop_reason: null,
+          session_id: "sdk-session-1"
+        }
+      ]);
+      return Object.assign(eventStream, { close });
+    });
 
     const [{ handleChatUiRequest }] = await Promise.all([import("../../../src/server/routes/chat-ui.js")]);
     const req = {
@@ -124,45 +105,28 @@ describe("handleChatUiRequest persistent path", () => {
     } as unknown as Request;
     const res = makeMockRes();
     const sessionMap = new Map<string, string>();
+    const endTurn = vi.fn();
     await handleChatUiRequest(req, res as never, {
       workspaceRegistry: { requireWorkspace: () => ({ id: "ws1", root: "/tmp/ws1", label: "ws1" }) } as never,
       defaultSettings,
       sessionMap,
       sessionSeedMap: new Map(),
       pendingStore: { createPendingRequest: vi.fn() } as never,
-      sessionRuntimeManager: sessionRuntimeManager as never
+      sessionRuntimeManager: { endTurn } as never
     });
 
-    expect(createSessionMock).toHaveBeenCalledOnce();
-    const createArgs = createSessionMock.mock.calls[0]?.[0] || {};
-    expect(typeof createArgs.canUseTool).toBe("function");
-    expect(resumeSessionMock).not.toHaveBeenCalled();
-    expect(queryMock).not.toHaveBeenCalled();
-    expect(fakeSession.send).toHaveBeenCalledWith("hello");
-    expect(fakeSession.stream).toHaveBeenCalledOnce();
-    expect(sessionRuntimeManager.endTurn).toHaveBeenCalledWith("ws1:s1");
+    expect(queryMock).toHaveBeenCalledOnce();
+    expect(endTurn).not.toHaveBeenCalled();
     expect(sessionMap.get("ws1:s1")).toBe("sdk-session-1");
     expect(res.end).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
   });
 
-  it("returns 500 when persistent session creation fails", async () => {
+  it("returns 500 when query creation fails", async () => {
     queryMock.mockReset();
-    createSessionMock.mockReset();
-    resumeSessionMock.mockReset();
-
-    createSessionMock.mockImplementation(() => {
+    queryMock.mockImplementation(() => {
       throw new Error("create failed");
     });
-
-    const sessionRuntimeManager = {
-      acquireTurn: vi.fn(({ createSession }) => {
-        createSession();
-        return { runtime: null, created: false, acquired: false };
-      }),
-      get: vi.fn(() => null),
-      endTurn: vi.fn(),
-      close: vi.fn()
-    };
 
     const [{ handleChatUiRequest }] = await Promise.all([import("../../../src/server/routes/chat-ui.js")]);
     const req = {
@@ -179,16 +143,13 @@ describe("handleChatUiRequest persistent path", () => {
       defaultSettings,
       sessionMap,
       sessionSeedMap: new Map(),
-      pendingStore: { createPendingRequest: vi.fn() } as never,
-      sessionRuntimeManager: sessionRuntimeManager as never
+      pendingStore: { createPendingRequest: vi.fn() } as never
     });
 
-    expect(createSessionMock).toHaveBeenCalledOnce();
-    expect(queryMock).not.toHaveBeenCalled();
-    expect(sessionRuntimeManager.endTurn).not.toHaveBeenCalled();
+    expect(queryMock).toHaveBeenCalledOnce();
     expect(sessionMap.get("ws1:s2")).toBeUndefined();
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ ok: false, error: "create failed" });
-    expect(res.end).not.toHaveBeenCalled();
+    expect(res.end).toHaveBeenCalledOnce();
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toBeNull();
   });
 });
