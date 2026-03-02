@@ -18,6 +18,12 @@ import {
 } from "./chat-shared.js";
 import { consumeQueryEvents } from "./chat-ui-stream.js";
 import { runDebugProbes, startMcpStatusProbe } from "./chat-ui-probes.js";
+import {
+  shouldRunDebugProbesBlocking,
+  shouldRunPerTurnMcpProbe,
+  shouldRunPerTurnMcpToggle
+} from "./chat-ui-optimization.js";
+import { resolveAvailableSlashNames } from "./chat-ui-slash-cache.js";
 
 type RuntimeFlags = {
   closed: boolean;
@@ -55,11 +61,22 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
   const parsedDirectives = parsePromptDirectives(rawMessage);
   let availableSlashNames: Set<string> | null = null;
   if (parsedDirectives.slash) {
-    try {
-      const skills = await fetchSkills(workspace.root, settings, { buildQueryOptions, withTimeout });
-      availableSlashNames = new Set(skills.map((item) => String(item.name || "").trim().toLowerCase()).filter(Boolean));
-    } catch {
-      availableSlashNames = null;
+    const slashResolution = await resolveAvailableSlashNames(workspace.root, settings, {
+      fetchSkills: (workspaceRoot, runtimeSettings) =>
+        fetchSkills(workspaceRoot, runtimeSettings, { buildQueryOptions, withTimeout })
+    });
+    availableSlashNames = slashResolution.names;
+    if (slashResolution.source === "cache_stale_on_error" || slashResolution.source === "unavailable") {
+      logTrace(traceId, "slash_names_resolution_degraded", {
+        workspaceId: workspace.id,
+        sessionId,
+        source: slashResolution.source,
+        error: slashResolution.error
+      });
+      writeDebugSse(res, false, settings.debugEnabled && settings.debugSseEnabled, traceId, "slash_names_resolution_degraded", {
+        source: slashResolution.source,
+        error: slashResolution.error
+      });
     }
   }
 
@@ -211,14 +228,24 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
       hasResume: Boolean(sdkSessionId)
     });
 
-    startMcpStatusProbe({ queryInstance, res, traceId, debugSseEnabled, runtime });
+    if (shouldRunPerTurnMcpProbe()) {
+      startMcpStatusProbe({ queryInstance, res, traceId, debugSseEnabled, runtime });
+    }
 
     if (settings.debugEnabled) {
-      await runDebugProbes({ queryInstance, res, traceId, debugSseEnabled, runtime });
+      if (shouldRunDebugProbesBlocking()) {
+        await runDebugProbes({ queryInstance, res, traceId, debugSseEnabled, runtime });
+      } else {
+        void runDebugProbes({ queryInstance, res, traceId, debugSseEnabled, runtime }).catch((error) => {
+          writeDebugSse(res, runtime.closed, debugSseEnabled, traceId, "probe_background_error", {
+            error: error instanceof Error ? error.message : String(error)
+          });
+        });
+      }
     }
 
     let mcpTogglePromise: Promise<void> | null = null;
-    if (!settings.speedModeEnabled) {
+    if (shouldRunPerTurnMcpToggle(settings)) {
       mcpTogglePromise = applyMcpToggle(queryInstance, workspace.root, settings.mcpEnabled)
         .then(() => {
           if (!runtime.closed) {

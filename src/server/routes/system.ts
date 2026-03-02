@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { RuntimeSettings } from "../types.js";
-import { fetchSkills } from "../services/skills.js";
+import { fetchSkills, invalidateSkillsCache } from "../services/skills.js";
 import {
   FileAccessError,
   listWorkspaceFiles,
@@ -43,6 +43,9 @@ type McpProbeSnapshot = {
 
 export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, activeQueries }: SystemRoutesDeps): void {
   const mcpProbeCache = new Map<string, McpProbeSnapshot>();
+  const mcpProbeTtlMsRaw = Number(process.env.AGENT_WEB_MCP_PROBE_TTL_MS || "");
+  const mcpProbeTtlMs = Number.isFinite(mcpProbeTtlMsRaw) && mcpProbeTtlMsRaw > 0 ? Math.floor(mcpProbeTtlMsRaw) : 60_000;
+  const mcpAutoRefreshEnabled = process.env.AGENT_WEB_MCP_AUTO_REFRESH !== "0";
 
   const settingsEnvValue = (
     name: string,
@@ -222,11 +225,28 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
       const dotenvEnv = await readWorkspaceDotenv(workspace.root);
       const configured = await readMcpConfig(workspace.root);
       const snapshot = getMcpSnapshot(workspace.id);
-      const ageSeconds = snapshot.checkedAt > 0 ? Math.max(0, Math.floor((Date.now() - snapshot.checkedAt) / 1000)) : null;
-      const stale = ageSeconds !== null ? ageSeconds > 60 : true;
+      const now = Date.now();
+      const ageSeconds = snapshot.checkedAt > 0 ? Math.max(0, Math.floor((now - snapshot.checkedAt) / 1000)) : null;
+      const stale = ageSeconds !== null ? now - snapshot.checkedAt > mcpProbeTtlMs : true;
+      const refreshRaw = typeof req.query?.refresh === "string" ? req.query.refresh.trim().toLowerCase() : "";
+      const forceRefresh = refreshRaw === "1" || refreshRaw === "true";
+      let refreshResult: { started: boolean; reason: string } | null = null;
+      let autoRefreshTriggered = false;
+      if (forceRefresh && settings.mcpEnabled && configured.length > 0) {
+        refreshResult = startMcpProbe(workspace.id);
+        autoRefreshTriggered = true;
+      } else if (forceRefresh && !settings.mcpEnabled) {
+        refreshResult = { started: false, reason: "mcp_disabled" };
+      } else if (forceRefresh && configured.length === 0) {
+        refreshResult = { started: false, reason: "config_empty" };
+      } else if (!forceRefresh && mcpAutoRefreshEnabled && stale && settings.mcpEnabled && configured.length > 0 && !snapshot.checking) {
+        refreshResult = startMcpProbe(workspace.id);
+        autoRefreshTriggered = true;
+      }
+      const effectiveSnapshot = forceRefresh || autoRefreshTriggered ? getMcpSnapshot(workspace.id) : snapshot;
 
       const items = configured.map((item) => {
-        const runtime = snapshot.rows.get(item.name) || null;
+        const runtime = effectiveSnapshot.rows.get(item.name) || null;
         const missingEnvVars = item.requiredEnvVars.filter((name) => {
           return !settingsEnvValue(name, settings, dotenvEnv).trim();
         });
@@ -235,10 +255,10 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
             ? { connected: null, status: "disabled", error: "" }
             : missingEnvVars.length > 0
               ? { connected: false, status: "missing_env", error: `Missing env: ${missingEnvVars.join(", ")}` }
-              : snapshot.checking
+              : effectiveSnapshot.checking
                 ? { connected: null, status: "checking", error: "" }
-                : snapshot.ok === false
-                  ? { connected: null, status: "probe_failed", error: snapshot.error }
+                : effectiveSnapshot.ok === false
+                  ? { connected: null, status: "probe_failed", error: effectiveSnapshot.error }
                 : { connected: null, status: "not_checked", error: "" };
         return {
           ...item,
@@ -260,14 +280,15 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
         mcpEnabled: settings.mcpEnabled,
         count: items.length,
         runtime: {
-          ok: snapshot.ok,
-          error: snapshot.error,
-          source: snapshot.source,
-          checking: snapshot.checking,
-          lastCheckedAt: snapshot.checkedAt || null,
+          ok: effectiveSnapshot.ok,
+          error: effectiveSnapshot.error,
+          source: effectiveSnapshot.source,
+          checking: effectiveSnapshot.checking,
+          lastCheckedAt: effectiveSnapshot.checkedAt || null,
           ageSeconds,
           stale
         },
+        refresh: refreshResult,
         items
       });
     } catch (error) {
@@ -524,6 +545,31 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
     };
 
     await writeSettings(workspace.root, next);
+    invalidateSkillsCache(workspace.root);
+    let mcpRefresh: { started: boolean; reason: string } | null = null;
+    const snapshot = getMcpSnapshot(workspace.id);
+    if (!next.mcpEnabled) {
+      snapshot.ok = null;
+      snapshot.error = "";
+      snapshot.source = "disabled";
+      snapshot.checking = false;
+      snapshot.checkedAt = Date.now();
+      snapshot.rows.clear();
+      mcpRefresh = { started: false, reason: "mcp_disabled" };
+    } else {
+      const configured = await readMcpConfig(workspace.root);
+      if (configured.length > 0) {
+        mcpRefresh = startMcpProbe(workspace.id);
+      } else {
+        snapshot.ok = null;
+        snapshot.error = "";
+        snapshot.source = "config_empty";
+        snapshot.checking = false;
+        snapshot.checkedAt = Date.now();
+        snapshot.rows.clear();
+        mcpRefresh = { started: false, reason: "config_empty" };
+      }
+    }
     res.json({
       ok: true,
       workspaceId: workspace.id,
@@ -539,6 +585,7 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
       debugSseEnabled: next.debugSseEnabled,
       hasToken: Boolean(next.authToken),
       tokenPreview: maskToken(next.authToken),
+      mcpRefresh,
       dotenvSync: { synced: true }
     });
   });

@@ -139,4 +139,30 @@ describe("fetchSkills", () => {
     expect(queryMock).toHaveBeenCalledTimes(1);
     expect(close).toHaveBeenCalledTimes(1);
   });
+
+  it("supports explicit cache invalidation", async () => {
+    const workspace = await makeTemp("skills-demo-skills-workspace-");
+    const fakeHome = await makeTemp("skills-demo-skills-home-");
+    process.env.HOME = fakeHome;
+    await writeSkill(workspace, "delta", "# Delta\ndelta desc");
+
+    const close = vi.fn();
+    queryMock.mockReturnValue({
+      supportedCommands: vi.fn(async () => [{ name: "delta", description: "from sdk", argumentHint: "" }]),
+      close
+    });
+
+    const { fetchSkills, invalidateSkillsCache } = await import("../../../src/server/services/skills.js");
+    const deps = {
+      buildQueryOptions: vi.fn(() => ({} as never)),
+      withTimeout: async <T>(p: Promise<T>) => p
+    };
+    await fetchSkills(workspace, settings, deps);
+    await fetchSkills(workspace, settings, deps);
+    invalidateSkillsCache(workspace);
+    await fetchSkills(workspace, settings, deps);
+
+    expect(queryMock).toHaveBeenCalledTimes(2);
+    expect(close).toHaveBeenCalledTimes(2);
+  });
 });

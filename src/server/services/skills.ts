@@ -8,10 +8,29 @@ import type { RuntimeSettings, SkillItem } from "../types.js";
 let skillsCache:
   | {
       key: string;
+      workspaceRoot: string;
       expiresAt: number;
       items: SkillItem[];
     }
   | null = null;
+
+const DEFAULT_SKILLS_CACHE_TTL_MS = 5 * 60_000;
+
+function skillsCacheTtlMs(): number {
+  const raw = Number(process.env.AGENT_WEB_SKILLS_CACHE_TTL_MS || "");
+  if (Number.isFinite(raw) && raw > 0) return Math.floor(raw);
+  return DEFAULT_SKILLS_CACHE_TTL_MS;
+}
+
+export function invalidateSkillsCache(workspaceRoot?: string): void {
+  if (!workspaceRoot) {
+    skillsCache = null;
+    return;
+  }
+  if (skillsCache?.workspaceRoot === workspaceRoot) {
+    skillsCache = null;
+  }
+}
 
 function skillsCacheKey(workspaceRoot: string, settings: RuntimeSettings): string {
   return JSON.stringify({
@@ -156,12 +175,13 @@ export async function fetchSkills(
 ): Promise<SkillItem[]> {
   const key = skillsCacheKey(workspaceRoot, settings);
   const now = Date.now();
+  const ttlMs = skillsCacheTtlMs();
   if (skillsCache && skillsCache.key === key && skillsCache.expiresAt > now) {
     return skillsCache.items;
   }
   const owned = await collectOwnedSkills(workspaceRoot);
   if (owned.length === 0) {
-    skillsCache = { key, items: [], expiresAt: now + 30_000 };
+    skillsCache = { key, workspaceRoot, items: [], expiresAt: now + ttlMs };
     return [];
   }
 
@@ -175,10 +195,10 @@ export async function fetchSkills(
   try {
     const commands = await deps.withTimeout(queryInstance.supportedCommands(), 5000, "supportedCommands");
     const items = normalizeSkills(commands, owned);
-    skillsCache = { key, items, expiresAt: now + 30_000 };
+    skillsCache = { key, workspaceRoot, items, expiresAt: now + ttlMs };
     return items;
   } catch {
-    skillsCache = { key, items: owned, expiresAt: now + 30_000 };
+    skillsCache = { key, workspaceRoot, items: owned, expiresAt: now + ttlMs };
     return owned;
   } finally {
     try {
