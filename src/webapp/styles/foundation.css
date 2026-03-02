@@ -1,9 +1,9 @@
 :root {
   --bg-0: #f7f8fa;
-  --bg-1: #f7f8fa;
+  --bg-1: #f0f2f5;
   --ink: #111827;
   --muted: #4b5563;
-  --line: #eaecf0;
+  --line: #e4e8ef;
   --card: #ffffff;
   --accent: #10a37f;
   --accent-2: #0e9f6e;
@@ -14,8 +14,11 @@
   --fs-16: 16px;
   --fs-20: 20px;
   --r-8: 8px;
+  --r-10: 10px;
   --r-12: 12px;
   --r-16: 16px;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 2px 8px rgba(15, 23, 42, 0.05);
+  --shadow-md: 0 2px 6px rgba(15, 23, 42, 0.06), 0 8px 24px rgba(15, 23, 42, 0.07);
   --font-ui-sans: "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC",
     -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono-code: "JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
@@ -32,9 +35,24 @@ body {
   overflow: hidden;
   color: var(--ink);
   font-size: var(--fs-14);
-  line-height: 1.45;
+  line-height: 1.55;
   font-family: var(--font-ui-sans);
-  background: var(--bg-0);
+  background: #ffffff;
+}
+
+@keyframes bubble-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+@keyframes bubble-border-pulse {
+  0%, 100% { box-shadow: inset 0 0 0 1px rgba(16, 163, 127, 0.25); }
+  50%       { box-shadow: inset 0 0 0 1px rgba(16, 163, 127, 0.55); }
 }
 
 code,

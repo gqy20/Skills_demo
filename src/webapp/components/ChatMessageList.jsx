@@ -52,15 +52,8 @@ export default function ChatMessageList({
               <p className="processing-subtitle">本轮请求已结束，但模型未返回可显示文本。可点击重试。</p>
               {isLastAssistant && (
                 <div className="bubble-actions">
-                  <button
-                    type="button"
-                    className="bubble-action-btn"
-                    title="重试"
-                    aria-label="重试"
-                    onClick={onRetryLast}
-                    disabled={!lastUserText || isStreaming}
-                  >
-                    ↻
+                  <button type="button" className="bubble-action-btn" title="重试" aria-label="重试" onClick={onRetryLast} disabled={!lastUserText || isStreaming}>
+                    重试
                   </button>
                 </div>
               )}
@@ -115,17 +108,10 @@ export default function ChatMessageList({
               {isLastAssistant && (
                 <div className="bubble-actions">
                   <button type="button" className="bubble-action-btn" title="复制" aria-label="复制" onClick={() => onCopyText(text)}>
-                    ⧉
+                    复制
                   </button>
-                  <button
-                    type="button"
-                    className="bubble-action-btn"
-                    title="重试"
-                    aria-label="重试"
-                    onClick={onRetryLast}
-                    disabled={!lastUserText || isStreaming}
-                  >
-                    ↻
+                  <button type="button" className="bubble-action-btn" title="重试" aria-label="重试" onClick={onRetryLast} disabled={!lastUserText || isStreaming}>
+                    重试
                   </button>
                 </div>
               )}

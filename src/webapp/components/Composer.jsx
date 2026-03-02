@@ -310,12 +310,17 @@ export default function Composer({
               disabled={blockingPending}
               aria-label={isStreaming ? "停止" : "发送"}
             >
-              {isStreaming ? "■" : "↑"}
+              {isStreaming ? null : (
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M8 13V5" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
+                  <path d="M3.5 8.5L8 3.5L12.5 8.5" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
             </button>
           </div>
         </div>
         <div className="composer-foot">
-          <span className="composer-shortcut">`/` 快捷指令 · `@` 引用文件 · Enter 发送</span>
+          <span className="composer-shortcut"><kbd>/</kbd> 快捷指令 · <kbd>@</kbd> 引用文件 · <kbd>Enter</kbd> 发送</span>
           <span className="composer-status">{composerStatus}</span>
         </div>
       </div>

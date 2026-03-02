@@ -12,12 +12,13 @@ export default function ChatHeader({
   return (
     <header className="chat-head">
       <div className="chat-head-row">
-        <h1>Agent Workspace</h1>
+        <h1>AI Workspace</h1>
         <div className="head-actions">
           <button className="btn-secondary" type="button" onClick={() => setSidebarOpen((v) => !v)}>
             {sidebarOpen ? "隐藏侧栏" : "侧栏"}
           </button>
-          <button className={`btn-secondary ${settings.mcpEnabled ? "" : "is-off"}`} type="button" onClick={onToggleMcp}>
+          <button className={`btn-secondary btn-mcp ${settings.mcpEnabled ? "is-mcp-on" : "is-off"}`} type="button" onClick={onToggleMcp}>
+            <span className={`mcp-dot ${settings.mcpEnabled ? "is-on" : ""}`} />
             MCP {settings.mcpEnabled ? "ON" : "OFF"}
           </button>
           <button className="btn-secondary" type="button" onClick={onOpenSettings}>

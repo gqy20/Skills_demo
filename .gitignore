@@ -7,7 +7,7 @@
 # Results - Task execution files (keep README.md)
 results/*
 !results/README.md
-
+0*/
 # Skills - Generated task/user/proven skills (keep builtin/)
 .claude/skills/k[0-9]*/
 .claude/skills/u_*/

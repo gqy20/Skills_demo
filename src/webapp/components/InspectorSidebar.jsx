@@ -19,14 +19,6 @@ export default function InspectorSidebar({
   onOpenSettings = () => {},
   sidebarSections,
   toggleSidebarSection,
-  sessions,
-  sessionsLoading,
-  sessionsError,
-  openingSessionId,
-  openSession,
-  startNewSession,
-  reloadSessions,
-  currentSessionId,
   files,
   filteredFiles,
   fileFilter,
@@ -39,19 +31,6 @@ export default function InspectorSidebar({
   settings,
   events
 }) {
-  const formatSessionTime = (ts) => {
-    const n = Number(ts || 0);
-    if (!Number.isFinite(n) || n <= 0) return "";
-    const d = new Date(n);
-    const now = new Date();
-    const sameDay =
-      d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
-    if (sameDay) {
-      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    }
-    return d.toLocaleDateString([], { month: "2-digit", day: "2-digit" });
-  };
-
   const probeInfo = describeMcpProbe(mcpCatalog.runtime);
   const mcpItems = Array.isArray(mcpCatalog.items) ? mcpCatalog.items : [];
   const mcpRows = mcpItems.map((item) => ({ item, state: resolveMcpServerState(item, mcpCatalog.mcpEnabled !== false) }));
@@ -217,53 +196,6 @@ export default function InspectorSidebar({
                 </li>
               ))}
               {mcpItems.length === 0 && !mcpCatalog.loading && <li className="sessions-empty">未发现 MCP 配置</li>}
-            </ul>
-          </>
-        )}
-      </section>
-
-      <section className="panel panel-collapsible">
-        <button type="button" className="panel-collapse-btn" onClick={() => toggleSidebarSection("sessions")}>
-          <h2>历史会话</h2>
-          <span>{sidebarSections.sessions ? "收起" : "展开"}</span>
-        </button>
-        {sidebarSections.sessions && (
-          <>
-            <div className="panel-toolbar">
-              <div className="session-toolbar-row">
-                <p className="session-tag">共 {sessions.length} 条</p>
-                <div className="session-toolbar-actions">
-                  <button type="button" className="sidebar-mini-btn" onClick={reloadSessions} disabled={sessionsLoading}>
-                    刷新
-                  </button>
-                  <button type="button" className="sidebar-mini-btn" onClick={startNewSession}>
-                    新会话
-                  </button>
-                </div>
-              </div>
-            </div>
-            <ul className="sessions-list">
-              {sessionsLoading && <li className="sessions-empty">正在加载...</li>}
-              {!sessionsLoading && sessionsError && <li className="sessions-empty">加载失败：{sessionsError}</li>}
-              {!sessionsLoading &&
-                sessions.map((item) => (
-                  <li key={item.id}>
-                    <button
-                      type="button"
-                      className={`session-item-btn ${currentSessionId === item.id ? "is-active" : ""}`}
-                      onClick={() => openSession(item.id)}
-                      disabled={openingSessionId === item.id}
-                    >
-                      <strong>{item.title || "未命名会话"}</strong>
-                      <em>
-                        {formatSessionTime(item.updatedAt)} · {Math.max(0, Math.floor((item.messageCount || 0) / 2))} 轮
-                        {openingSessionId === item.id ? " · 加载中..." : ""}
-                      </em>
-                      <span>{item.lastPreview || "暂无摘要"}</span>
-                    </button>
-                  </li>
-                ))}
-              {!sessionsLoading && sessions.length === 0 && <li className="sessions-empty">暂无历史会话</li>}
             </ul>
           </>
         )}

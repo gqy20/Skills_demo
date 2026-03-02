@@ -1,31 +1,32 @@
 .workspace {
   position: relative;
   z-index: 1;
-  width: min(98vw, 1660px);
+  width: 100vw;
+  max-width: 100%;
   height: 100vh;
-  margin: 0 auto;
-  padding: 12px 14px 14px;
+  margin: 0;
+  padding: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 0;
 }
 
 .workspace.workspace-with-sidebar {
-  grid-template-columns: minmax(0, 5fr) minmax(320px, 1fr);
+  grid-template-columns: 220px minmax(0, 1fr) minmax(300px, 340px);
 }
 
 .chat-shell,
 .panel {
   background: var(--card);
-  border: 1px solid #edf1f5;
-  border-radius: var(--r-16);
+  border: none;
+  border-radius: 0;
   backdrop-filter: none;
   box-shadow: none;
 }
 
 .chat-shell {
   position: relative;
-  height: calc(100vh - 24px);
+  height: 100vh;
   min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
@@ -38,8 +39,9 @@
 }
 
 .chat-head {
-  padding: 12px 16px 10px;
-  border-bottom: 1px solid #eef2f7;
+  padding: 14px 20px 10px;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
+  background: #ffffff;
 }
 
 .chat-head h1 {
@@ -70,6 +72,41 @@
   font-size: var(--fs-12);
 }
 
+.btn-mcp.is-mcp-on {
+  background: rgba(16, 163, 127, 0.1);
+  border-color: rgba(16, 163, 127, 0.4);
+  color: #0e9f6e;
+}
+
+.btn-mcp.is-mcp-on:hover {
+  background: rgba(16, 163, 127, 0.16);
+  border-color: rgba(16, 163, 127, 0.55);
+}
+
+.mcp-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #cbd5e1;
+  margin-right: 5px;
+  flex-shrink: 0;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
+}
+
+.mcp-dot.is-on {
+  background: #10a37f;
+  box-shadow: 0 0 0 2px rgba(16, 163, 127, 0.25);
+  animation: dot-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes dot-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(16, 163, 127, 0.25); }
+  50%       { box-shadow: 0 0 0 4px rgba(16, 163, 127, 0.12); }
+}
+
 .chat-head p {
   margin: 6px 0 0;
   color: var(--muted);
@@ -86,11 +123,11 @@
 .meta-chip {
   display: inline-flex;
   align-items: center;
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   border-radius: 999px;
-  padding: 4px 10px;
-  font-size: var(--fs-14);
+  padding: 3px 9px;
+  font-size: var(--fs-12);
   font-weight: 500;
-  color: #475569;
-  background: #f8fafc;
+  color: #374151;
+  background: var(--bg-1);
 }

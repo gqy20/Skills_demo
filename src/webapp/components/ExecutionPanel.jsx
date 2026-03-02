@@ -23,19 +23,22 @@ export default function ExecutionPanel({
   return (
     <section className="exec-panel">
       <div className="exec-head">
-        <strong>
-          {blockingPending
-            ? "等待授权"
-            : executionState.phase === "waiting_model"
-              ? "等待模型响应"
-              : executionState.phase === "error"
-                ? "请求异常"
-            : executionState.phase === "responding"
-              ? "正在整理回复"
-              : executionState.phase === "tool"
-                ? "工具执行中"
-                : "处理中"}
-        </strong>
+        <div className="exec-head-status">
+          <span className={`exec-status-dot ${executionState.phase === "error" ? "is-error" : ""}`} />
+          <strong>
+            {blockingPending
+              ? "等待授权"
+              : executionState.phase === "waiting_model"
+                ? "等待模型响应"
+                : executionState.phase === "error"
+                  ? "请求异常"
+              : executionState.phase === "responding"
+                ? "正在整理回复"
+                : executionState.phase === "tool"
+                  ? "工具执行中"
+                  : "处理中"}
+          </strong>
+        </div>
         {executionState.currentTool && <span className="exec-tool">{executionState.currentTool}</span>}
       </div>
       <div className="exec-meta">

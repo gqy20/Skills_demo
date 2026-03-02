@@ -9,6 +9,7 @@ import FileEditorPane from "./components/FileEditorPane.jsx";
 import InspectorSidebar from "./components/InspectorSidebar.jsx";
 import PendingOverlay from "./components/PendingOverlay.jsx";
 import PreflightPanel from "./components/PreflightPanel.jsx";
+import SessionSidebar from "./components/SessionSidebar.jsx";
 import SettingsModal from "./components/SettingsModal.jsx";
 import UsageStrip from "./components/UsageStrip.jsx";
 import { useWorkspaceApi } from "./hooks/useWorkspaceApi.js";
@@ -311,7 +312,19 @@ export default function App() {
     await sendMessage({ id: createId(), text });
   };
 
-  const retryLast = () => submitUserMessage(lastUserText).catch(() => {});
+  const retryLast = () => {
+    if (!lastUserText || isStreaming) return;
+    setMessages((prev) => {
+      let i = prev.length - 1;
+      // 跳过末尾所有 assistant 消息
+      while (i >= 0 && prev[i].role !== "user") i--;
+      // 再跳过最后一条 user 消息（即 lastUserText 那条）
+      while (i >= 0 && prev[i].role === "user") i--;
+      return prev.slice(0, i + 1);
+    });
+    // 延一帧等 React 刷新后再重提，避免 sendMessage 读到旧消息列表
+    setTimeout(() => submitUserMessage(lastUserText).catch(() => {}), 0);
+  };
   const copyText = async (text) => {
     if (!text) return;
     try {
@@ -405,6 +418,16 @@ export default function App() {
   return (
     <>
       <main className={`workspace ${sidebarOpen ? "workspace-with-sidebar" : "workspace-chat-only"}`}>
+        <SessionSidebar
+          sessions={sessions}
+          sessionsLoading={sessionsLoading}
+          currentSessionId={currentSessionId}
+          openingSessionId={openingSessionId}
+          onOpenSession={openSession}
+          onNewSession={startNewSession}
+          isStreaming={isStreaming}
+          blockingPending={blockingPending}
+        />
         <section className="chat-shell">
           <ChatHeader
             sidebarOpen={sidebarOpen}
@@ -532,14 +555,6 @@ export default function App() {
           onOpenSettings={() => setSettingsOpen(true)}
           sidebarSections={sidebarSections}
           toggleSidebarSection={toggleSidebarSection}
-          sessions={sessions}
-          sessionsLoading={sessionsLoading}
-          sessionsError={sessionsError}
-          openingSessionId={openingSessionId}
-          openSession={openSession}
-          startNewSession={startNewSession}
-          reloadSessions={loadSessions}
-          currentSessionId={currentSessionId}
           files={files}
           filteredFiles={filteredFiles}
           fileFilter={fileFilter}
