@@ -55,6 +55,21 @@ function buildQueryEnv(settings: RuntimeSettings): Record<string, string | undef
   };
 }
 
+export function buildPermissionRuntimeOptions(
+  settings: RuntimeSettings
+): Pick<NonNullable<Parameters<typeof query>[0]["options"]>, "permissionMode" | "allowDangerouslySkipPermissions"> {
+  if (settings.permissionProfile === "accept_edits") {
+    return { permissionMode: "acceptEdits" };
+  }
+  if (settings.permissionProfile === "full_auto") {
+    return {
+      permissionMode: "bypassPermissions",
+      allowDangerouslySkipPermissions: true
+    };
+  }
+  return { permissionMode: "default" };
+}
+
 export function buildQueryOptions(
   workspaceRoot: string,
   settings: RuntimeSettings,
@@ -77,14 +92,7 @@ export function buildQueryOptions(
     base.settingSources = ["project"];
   }
 
-  if (settings.permissionProfile === "accept_edits") {
-    base.permissionMode = "acceptEdits";
-  } else if (settings.permissionProfile === "full_auto") {
-    base.permissionMode = "bypassPermissions";
-    base.allowDangerouslySkipPermissions = true;
-  } else {
-    base.permissionMode = "default";
-  }
+  Object.assign(base, buildPermissionRuntimeOptions(settings));
 
   return base;
 }

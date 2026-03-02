@@ -89,9 +89,22 @@ export function buildRestartRecoveryPrompt(
   latestUserText: string,
   options: { maxMessages?: number; maxChars?: number } = {}
 ): string {
+  return buildRestartRecoveryPayload(messages, latestUserText, options).prompt;
+}
+
+export type RestartRecoveryPayload = {
+  prompt: string;
+  replayedMessageCount: number;
+};
+
+export function buildRestartRecoveryPayload(
+  messages: unknown,
+  latestUserText: string,
+  options: { maxMessages?: number; maxChars?: number } = {}
+): RestartRecoveryPayload {
   const latest = String(latestUserText || "").trim();
-  if (!latest) return "";
-  if (!Array.isArray(messages)) return latest;
+  if (!latest) return { prompt: "", replayedMessageCount: 0 };
+  if (!Array.isArray(messages)) return { prompt: latest, replayedMessageCount: 0 };
 
   const maxMessages = Math.max(4, Math.floor(options.maxMessages ?? 24));
   const maxChars = Math.max(2000, Math.floor(options.maxChars ?? 12000));
@@ -107,29 +120,33 @@ export function buildRestartRecoveryPrompt(
     .filter((item): item is { role: "user" | "assistant" | "system"; text: string } => Boolean(item))
     .slice(-maxMessages);
 
-  if (normalized.length <= 1) return latest;
+  if (normalized.length <= 1) return { prompt: latest, replayedMessageCount: 0 };
 
   // Avoid duplicating the current user input in both transcript and current message sections.
   if (normalized[normalized.length - 1]?.role === "user" && normalized[normalized.length - 1]?.text === latest) {
     normalized.pop();
   }
-  if (normalized.length === 0) return latest;
+  if (normalized.length === 0) return { prompt: latest, replayedMessageCount: 0 };
 
+  const replayedMessageCount = normalized.length;
   const lines = normalized.map((item) => `${item.role}: ${item.text}`);
   let transcript = lines.join("\n\n");
   if (transcript.length > maxChars) {
     transcript = transcript.slice(transcript.length - maxChars);
   }
 
-  return [
-    "[历史对话上下文（服务重启后自动回放）]",
-    transcript,
-    "",
-    "[当前用户消息]",
-    latest,
-    "",
-    "请基于以上历史上下文继续回答，保持与此前会话一致。"
-  ].join("\n");
+  return {
+    prompt: [
+      "[历史对话上下文（服务重启后自动回放）]",
+      transcript,
+      "",
+      "[当前用户消息]",
+      latest,
+      "",
+      "请基于以上历史上下文继续回答，保持与此前会话一致。"
+    ].join("\n"),
+    replayedMessageCount
+  };
 }
 
 function trimTrailingPunctuation(token: string): string {
