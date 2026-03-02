@@ -223,12 +223,18 @@
 
 
 .exec-panel {
-  border: 1px solid #edf1f5;
-  border-radius: var(--r-12);
-  background: #ffffff;
-  padding: 10px 12px;
+  border: 1px solid #e7edf4;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 5px 9px;
   display: grid;
-  gap: 7px;
+  gap: 5px;
+}
+
+.exec-panel-dock {
+  z-index: 12;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
+  backdrop-filter: blur(4px);
 }
 
 .exec-head {
@@ -236,10 +242,17 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  min-height: 28px;
+}
+
+.exec-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .exec-head strong {
-  font-size: var(--fs-14);
+  font-size: var(--fs-13);
   color: #1f2937;
 }
 
@@ -264,6 +277,16 @@
   color: #64748b;
 }
 
+.exec-phase-detail {
+  font-size: var(--fs-12);
+  color: #0f766e;
+  border: 1px solid rgba(15, 118, 110, 0.2);
+  background: rgba(15, 118, 110, 0.06);
+  border-radius: var(--r-10);
+  padding: 6px 8px;
+  line-height: 1.45;
+}
+
 .exec-actions {
   margin: 0;
   padding-left: 16px;
@@ -275,6 +298,55 @@
   font-size: var(--fs-12);
   color: #334155;
   line-height: 1.4;
+}
+
+.exec-status-line {
+  border: 1px solid #e4ebf4;
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.82);
+  color: #475569;
+  padding: 6px 8px;
+  font-size: var(--fs-12);
+  line-height: 1.35;
+}
+
+.exec-status-line-compact {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 2px;
+}
+
+.exec-compact-main {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.exec-compact-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #dbe5ef;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #475569;
+  font-size: 10px;
+  line-height: 1;
+  padding: 4px 6px;
+  white-space: nowrap;
+}
+
+.exec-compact-chip-mcp::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #10a37f;
+  margin-right: 5px;
+  box-shadow: 0 0 0 2px rgba(16, 163, 127, 0.16);
 }
 
 .exec-hint {

@@ -48,7 +48,7 @@
       ],
       "env": {}
     },
-    "notion-official": {
+    "notion": {
       "type": "stdio",
       "command": "npx",
       "args": [

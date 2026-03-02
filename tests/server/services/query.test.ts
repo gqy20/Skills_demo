@@ -51,7 +51,7 @@ describe("query service", () => {
     const options = buildQueryOptions("/tmp/ws", baseSettings, "web-session", "sdk-session");
     expect(options.cwd).toBe("/tmp/ws");
     expect(options.resume).toBe("sdk-session");
-    expect(options.settingSources).toEqual(["project"]);
+    expect(options.settingSources).toEqual(["user", "project", "local"]);
     expect(options.thinking).toBeUndefined();
     expect(options.env?.ANTHROPIC_MODEL).toBe("m1");
     expect(options.env?.MINERU_API_KEY).toBe("mineru");

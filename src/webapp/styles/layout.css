@@ -49,6 +49,12 @@
 .timeline-wrap {
   position: relative;
   min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.timeline-status-dock {
+  padding: 0 20px;
 }
 
 .chat-head {

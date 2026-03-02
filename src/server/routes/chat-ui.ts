@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { query, type PermissionUpdate } from "@anthropic-ai/claude-agent-sdk";
+import { query, type PermissionResult, type PermissionUpdate } from "@anthropic-ai/claude-agent-sdk";
 import type { Request, Response } from "express";
 import {
   buildRestartRecoveryPayload,
@@ -34,6 +34,9 @@ import { resolveAvailableSlashNames } from "./chat-ui-slash-cache.js";
 type RuntimeFlags = {
   closed: boolean;
   doneSent: boolean;
+  phase: string;
+  phaseStartedAt: number;
+  lastActivityAt: number;
 };
 
 function buildCanUseToolHandler(params: {
@@ -47,9 +50,57 @@ function buildCanUseToolHandler(params: {
   debugSseEnabled: boolean;
 }) {
   const { gateEnabled, runtime, res, sessionId, pendingStore, turnTrace, traceId, debugSseEnabled } = params;
-  if (!gateEnabled) return undefined;
   return async (toolName: string, input?: unknown, hookOptions?: { toolUseID?: string; suggestions?: PermissionUpdate[] }) => {
     const inputObj = (input ?? {}) as Record<string, unknown>;
+    const normalizedToolName = String(toolName || "").trim().toLowerCase();
+    const isMcpTool = normalizedToolName.startsWith("mcp__") || normalizedToolName.startsWith("mcp:");
+    if (isMcpTool) {
+      if (!runtime.closed) {
+        writeSseData(res, {
+          type: "data-tool-gate-hit",
+          data: {
+            sessionId,
+            toolName,
+            isAskUserQuestion: false,
+            toolUseID: hookOptions?.toolUseID,
+            autoAllowed: true
+          }
+        });
+      }
+      writeDebugSse(res, runtime.closed, debugSseEnabled, traceId, "tool_permission_auto_allowed", {
+        toolName,
+        toolUseID: hookOptions?.toolUseID,
+        reason: "mcp_default_allow"
+      });
+      const decision: PermissionResult = {
+        behavior: "allow",
+        updatedInput: inputObj
+      };
+      return decision;
+    }
+    if (!gateEnabled) {
+      if (!runtime.closed) {
+        writeSseData(res, {
+          type: "data-tool-gate-hit",
+          data: {
+            sessionId,
+            toolName,
+            isAskUserQuestion: false,
+            toolUseID: hookOptions?.toolUseID,
+            autoAllowed: true
+          }
+        });
+      }
+      writeDebugSse(res, runtime.closed, debugSseEnabled, traceId, "tool_permission_auto_allowed", {
+        toolName,
+        toolUseID: hookOptions?.toolUseID,
+        reason: "tool_gate_disabled"
+      });
+      return {
+        behavior: "allow",
+        updatedInput: inputObj
+      } as PermissionResult;
+    }
     const isAskUserQuestion = isAskUserQuestionTool(toolName);
     if (!runtime.closed) {
       writeSseData(res, {
@@ -172,7 +223,14 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
   const gateEnabled = settings.permissionProfile === "standard" && settings.toolGateEnabled;
   const debugSseEnabled = settings.debugEnabled && settings.debugSseEnabled;
   const partId = `text-${randomUUID()}`;
-  const runtime: RuntimeFlags = { closed: false, doneSent: false };
+  const now = Date.now();
+  const runtime: RuntimeFlags = {
+    closed: false,
+    doneSent: false,
+    phase: "queued",
+    phaseStartedAt: now,
+    lastActivityAt: now
+  };
   const turnTrace = createTurnTrace();
   const canUseToolHandler = buildCanUseToolHandler({
     gateEnabled,
@@ -195,6 +253,22 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
   writeSseData(res, { type: "start" });
   writeSseData(res, { type: "text-start", id: partId });
   writeSseData(res, { type: "data-session", data: { sessionId } });
+  writeSseData(res, {
+    type: "data-runtime-phase",
+    data: {
+      phase: "queued",
+      detail: "请求已提交，等待执行",
+      at: now,
+      etaSeconds: 3
+    }
+  });
+  writeSseData(res, {
+    type: "data-runtime-activity",
+    data: {
+      detail: "已接收用户请求，正在准备执行环境",
+      at: now
+    }
+  });
   writeSseData(res, { type: "data-tool-gate-status", data: { enabled: gateEnabled } });
   writeSseData(res, {
     type: "data-input-directives",
@@ -230,8 +304,18 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
   const heartbeat = setInterval(() => {
     if (!runtime.closed) {
       res.write(": heartbeat\n\n");
+      const ts = Date.now();
+      writeSseData(res, {
+        type: "data-runtime-heartbeat",
+        data: {
+          phase: runtime.phase,
+          phaseElapsedSeconds: Math.max(0, Math.floor((ts - runtime.phaseStartedAt) / 1000)),
+          idleSeconds: Math.max(0, Math.floor((ts - runtime.lastActivityAt) / 1000)),
+          at: ts
+        }
+      });
     }
-  }, 15000);
+  }, 3000);
 
   req.on("close", () => {
     runtime.closed = true;
@@ -364,7 +448,19 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
       sessionMap,
       sessionSeedMap,
       turnTrace,
-      stopOnResult: true
+      stopOnResult: true,
+      onRuntimePhase: (next) => {
+        const ts = Date.now();
+        runtime.phase = String(next.phase || runtime.phase);
+        runtime.phaseStartedAt = ts;
+        runtime.lastActivityAt = ts;
+      },
+      onRuntimeActivity: () => {
+        runtime.lastActivityAt = Date.now();
+      },
+      onRuntimeHeartbeat: () => {
+        runtime.lastActivityAt = Date.now();
+      }
     });
     const streamResult = await streamPromise;
     writeDebugSse(res, runtime.closed, debugSseEnabled, traceId, "query_turn", {

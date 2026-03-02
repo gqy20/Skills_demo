@@ -105,8 +105,70 @@ export function handleChatStreamPart(part, deps) {
     });
     setExecutionState((prev) => ({
       ...prev,
-      phase: "responding",
+      phase: prev.phase === "streaming_text" ? prev.phase : "responding",
+      phaseDetail: prev.phaseDetail || "正在生成可见回复",
+      phaseStartedAt: prev.phase === "streaming_text" ? prev.phaseStartedAt : now,
+      phaseEtaSeconds: prev.phase === "streaming_text" ? prev.phaseEtaSeconds : 2,
+      lastActivityAt: now,
       lastDeltaAt: now,
+      dismissNoDelta: false
+    }));
+    return "handled";
+  }
+
+  if (part?.type === "data-runtime-phase") {
+    const nextPhase = String(part?.data?.phase || "queued");
+    const detail = String(part?.data?.detail || "");
+    const etaRaw = Number(part?.data?.etaSeconds);
+    setExecutionState((prev) => {
+      const phaseChanged = prev.phase !== nextPhase;
+      const nextActions = detail ? [...(prev.actions || []).slice(-4), detail] : prev.actions || [];
+      return {
+        ...prev,
+        phase: nextPhase,
+        phaseDetail: detail || prev.phaseDetail || "",
+        phaseStartedAt: phaseChanged ? now : prev.phaseStartedAt || now,
+        phaseEtaSeconds: Number.isFinite(etaRaw) && etaRaw >= 0 ? Math.floor(etaRaw) : prev.phaseEtaSeconds ?? null,
+        lastActivityAt: now,
+        actions: nextActions,
+        dismissNoDelta: false
+      };
+    });
+    return "handled";
+  }
+
+  if (part?.type === "data-runtime-activity") {
+    const detail = String(part?.data?.detail || "").trim();
+    if (detail) {
+      setExecutionState((prev) => ({
+        ...prev,
+        lastActivityAt: now,
+        actions: [...(prev.actions || []).slice(-4), detail],
+        dismissNoDelta: false
+      }));
+    } else {
+      setExecutionState((prev) => ({ ...prev, lastActivityAt: now }));
+    }
+    return "handled";
+  }
+
+  if (part?.type === "data-runtime-heartbeat") {
+    setExecutionState((prev) => ({
+      ...prev,
+      phase: String(part?.data?.phase || prev.phase || "queued"),
+      lastActivityAt: now
+    }));
+    return "handled";
+  }
+
+  if (part?.type === "data-runtime-warning") {
+    const warningText = "等待工具/上游返回";
+    setExecutionState((prev) => ({
+      ...prev,
+      phase: prev.phase === "error" ? "error" : "waiting_model",
+      lastActivityAt: now,
+      warnings: [...(prev.warnings || []).slice(-2), warningText],
+      actions: [...(prev.actions || []).slice(-4), warningText],
       dismissNoDelta: false
     }));
     return "handled";
@@ -136,6 +198,10 @@ export function handleChatStreamPart(part, deps) {
     setExecutionState((prev) => ({
       ...prev,
       phase: "tool",
+      phaseDetail: String(part?.data?.toolName || ""),
+      phaseStartedAt: prev.phase === "tool" ? prev.phaseStartedAt : now,
+      phaseEtaSeconds: 20,
+      lastActivityAt: now,
       currentTool: String(part?.data?.toolName || prev.currentTool || ""),
       toolElapsedSeconds:
         typeof part?.data?.elapsedSeconds === "number" && Number.isFinite(part?.data?.elapsedSeconds)
@@ -172,6 +238,9 @@ export function handleChatStreamPart(part, deps) {
     setExecutionState((prev) => ({
       ...prev,
       phase: "tool",
+      phaseDetail: "工具执行完成，正在汇总结果",
+      phaseEtaSeconds: 8,
+      lastActivityAt: now,
       actions: [...prev.actions.slice(-4), shortText(summary, 220)],
       dismissNoDelta: false
     }));
@@ -192,7 +261,10 @@ export function handleChatStreamPart(part, deps) {
     setExecutionState((prev) => ({
       ...prev,
       phase: "waiting_model",
-      actions: [...(prev.actions || []).slice(-4), "上游长时间未返回文本，建议继续等待或重试。"],
+      phaseDetail: "长时间未产生文本，仍在执行中",
+      phaseEtaSeconds: null,
+      lastActivityAt: now,
+      actions: [...(prev.actions || []).slice(-4), "等待工具/上游返回"],
       dismissNoDelta: false
     }));
     return "handled";
@@ -217,6 +289,17 @@ export function handleChatStreamPart(part, deps) {
       return { ...prev, tools };
     });
     setDiagnostics((prev) => ({ ...prev, gateHits: prev.gateHits + 1 }));
+    setExecutionState((prev) => ({
+      ...prev,
+      phase: "running_tool",
+      phaseDetail: `正在调用 ${String(part?.data?.toolName || "tool")}`,
+      phaseStartedAt: prev.phase === "running_tool" ? prev.phaseStartedAt : now,
+      phaseEtaSeconds: 20,
+      lastActivityAt: now,
+      currentTool: String(part?.data?.toolName || prev.currentTool || ""),
+      actions: [...(prev.actions || []).slice(-4), `工具调用：${String(part?.data?.toolName || "unknown_tool")}`],
+      dismissNoDelta: false
+    }));
     return "handled";
   }
 
@@ -250,6 +333,8 @@ export function handleChatStreamPart(part, deps) {
     setExecutionState((prev) => ({
       ...prev,
       phase: "pending",
+      phaseDetail: "等待权限确认",
+      lastActivityAt: now,
       currentTool: String(part?.data?.toolName || prev.currentTool || ""),
       dismissNoDelta: false
     }));
@@ -296,6 +381,8 @@ export function handleChatStreamPart(part, deps) {
     setExecutionState((prev) => ({
       ...prev,
       phase: "error",
+      phaseDetail: "请求执行失败",
+      lastActivityAt: now,
       actions: [...(prev.actions || []).slice(-4), String(part?.error || "未知错误")],
       dismissNoDelta: false
     }));

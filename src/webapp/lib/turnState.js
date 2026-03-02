@@ -23,10 +23,15 @@ export function resetDiagnosticsForTurn(prev) {
 export function buildQueuedExecutionState(now) {
   return {
     phase: "queued",
+    phaseDetail: "请求已提交，等待执行",
+    phaseStartedAt: now,
+    phaseEtaSeconds: 3,
+    lastActivityAt: now,
     currentTool: "",
     toolElapsedSeconds: 0,
     lastDeltaAt: now,
     actions: [],
+    warnings: [],
     dismissNoDelta: false
   };
 }

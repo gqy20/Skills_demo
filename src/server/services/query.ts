@@ -89,7 +89,9 @@ export function buildQueryOptions(
     base.settingSources = [];
     base.thinking = { type: "disabled" };
   } else {
-    base.settingSources = ["project"];
+    // Load user/project/local settings to preserve persisted permissions and MCP auth state.
+    // Limiting to project only can cause "permission not granted yet" regressions in standard mode.
+    base.settingSources = ["user", "project", "local"];
   }
 
   Object.assign(base, buildPermissionRuntimeOptions(settings));

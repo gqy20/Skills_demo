@@ -351,15 +351,6 @@ export default function App() {
     }
   };
 
-  const forceStopAndRetry = async () => {
-    stop();
-    if (lastUserText) {
-      setTimeout(() => {
-        submitUserMessage(lastUserText).catch(() => {});
-      }, 220);
-    }
-  };
-
   const { skillSourceCounts, filteredSkills, filteredFiles } = useSidebarDerived({
     skills,
     skillSourceTab,
@@ -405,7 +396,7 @@ export default function App() {
   }, [mcpCatalog, mcpRuntimeStatus]);
   const mcpProbeHasIssue = effectiveMcpProbeRuntime?.ok === false;
   const showExecutionPanel =
-    blockingPending || executionState.phase === "error" || showNoDeltaHint || (isStreaming && mcpProbeHasIssue);
+    isStreaming || blockingPending || executionState.phase === "error" || showNoDeltaHint || (isStreaming && mcpProbeHasIssue);
 
   useEffect(() => {
     if (!currentWorkspaceId) return;
@@ -499,6 +490,22 @@ export default function App() {
 
           {!fileFocused && (
             <section className="timeline-wrap">
+              <div className="timeline-status-dock">
+                <ExecutionPanel
+                  show={showExecutionPanel}
+                  blockingPending={blockingPending}
+                  executionState={executionState}
+                  silentSeconds={silentSeconds}
+                  isStreaming={isStreaming}
+                  settings={settings}
+                  mcpRuntimeStatus={effectiveMcpRuntimeStatus}
+                  mcpProbeRuntime={effectiveMcpProbeRuntime}
+                  hookTimeline={hookTimeline}
+                  showNoDeltaHint={showNoDeltaHint}
+                  nowTick={nowTick}
+                  showHookTimeline={settings.debugEnabled}
+                />
+              </div>
               <section className="timeline" ref={timelineRef}>
                 <div className="timeline-inner">
                   <PreflightPanel
@@ -514,22 +521,6 @@ export default function App() {
                     usageExpanded={usageExpanded}
                     setUsagePanelOpen={setUsagePanelOpen}
                     setUsageExpanded={setUsageExpanded}
-                  />
-
-                  <ExecutionPanel
-                    show={showExecutionPanel}
-                    blockingPending={blockingPending}
-                    executionState={executionState}
-                    silentSeconds={silentSeconds}
-                    isStreaming={isStreaming}
-                    settings={settings}
-                    mcpRuntimeStatus={effectiveMcpRuntimeStatus}
-                    mcpProbeRuntime={effectiveMcpProbeRuntime}
-                    hookTimeline={hookTimeline}
-                    showNoDeltaHint={showNoDeltaHint}
-                    onDismissNoDelta={() => setExecutionState((prev) => ({ ...prev, dismissNoDelta: true }))}
-                    onForceStopAndRetry={forceStopAndRetry}
-                    showHookTimeline={settings.debugEnabled}
                   />
 
                   <ChatMessageList

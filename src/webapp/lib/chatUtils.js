@@ -199,6 +199,16 @@ export function toolLabel(rawName) {
 export function formatPhaseLabel(phase) {
   const map = {
     queued: "已入队",
+    initializing: "初始化中",
+    planning: "规划执行中",
+    running_tool: "工具执行中",
+    synthesizing: "汇总结果中",
+    streaming_text: "生成回复中",
+    waiting_model: "等待模型响应",
+    tool: "工具执行中",
+    pending: "等待处理",
+    error: "请求异常",
+    failed: "执行失败",
     waiting_user_input: "等待用户输入",
     waiting_permission: "等待权限确认",
     tool_running: "工具执行中",

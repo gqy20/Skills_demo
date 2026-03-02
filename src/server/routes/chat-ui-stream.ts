@@ -17,6 +17,9 @@ type ConsumeQueryEventsParams = {
   turnTrace: MutableTurnTrace;
   stopOnResult?: boolean;
   onSdkInit?: (data: { cwd: string; slashCommands: string[]; skills: string[] }) => void;
+  onRuntimePhase?: (next: { phase: string; detail?: string; etaSeconds?: number | null }) => void;
+  onRuntimeActivity?: (next: { detail: string }) => void;
+  onRuntimeHeartbeat?: () => void;
 };
 
 type ConsumeQueryEventsResult = {
@@ -51,6 +54,33 @@ function writeHookStage(
   writeSseData(res, { type: "data-hook-stage", data });
 }
 
+function writeRuntimePhase(
+  res: Response,
+  data: { phase: string; detail?: string; etaSeconds?: number | null; at?: number }
+): void {
+  writeSseData(res, {
+    type: "data-runtime-phase",
+    data: {
+      phase: String(data.phase || "queued"),
+      detail: String(data.detail || ""),
+      etaSeconds: typeof data.etaSeconds === "number" ? Math.max(0, Math.floor(data.etaSeconds)) : null,
+      at: Number(data.at || Date.now())
+    }
+  });
+}
+
+function writeRuntimeActivity(res: Response, detail: string): void {
+  const text = String(detail || "").trim();
+  if (!text) return;
+  writeSseData(res, {
+    type: "data-runtime-activity",
+    data: {
+      detail: text,
+      at: Date.now()
+    }
+  });
+}
+
 export async function consumeQueryEvents({
   eventStream,
   key,
@@ -64,7 +94,10 @@ export async function consumeQueryEvents({
   sessionSeedMap,
   turnTrace,
   stopOnResult = false,
-  onSdkInit
+  onSdkInit,
+  onRuntimePhase,
+  onRuntimeActivity,
+  onRuntimeHeartbeat
 }: ConsumeQueryEventsParams): Promise<ConsumeQueryEventsResult> {
   let streamEventCount = 0;
   let deltaCount = 0;
@@ -72,9 +105,12 @@ export async function consumeQueryEvents({
   let responsePhaseMarked = false;
   const streamStartedAt = Date.now();
   let firstTextTimeoutNotified = false;
+  writeRuntimePhase(res, { phase: "planning", detail: "正在初始化代理与上下文", etaSeconds: 6, at: streamStartedAt });
+  onRuntimePhase?.({ phase: "planning", detail: "正在初始化代理与上下文", etaSeconds: 6 });
 
   for await (const event of eventStream) {
     if (runtime.closed) break;
+    onRuntimeHeartbeat?.();
     streamEventCount += 1;
 
     if (typeof event.session_id === "string") {
@@ -112,6 +148,14 @@ export async function consumeQueryEvents({
           hasAskUserQuestionTool: tools.some((tool: unknown) => String(tool).trim().toLowerCase() === "askuserquestion")
         }
       });
+      writeRuntimePhase(res, {
+        phase: "planning",
+        detail: "初始化完成，正在规划执行步骤",
+        etaSeconds: 4
+      });
+      onRuntimePhase?.({ phase: "planning", detail: "初始化完成，正在规划执行步骤", etaSeconds: 4 });
+      writeRuntimeActivity(res, "已完成 SDK 初始化，准备执行任务");
+      onRuntimeActivity?.({ detail: "已完成 SDK 初始化，准备执行任务" });
       writeHookStage(res, {
         stage: "sdk_init",
         at: Date.now(),
@@ -125,6 +169,8 @@ export async function consumeQueryEvents({
       assistantText += deltaText;
       if (!responsePhaseMarked) {
         responsePhaseMarked = true;
+        writeRuntimePhase(res, { phase: "streaming_text", detail: "正在生成可见回复", etaSeconds: 2 });
+        onRuntimePhase?.({ phase: "streaming_text", detail: "正在生成可见回复", etaSeconds: 2 });
         turnTrace.phases.push({ phase: "responding", at: Date.now() });
         trimPhases(turnTrace);
       }
@@ -137,6 +183,8 @@ export async function consumeQueryEvents({
       assistantText += resultText;
       if (!responsePhaseMarked) {
         responsePhaseMarked = true;
+        writeRuntimePhase(res, { phase: "streaming_text", detail: "正在生成可见回复", etaSeconds: 2 });
+        onRuntimePhase?.({ phase: "streaming_text", detail: "正在生成可见回复", etaSeconds: 2 });
         turnTrace.phases.push({ phase: "responding", at: Date.now() });
         trimPhases(turnTrace);
       }
@@ -146,6 +194,8 @@ export async function consumeQueryEvents({
     const lifecycle = extractSdkLifecycle(event);
     if (lifecycle) {
       if (lifecycle.category === "hook_started") {
+        writeRuntimeActivity(res, `触发 Hook：${String(lifecycle.hookName || lifecycle.hookEvent || "unknown")}`);
+        onRuntimeActivity?.({ detail: `触发 Hook：${String(lifecycle.hookName || lifecycle.hookEvent || "unknown")}` });
         writeHookStage(res, {
           stage: "hook_started",
           at: Date.now(),
@@ -193,6 +243,18 @@ export async function consumeQueryEvents({
           turnTrace.phases.push({ phase: "tool_running", at: Date.now(), detail: label });
           trimPhases(turnTrace);
         }
+        writeRuntimePhase(res, {
+          phase: "running_tool",
+          detail: `正在调用 ${String(lifecycle.toolName || "tool")}`,
+          etaSeconds: 20
+        });
+        onRuntimePhase?.({
+          phase: "running_tool",
+          detail: `正在调用 ${String(lifecycle.toolName || "tool")}`,
+          etaSeconds: 20
+        });
+        writeRuntimeActivity(res, `工具执行中：${String(lifecycle.toolName || "unknown_tool")}`);
+        onRuntimeActivity?.({ detail: `工具执行中：${String(lifecycle.toolName || "unknown_tool")}` });
         writeSseData(res, {
           type: "data-tool-progress",
           data: {
@@ -224,6 +286,14 @@ export async function consumeQueryEvents({
         }
         turnTrace.phases.push({ phase: "tool_summary", at: Date.now() });
         trimPhases(turnTrace);
+        writeRuntimePhase(res, {
+          phase: "synthesizing",
+          detail: "工具返回结果，正在汇总与校验",
+          etaSeconds: 8
+        });
+        onRuntimePhase?.({ phase: "synthesizing", detail: "工具返回结果，正在汇总与校验", etaSeconds: 8 });
+        writeRuntimeActivity(res, "工具执行完成，开始汇总阶段");
+        onRuntimeActivity?.({ detail: "工具执行完成，开始汇总阶段" });
         writeSseData(res, {
           type: "data-tool-use-summary",
           data: { summary: lifecycle.summary || "" }
@@ -236,6 +306,10 @@ export async function consumeQueryEvents({
       }
 
       if (lifecycle.category === "result") {
+        const donePhase = lifecycle.isError === true ? "failed" : "completed";
+        const doneDetail = lifecycle.isError === true ? "请求执行失败，请重试" : "执行完成";
+        writeRuntimePhase(res, { phase: donePhase, detail: doneDetail, etaSeconds: 0 });
+        onRuntimePhase?.({ phase: donePhase, detail: doneDetail, etaSeconds: 0 });
         writeHookStage(res, {
           stage: "result",
           at: Date.now(),
@@ -250,6 +324,15 @@ export async function consumeQueryEvents({
 
     if (!responsePhaseMarked && !firstTextTimeoutNotified && Date.now() - streamStartedAt >= 20000) {
       firstTextTimeoutNotified = true;
+      writeSseData(res, {
+        type: "data-runtime-warning",
+        data: {
+          code: "no_text_delta",
+          detail: "等待工具/上游返回",
+          waitedSeconds: Math.floor((Date.now() - streamStartedAt) / 1000),
+          suggestion: ""
+        }
+      });
       writeSseData(res, {
         type: "data-first-token-timeout",
         data: {

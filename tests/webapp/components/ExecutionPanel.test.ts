@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ExecutionPanel from "../../../src/webapp/components/ExecutionPanel.jsx";
@@ -15,15 +15,13 @@ describe("ExecutionPanel", () => {
         settings: { permissionProfile: "standard" },
         mcpRuntimeStatus: { ok: null, count: 0, error: "" },
         hookTimeline: [],
-        showNoDeltaHint: false,
-        onDismissNoDelta: vi.fn(),
-        onForceStopAndRetry: vi.fn()
+        showNoDeltaHint: false
       })
     );
     expect(html).toContain("等待授权");
   });
 
-  it("shows tool and retry hint", () => {
+  it("shows compact sticky status line", () => {
     const html = renderToStaticMarkup(
       React.createElement(ExecutionPanel, {
         show: true,
@@ -42,16 +40,13 @@ describe("ExecutionPanel", () => {
         hookTimeline: [{ stage: "hook_started", at: Date.now(), hookEvent: "PostToolUse", hookName: "update-status.sh" }],
         showHookTimeline: true,
         showNoDeltaHint: true,
-        onDismissNoDelta: vi.fn(),
-        onForceStopAndRetry: vi.fn()
       })
     );
     expect(html).toContain("工具执行中");
     expect(html).toContain("paper.search");
-    expect(html).toContain("停止并重试");
-    expect(html).toContain("MCP 探针：");
-    expect(html).toContain("执行阶段");
-    expect(html).toContain("Hook 开始");
+    expect(html).toContain("等待工具/上游返回");
+    expect(html).toContain("MCP 检测中");
+    expect(html).toContain("展开详情");
   });
 
   it("shows non-blocking warning for mcp timeout", () => {
@@ -67,11 +62,9 @@ describe("ExecutionPanel", () => {
         mcpProbeRuntime: { ok: false, error: "mcpServerStatus timed out after 10000ms", checking: false },
         hookTimeline: [],
         showNoDeltaHint: false,
-        onDismissNoDelta: vi.fn(),
-        onForceStopAndRetry: vi.fn()
       })
     );
-    expect(html).toContain("MCP 探针：超时（不阻断）");
+    expect(html).toContain("MCP 超时（不阻断）");
   });
 
   it("shows mcp checking state", () => {
@@ -87,10 +80,8 @@ describe("ExecutionPanel", () => {
         mcpProbeRuntime: { ok: null, error: "", checking: true },
         hookTimeline: [],
         showNoDeltaHint: false,
-        onDismissNoDelta: vi.fn(),
-        onForceStopAndRetry: vi.fn()
       })
     );
-    expect(html).toContain("MCP 探针：检测中");
+    expect(html).toContain("MCP 检测中");
   });
 });
