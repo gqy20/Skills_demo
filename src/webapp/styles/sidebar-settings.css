@@ -952,6 +952,19 @@
   border-right: 1px solid var(--line);
   overflow: hidden;
   flex-shrink: 0;
+  transition: width 160ms ease;
+}
+
+.session-sidebar.is-collapsed .session-sidebar-head {
+  justify-content: center;
+  padding: 16px 0 10px;
+  gap: 0;
+  flex-direction: column;
+  align-items: center;
+}
+
+.session-sidebar.is-collapsed .session-new-btn {
+  margin-top: 6px;
 }
 
 .session-sidebar-head {
@@ -960,6 +973,30 @@
   justify-content: space-between;
   padding: 16px 14px 10px;
   flex-shrink: 0;
+  gap: 4px;
+}
+
+.session-collapse-btn {
+  width: 28px;
+  height: 28px;
+  min-width: 28px !important;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #9ca3af;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: none;
+  flex-shrink: 0;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.session-collapse-btn:hover {
+  background: #e5e7eb;
+  color: #374151;
+  border-color: transparent;
 }
 
 .session-sidebar-title {
@@ -1033,6 +1070,48 @@
   cursor: pointer;
   transition: background 120ms ease;
   min-width: 0;
+}
+
+/* wrapper div 用于定位删除按钮 */
+.session-item-wrap {
+  position: relative;
+}
+
+.session-item-wrap:hover .session-item {
+  /* 右侧留出删除按钮空间 */
+  padding-right: 28px;
+}
+
+.session-delete-btn {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  min-width: 22px !important;
+  padding: 0;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #9ca3af;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: none;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+}
+
+.session-item-wrap:hover .session-delete-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.session-delete-btn:hover {
+  background: #fee2e2;
+  color: #dc2626;
 }
 
 .session-item:hover {

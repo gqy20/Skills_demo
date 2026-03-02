@@ -11,7 +11,7 @@ import {
   resolveWorkspacePath,
   writeWorkspaceTextFile
 } from "../services/files.js";
-import { listSessionSummaries, readSessionMessages } from "../services/sessions.js";
+import { listSessionSummaries, readSessionMessages, deleteSession } from "../services/sessions.js";
 import { maskToken, readSettings, writeSettings } from "../services/settings.js";
 import { WorkspaceRegistry } from "../services/workspaces.js";
 import { buildQueryOptions, withTimeout } from "../services/query.js";
@@ -428,6 +428,23 @@ export function registerSystemRoutes({ app, workspaceRegistry, defaultSettings, 
     } catch (error) {
       const msg = error instanceof Error ? error.message : "unknown error";
       res.status(500).json({ ok: false, error: msg, messages: [] });
+    }
+  });
+
+  app.delete("/api/sessions/:sessionId", async (req, res) => {
+    try {
+      const workspace = workspaceRegistry.requireWorkspace(req, res);
+      if (!workspace) return;
+      const sessionId = typeof req.params?.sessionId === "string" ? req.params.sessionId : "";
+      if (!sessionId) {
+        res.status(400).json({ ok: false, error: "sessionId is required" });
+        return;
+      }
+      const deleted = await deleteSession(workspace.root, sessionId);
+      res.json({ ok: true, workspaceId: workspace.id, sessionId, deleted });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "unknown error";
+      res.status(500).json({ ok: false, error: msg });
     }
   });
 

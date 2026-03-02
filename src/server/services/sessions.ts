@@ -143,6 +143,15 @@ export async function listSessionSummaries(workspaceRoot: string): Promise<Sessi
     }));
 }
 
+export async function deleteSession(workspaceRoot: string, sessionId: string): Promise<boolean> {
+  const data = await readSessionsFile(workspaceRoot);
+  const before = data.sessions.length;
+  data.sessions = data.sessions.filter((s) => s.id !== sessionId);
+  if (data.sessions.length === before) return false;
+  await writeSessionsFile(workspaceRoot, data);
+  return true;
+}
+
 export async function readSessionMessages(workspaceRoot: string, sessionId: string): Promise<StoredMessage[] | null> {
   const data = await readSessionsFile(workspaceRoot);
   const found = data.sessions.find((s) => s.id === sessionId);

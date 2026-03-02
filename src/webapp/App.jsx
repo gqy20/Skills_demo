@@ -58,6 +58,7 @@ export default function App() {
   const [sessionsError, setSessionsError] = useState("");
   const [openingSessionId, setOpeningSessionId] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sessionSidebarCollapsed, setSessionSidebarCollapsed] = useState(false);
   const [sidebarSections, setSidebarSections] = useState({
     mcps: true,
     sessions: true,
@@ -258,6 +259,18 @@ export default function App() {
     resetRuntimeUsage,
     setHookTimeline
   });
+  const deleteSession = async (sessionId) => {
+    if (!sessionId) return;
+    try {
+      await fetch(`/api/sessions/${encodeURIComponent(sessionId)}?workspaceId=${encodeURIComponent(currentWorkspaceId)}`, {
+        method: "DELETE"
+      });
+    } catch {
+      // ignore
+    }
+    setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+    if (currentSessionId === sessionId) startNewSession();
+  };
   const { openFile, requestOpenFile, saveOpenedFile } = useFileEditorActions({
     currentWorkspaceId,
     apiGetJson,
@@ -417,7 +430,7 @@ export default function App() {
 
   return (
     <>
-      <main className={`workspace ${sidebarOpen ? "workspace-with-sidebar" : "workspace-chat-only"}`}>
+      <main className={`workspace ${sidebarOpen ? "workspace-with-sidebar" : "workspace-chat-only"}${sessionSidebarCollapsed ? " session-sidebar-collapsed" : ""}`}>
         <SessionSidebar
           sessions={sessions}
           sessionsLoading={sessionsLoading}
@@ -425,8 +438,11 @@ export default function App() {
           openingSessionId={openingSessionId}
           onOpenSession={openSession}
           onNewSession={startNewSession}
+          onDeleteSession={deleteSession}
           isStreaming={isStreaming}
           blockingPending={blockingPending}
+          collapsed={sessionSidebarCollapsed}
+          onToggleCollapse={() => setSessionSidebarCollapsed((v) => !v)}
         />
         <section className="chat-shell">
           <ChatHeader
