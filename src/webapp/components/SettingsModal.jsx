@@ -45,6 +45,22 @@ const CODING_PLAN_PRESETS = [
   }
 ];
 
+const MODEL_CAPABILITY_MAP = {
+  "qwen3.5-plus": "vision",
+  "kimi-k2.5": "vision",
+  "glm-5": "text",
+  "MiniMax-M2.5": "text"
+};
+
+function modelCapabilityLabel(modelId) {
+  const mode = MODEL_CAPABILITY_MAP[String(modelId || "").trim()];
+  return mode === "vision" ? "图文" : "文本";
+}
+
+function modelCapabilitySymbol(modelId) {
+  return modelCapabilityLabel(modelId) === "图文" ? "◉" : "○";
+}
+
 function parseCodingPlans(raw) {
   if (!raw) return [];
   try {
@@ -304,6 +320,15 @@ export default function SettingsModal({
     () => suggestedModels.includes(String(settings.model || "").trim()),
     [settings.model, suggestedModels]
   );
+  const groupedSuggestedModels = React.useMemo(() => {
+    const vision = [];
+    const text = [];
+    for (const modelId of suggestedModels) {
+      if (modelCapabilityLabel(modelId) === "图文") vision.push(modelId);
+      else text.push(modelId);
+    }
+    return { vision, text };
+  }, [suggestedModels]);
   const savedPlans = React.useMemo(() => parseCodingPlans(runtimeEnvMap[CODING_PLAN_META_KEY]), [runtimeEnvMap]);
   const activePlanId = String(runtimeEnvMap[CODING_PLAN_ACTIVE_KEY] || "").trim();
   const planTokens = React.useMemo(() => parseCodingPlanTokens(runtimeEnvMap[CODING_PLAN_TOKENS_KEY]), [runtimeEnvMap]);
@@ -552,15 +577,29 @@ export default function SettingsModal({
               />
             )}
             <label>模型</label>
+            {groupedSuggestedModels.vision.length > 0 && <p className="settings-hint">多模态（支持图片理解）</p>}
             <div className="settings-model-pills">
-              {suggestedModels.map((modelId) => (
+              {groupedSuggestedModels.vision.map((modelId) => (
                 <button
                   key={modelId}
                   type="button"
                   className={`settings-model-pill ${settings.model === modelId ? "is-active" : ""}`}
                   onClick={() => setSettings((s) => ({ ...s, model: modelId }))}
                 >
-                  {modelId}
+                  {modelCapabilitySymbol(modelId)} {modelId}
+                </button>
+              ))}
+            </div>
+            {groupedSuggestedModels.text.length > 0 && <p className="settings-hint">纯文本</p>}
+            <div className="settings-model-pills">
+              {groupedSuggestedModels.text.map((modelId) => (
+                <button
+                  key={modelId}
+                  type="button"
+                  className={`settings-model-pill ${settings.model === modelId ? "is-active" : ""}`}
+                  onClick={() => setSettings((s) => ({ ...s, model: modelId }))}
+                >
+                  {modelCapabilitySymbol(modelId)} {modelId}
                 </button>
               ))}
               <button
