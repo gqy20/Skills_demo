@@ -132,37 +132,46 @@ export async function listWorkspaceFiles(
     return a.name.localeCompare(b.name);
   });
 
-  const items: FileTreeItem[] = [];
-  for (const entry of sorted) {
-    const itemPath = normalizeRelativePath(relativePath ? `${relativePath}/${entry.name}` : entry.name);
-    const itemAbs = resolveWorkspacePath(workspaceRoot, itemPath);
-    if (!itemAbs) continue;
-    const itemStat = await fs.stat(itemAbs);
-    if (entry.isDirectory()) {
-      const hasChildren = await directoryHasChildren(workspaceRoot, itemPath, rules);
-      const item: FileTreeItem = {
-        name: entry.name,
-        path: itemPath,
-        type: "directory",
-        size: 0,
-        mtimeMs: itemStat.mtimeMs,
-        hasChildren
-      };
-      if (depth > 1 && hasChildren) {
-        item.children = await listWorkspaceFiles(workspaceRoot, itemPath, depth - 1, rules);
+  const items = await Promise.all(
+    sorted.map(async (entry): Promise<FileTreeItem | null> => {
+      const itemPath = normalizeRelativePath(relativePath ? `${relativePath}/${entry.name}` : entry.name);
+      const itemAbs = resolveWorkspacePath(workspaceRoot, itemPath);
+      if (!itemAbs) return null;
+
+      let itemStat;
+      try {
+        itemStat = await fs.stat(itemAbs);
+      } catch {
+        return null;
       }
-      items.push(item);
-    } else {
-      items.push({
+
+      if (entry.isDirectory()) {
+        const hasChildren = await directoryHasChildren(workspaceRoot, itemPath, rules);
+        const item: FileTreeItem = {
+          name: entry.name,
+          path: itemPath,
+          type: "directory",
+          size: 0,
+          mtimeMs: itemStat.mtimeMs,
+          hasChildren
+        };
+        if (depth > 1 && hasChildren) {
+          item.children = await listWorkspaceFiles(workspaceRoot, itemPath, depth - 1, rules);
+        }
+        return item;
+      }
+
+      return {
         name: entry.name,
         path: itemPath,
         type: "file",
         size: itemStat.size,
         mtimeMs: itemStat.mtimeMs
-      });
-    }
-  }
-  return items;
+      };
+    })
+  );
+
+  return items.filter((item): item is FileTreeItem => Boolean(item));
 }
 
 export async function searchWorkspaceFilesByName(
