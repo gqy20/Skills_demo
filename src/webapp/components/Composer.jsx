@@ -183,13 +183,20 @@ export default function Composer({
         return a.path.length - b.path.length;
       })
       .slice(0, MAX_SUGGESTIONS)
-      .map((item) => ({
-        key: item.path,
-        value: item.path,
-        title: `@${pathBaseName(item.path)}`,
-        desc: item.type === "directory" ? `${item.path} · 目录` : `${item.path} · 文件`,
-        kind: "path"
-      }));
+      .map((item) => {
+        const base = pathBaseName(item.path);
+        const parentDir = item.path.includes("/")
+          ? item.path.split("/").slice(0, -1).join("/")
+          : "";
+        return {
+          key: item.path,
+          value: item.path,
+          title: base,
+          desc: parentDir,
+          kind: "path",
+          fileType: item.type
+        };
+      });
     return ranked;
   }, [activeToken, skills, fileCandidates, remoteFileCandidates]);
 
@@ -314,8 +321,31 @@ export default function Composer({
                     applySuggestion(idx);
                   }}
                 >
-                  <span className="composer-suggest-main">{item.title}</span>
-                  <span className="composer-suggest-sub">{item.desc || ""}</span>
+                  <span className="composer-suggest-icon" aria-hidden="true">
+                    {item.kind === "path" && item.fileType === "directory" ? (
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <path d="M1 4.5C1 3.67 1.67 3 2.5 3H5l1.2 1.5H11.5C12.33 4.5 13 5.17 13 6v4.5C13 11.33 12.33 12 11.5 12h-9C1.67 12 1 11.33 1 10.5V4.5z" fill="#93c5fd" stroke="#60a5fa" strokeWidth="0.8"/>
+                      </svg>
+                    ) : item.kind === "path" ? (
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <rect x="2" y="1" width="8" height="12" rx="1.2" fill="#f1f5f9" stroke="#94a3b8" strokeWidth="0.8"/>
+                        <path d="M10 1l2 2v0h-2V1z" fill="#cbd5e1"/>
+                        <path d="M10 1l2 2" stroke="#94a3b8" strokeWidth="0.8"/>
+                        <line x1="4" y1="5.5" x2="10" y2="5.5" stroke="#cbd5e1" strokeWidth="0.8"/>
+                        <line x1="4" y1="7.5" x2="10" y2="7.5" stroke="#cbd5e1" strokeWidth="0.8"/>
+                        <line x1="4" y1="9.5" x2="7.5" y2="9.5" stroke="#cbd5e1" strokeWidth="0.8"/>
+                      </svg>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <circle cx="7" cy="7" r="5.5" fill="#d1fae5" stroke="#34d399" strokeWidth="0.9"/>
+                        <path d="M4.5 7l1.8 1.8L9.5 5" stroke="#059669" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
+                  </span>
+                  <span className="composer-suggest-content">
+                    <span className="composer-suggest-main">{item.title}</span>
+                    {item.desc && <span className="composer-suggest-sub">{item.desc}</span>}
+                  </span>
                 </button>
               ))
             ) : (
