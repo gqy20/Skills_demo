@@ -16,6 +16,7 @@ type ConsumeQueryEventsParams = {
   sessionSeedMap: Map<string, string>;
   turnTrace: MutableTurnTrace;
   stopOnResult?: boolean;
+  onSdkInit?: (data: { cwd: string; slashCommands: string[]; skills: string[] }) => void;
 };
 
 type ConsumeQueryEventsResult = {
@@ -62,7 +63,8 @@ export async function consumeQueryEvents({
   sessionMap,
   sessionSeedMap,
   turnTrace,
-  stopOnResult = false
+  stopOnResult = false,
+  onSdkInit
 }: ConsumeQueryEventsParams): Promise<ConsumeQueryEventsResult> {
   let streamEventCount = 0;
   let deltaCount = 0;
@@ -84,20 +86,36 @@ export async function consumeQueryEvents({
       const tools = Array.isArray(event.tools)
         ? event.tools.filter((tool: unknown): tool is string => typeof tool === "string")
         : [];
+      const slashCommands = Array.isArray(event.slash_commands)
+        ? event.slash_commands.filter((item: unknown): item is string => typeof item === "string")
+        : [];
+      const skills = Array.isArray(event.skills)
+        ? event.skills.filter((item: unknown): item is string => typeof item === "string")
+        : [];
+      onSdkInit?.({
+        cwd: typeof event.cwd === "string" ? event.cwd : "",
+        slashCommands,
+        skills
+      });
       writeSseData(res, {
         type: "data-sdk-init",
         data: {
           model: event.model || "",
+          cwd: typeof event.cwd === "string" ? event.cwd : "",
           permissionMode: event.permissionMode || "",
           toolCount: tools.length,
+          slashCommandCount: slashCommands.length,
+          skillCount: skills.length,
           tools: tools.slice(0, 80),
+          slashCommands: slashCommands.slice(0, 80),
+          skills: skills.slice(0, 80),
           hasAskUserQuestionTool: tools.some((tool: unknown) => String(tool).trim().toLowerCase() === "askuserquestion")
         }
       });
       writeHookStage(res, {
         stage: "sdk_init",
         at: Date.now(),
-        detail: `tools=${tools.length}`
+        detail: `tools=${tools.length},slash=${slashCommands.length},skills=${skills.length}`
       });
     }
 

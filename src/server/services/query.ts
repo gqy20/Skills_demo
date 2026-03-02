@@ -27,7 +27,7 @@ async function getMcpServerNames(workspaceRoot: string): Promise<string[]> {
 }
 
 export async function applyMcpToggle(
-  queryInstance: ReturnType<typeof query>,
+  client: { toggleMcpServer: (name: string, enabled: boolean) => Promise<void> },
   workspaceRoot: string,
   enabled: boolean
 ): Promise<void> {
@@ -37,7 +37,7 @@ export async function applyMcpToggle(
   await Promise.all(
     names.map(async (name) => {
       try {
-        await withTimeout(queryInstance.toggleMcpServer(name, enabled), 3000, `toggleMcpServer(${name})`);
+        await withTimeout(client.toggleMcpServer(name, enabled), 3000, `toggleMcpServer(${name})`);
       } catch {
         // Ignore individual MCP toggle errors to keep stream path resilient.
       }
@@ -45,13 +45,13 @@ export async function applyMcpToggle(
   );
 }
 
-function buildQueryEnv(settings: RuntimeSettings): Record<string, string | undefined> {
+export function buildRuntimeEnv(settings: RuntimeSettings): Record<string, string | undefined> {
   return {
+    ...process.env,
     ...(settings.runtimeEnv || {}),
     ANTHROPIC_MODEL: settings.model,
     ANTHROPIC_BASE_URL: settings.baseUrl,
-    ANTHROPIC_AUTH_TOKEN: settings.authToken,
-    ...process.env
+    ANTHROPIC_AUTH_TOKEN: settings.authToken
   };
 }
 
@@ -79,7 +79,7 @@ export function buildQueryOptions(
 ): NonNullable<Parameters<typeof query>[0]["options"]> {
   const base: NonNullable<Parameters<typeof query>[0]["options"]> = {
     cwd: workspaceRoot,
-    env: buildQueryEnv(settings),
+    env: buildRuntimeEnv(settings),
     includePartialMessages: true,
     ...(sdkSessionId ? { resume: sdkSessionId } : { sessionId }),
     ...extra

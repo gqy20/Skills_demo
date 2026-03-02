@@ -259,17 +259,21 @@ export function parsePromptDirectives(prompt: string): PromptDirectives {
 export async function enhancePromptWithDirectives(
   workspaceRoot: string,
   prompt: string,
-  availableSlashNames: Set<string> | null
+  availableSlashNames: Set<string> | null,
+  options: { rewriteOwnedSlash?: boolean } = {}
 ): Promise<EnhancedPromptResult> {
+  const rewriteOwnedSlash = options.rewriteOwnedSlash !== false;
   const directives = parsePromptDirectives(prompt);
   const slashName = directives.slash?.name || "";
+  const slashArgs = directives.slash?.args || "";
+  const isOwnedSkillSlash = Boolean(
+    rewriteOwnedSlash && slashName && availableSlashNames && availableSlashNames.has(slashName)
+  );
   const unknownSlash =
-    slashName && availableSlashNames && availableSlashNames.size > 0 && !availableSlashNames.has(slashName)
-      ? slashName
-      : null;
+    slashName && availableSlashNames && availableSlashNames.size > 0 && !availableSlashNames.has(slashName) ? slashName : null;
 
   const mentionResult = await buildMentionContext(workspaceRoot, directives.mentionTokens);
-  if (mentionResult.resolved.length === 0 && !unknownSlash) {
+  if (mentionResult.resolved.length === 0 && !unknownSlash && !isOwnedSkillSlash) {
     return {
       prompt,
       directives,
@@ -279,7 +283,17 @@ export async function enhancePromptWithDirectives(
     };
   }
 
-  const chunks: string[] = [prompt.trim()];
+  const chunks: string[] = [];
+  if (isOwnedSkillSlash) {
+    chunks.push(
+      [
+        "[技能调用意图]",
+        `用户输入了 /${slashName}。请按“调用技能 ${slashName}”理解，不要把它当成未知命令。`,
+        slashArgs ? `技能输入：${slashArgs}` : "技能输入：无（请结合用户上下文补全）"
+      ].join("\n")
+    );
+  }
+  chunks.push(prompt.trim());
 
   if (unknownSlash) {
     chunks.push(

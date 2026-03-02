@@ -11,7 +11,7 @@ import {
 } from "../services/chat.js";
 import { type PendingNotify, type PendingRequestKind } from "../services/pending.js";
 import { appendSessionTurn, type StoredToolTrace } from "../services/sessions.js";
-import { applyMcpToggle, buildPermissionRuntimeOptions, buildQueryOptions, withTimeout } from "../services/query.js";
+import { applyMcpToggle, buildPermissionRuntimeOptions, buildQueryOptions, buildRuntimeEnv, withTimeout } from "../services/query.js";
 import { readSettings } from "../services/settings.js";
 import { fetchSkills } from "../services/skills.js";
 import {
@@ -132,27 +132,47 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
   const settings = await readSettings(workspace.root, defaultSettings);
   const parsedDirectives = parsePromptDirectives(rawMessage);
   let availableSlashNames: Set<string> | null = null;
+  let slashNamesSource: "session_init" | "fetched" | "cache_fresh" | "cache_stale_on_error" | "unavailable" | "none" = "none";
   if (parsedDirectives.slash) {
-    const slashResolution = await resolveAvailableSlashNames(workspace.root, settings, {
-      fetchSkills: (workspaceRoot, runtimeSettings) =>
-        fetchSkills(workspaceRoot, runtimeSettings, { buildQueryOptions, withTimeout })
-    });
-    availableSlashNames = slashResolution.names;
-    if (slashResolution.source === "cache_stale_on_error" || slashResolution.source === "unavailable") {
-      logTrace(traceId, "slash_names_resolution_degraded", {
-        workspaceId: workspace.id,
-        sessionId,
-        source: slashResolution.source,
-        error: slashResolution.error
+    const runtimeCached = sessionRuntimeManager?.get(key);
+    if (runtimeCached?.capabilities?.slashCommands && runtimeCached.capabilities.slashCommands.size > 0) {
+      availableSlashNames = new Set(runtimeCached.capabilities.slashCommands);
+      slashNamesSource = "session_init";
+    } else {
+      const slashResolution = await resolveAvailableSlashNames(workspace.root, settings, {
+        fetchSkills: (workspaceRoot, runtimeSettings) =>
+          fetchSkills(workspaceRoot, runtimeSettings, { buildQueryOptions, withTimeout })
       });
-      writeDebugSse(res, false, settings.debugEnabled && settings.debugSseEnabled, traceId, "slash_names_resolution_degraded", {
-        source: slashResolution.source,
-        error: slashResolution.error
-      });
+      availableSlashNames = slashResolution.names;
+      slashNamesSource = slashResolution.source;
+      if (slashResolution.source === "cache_stale_on_error" || slashResolution.source === "unavailable") {
+        logTrace(traceId, "slash_names_resolution_degraded", {
+          workspaceId: workspace.id,
+          sessionId,
+          source: slashResolution.source,
+          error: slashResolution.error
+        });
+        writeDebugSse(
+          res,
+          false,
+          settings.debugEnabled && settings.debugSseEnabled,
+          traceId,
+          "slash_names_resolution_degraded",
+          {
+            source: slashResolution.source,
+            error: slashResolution.error
+          }
+        );
+      }
     }
   }
 
-  const enhanced = await enhancePromptWithDirectives(workspace.root, rawMessage, availableSlashNames);
+  const enhanced = await enhancePromptWithDirectives(workspace.root, rawMessage, availableSlashNames, {
+    rewriteOwnedSlash: slashNamesSource !== "session_init"
+  });
+  const slashRewritten =
+    Boolean(enhanced.directives.slash?.name) &&
+    Boolean(availableSlashNames && availableSlashNames.has(enhanced.directives.slash?.name || ""));
   const recovery = sdkSessionId
     ? { prompt: enhanced.prompt, replayedMessageCount: 0 }
     : buildRestartRecoveryPayload(req.body?.messages, enhanced.prompt);
@@ -184,16 +204,14 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
       workspaceId: workspace.id,
       sessionId,
       createSession: () => {
-        const env = {
-          ...(settings.runtimeEnv || {}),
-          ANTHROPIC_MODEL: settings.model,
-          ANTHROPIC_BASE_URL: settings.baseUrl,
-          ANTHROPIC_AUTH_TOKEN: settings.authToken,
-          ...process.env
-        };
+        const env = buildRuntimeEnv(settings);
         const options = {
           model: settings.model,
+          cwd: workspace.root,
           env,
+          ...(settings.speedModeEnabled
+            ? { settingSources: [] as const, thinking: { type: "disabled" as const } }
+            : { settingSources: ["project"] as const }),
           ...buildPermissionRuntimeOptions(settings),
           canUseTool: canUseToolHandler
         };
@@ -255,9 +273,11 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
     toolGateEnabled: gateEnabled,
     permissionProfile: settings.permissionProfile,
     hasSlash: Boolean(enhanced.directives.slash),
+    slashRewritten,
     unknownSlash: enhanced.unknownSlash || "",
     mentionCount: enhanced.directives.mentionTokens.length,
-    mentionResolvedCount: enhanced.mentionResolved.length
+    mentionResolvedCount: enhanced.mentionResolved.length,
+    slashNamesSource
   });
 
   const heartbeat = setInterval(() => {
@@ -367,7 +387,8 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
         });
     }
     if (shouldRunPerTurnMcpToggle(settings) && typeof sessionLike.toggleMcpServer === "function") {
-      mcpTogglePromise = applyMcpToggle(sessionLike as never, workspace.root, settings.mcpEnabled)
+      const mcpToggleClient = { toggleMcpServer: sessionLike.toggleMcpServer.bind(sessionLike) };
+      mcpTogglePromise = applyMcpToggle(mcpToggleClient, workspace.root, settings.mcpEnabled)
         .then(() => {
           if (!runtime.closed) {
             writeSseData(res, { type: "data-mcp-toggled", data: { enabled: settings.mcpEnabled } });
@@ -391,7 +412,14 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
       sessionMap,
       sessionSeedMap,
       turnTrace,
-      stopOnResult: true
+      stopOnResult: true,
+      onSdkInit: (init) => {
+        sessionRuntimeManager.setCapabilities(key, {
+          cwd: init.cwd,
+          slashCommands: init.slashCommands,
+          skills: init.skills
+        });
+      }
     });
     await runtimeSession.session.send(promptForQuery);
     const streamResult = await streamPromise;

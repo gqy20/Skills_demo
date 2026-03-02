@@ -18,6 +18,7 @@ import { buildQueryOptions, withTimeout } from "../services/query.js";
 import { readMcpConfig } from "../services/mcp.js";
 import { hasEffectiveEnvValue, parseEnvText, readWorkspaceDotenv } from "../services/env.js";
 import type { SessionRuntimeManager } from "../services/session-runtime.js";
+import { clearSlashNamesCache } from "./chat-ui-slash-cache.js";
 
 type SystemRoutesDeps = {
   app: Express;
@@ -558,6 +559,8 @@ export function registerSystemRoutes({
 
     await writeSettings(workspace.root, next);
     invalidateSkillsCache(workspace.root);
+    clearSlashNamesCache(workspace.root);
+    const closedRuntimeSessions = sessionRuntimeManager ? sessionRuntimeManager.closeWorkspace(workspace.id) : 0;
     let mcpRefresh: { started: boolean; reason: string } | null = null;
     const snapshot = getMcpSnapshot(workspace.id);
     if (!next.mcpEnabled) {
@@ -597,6 +600,7 @@ export function registerSystemRoutes({
       debugSseEnabled: next.debugSseEnabled,
       hasToken: Boolean(next.authToken),
       tokenPreview: maskToken(next.authToken),
+      closedRuntimeSessions,
       mcpRefresh,
       dotenvSync: { synced: true }
     });

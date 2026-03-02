@@ -2,6 +2,13 @@ import type { SDKSession } from "@anthropic-ai/claude-agent-sdk";
 
 export type SessionRuntimeState = "idle" | "running" | "closed";
 
+export type SessionRuntimeCapabilities = {
+  cwd: string;
+  slashCommands: Set<string>;
+  skills: Set<string>;
+  updatedAt: number;
+};
+
 export type SessionRuntime = {
   key: string;
   workspaceId: string;
@@ -10,6 +17,7 @@ export type SessionRuntime = {
   createdAt: number;
   lastActiveAt: number;
   state: SessionRuntimeState;
+  capabilities: SessionRuntimeCapabilities | null;
 };
 
 type GetOrCreateInput = {
@@ -86,10 +94,41 @@ export class SessionRuntimeManager {
       session,
       createdAt: now,
       lastActiveAt: now,
-      state: "idle"
+      state: "idle",
+      capabilities: null
     };
     this.map.set(key, runtime);
     return { runtime, created: true };
+  }
+
+  setCapabilities(
+    key: string,
+    capabilities: { cwd?: string; slashCommands?: Iterable<string>; skills?: Iterable<string> },
+    now = Date.now()
+  ): void {
+    const runtime = this.map.get(key);
+    if (!runtime || runtime.state === "closed") return;
+
+    const normalize = (items?: Iterable<string>): Set<string> => {
+      const out = new Set<string>();
+      if (!items) return out;
+      for (const item of items) {
+        const normalized = String(item || "")
+          .trim()
+          .replace(/^\//, "")
+          .toLowerCase();
+        if (normalized) out.add(normalized);
+      }
+      return out;
+    };
+
+    runtime.capabilities = {
+      cwd: String(capabilities.cwd || "").trim(),
+      slashCommands: normalize(capabilities.slashCommands),
+      skills: normalize(capabilities.skills),
+      updatedAt: now
+    };
+    runtime.lastActiveAt = now;
   }
 
   beginTurn(key: string, now = Date.now()): boolean {
@@ -139,6 +178,15 @@ export class SessionRuntimeManager {
     const keys = Array.from(this.map.keys());
     for (const key of keys) this.close(key);
     return keys.length;
+  }
+
+  closeWorkspace(workspaceId: string): number {
+    let closed = 0;
+    for (const [key, runtime] of this.map) {
+      if (runtime.workspaceId !== workspaceId) continue;
+      if (this.close(key)) closed += 1;
+    }
+    return closed;
   }
 
   closeIdle(now = Date.now()): number {
