@@ -241,12 +241,37 @@ export default function Composer({
     setInsertedHint(`${activeToken.trigger}${item.value}`);
   };
 
+  // Tab / →：目录则鼠入下一级，文件则直接确认
+  const drillIntoSuggestion = (index) => {
+    if (!activeToken) return;
+    const item = suggestions[index];
+    if (!item) return;
+    if (item.kind === "path" && item.fileType === "directory") {
+      // 青展开目录：把输入改为 @dir/，保持弹窗
+      const replacement = `${activeToken.trigger}${item.value}/`;
+      const nextText = `${inputText.slice(0, activeToken.start)}${replacement}${inputText.slice(activeToken.end)}`;
+      const nextCaret = activeToken.start + replacement.length;
+      setInputText(nextText);
+      setDismissedTokenKey("");
+      requestAnimationFrame(() => {
+        const el = textareaRef?.current;
+        if (!el) return;
+        el.focus();
+        el.selectionStart = nextCaret;
+        el.selectionEnd = nextCaret;
+        setCaretPos(nextCaret);
+      });
+    } else {
+      applySuggestion(index);
+    }
+  };
+
   const showEmptySuggest = Boolean(activeToken && !blockingPending && !suggestions.length && activeToken.query.length > 0);
   const showSuggest = Boolean((suggestOpen || showEmptySuggest) && tokenKey !== dismissedTokenKey);
   const composerStatus = blockingPending
     ? "等待确认输入"
     : showSuggest && suggestions.length > 0
-      ? "↑↓ 选择 · Enter 确认"
+      ? "↑↓ 导航 · Enter 确认 · Tab/→ 进入目录"
       : insertedHint
         ? `已插入 ${insertedHint}`
         : inputText.trim()
@@ -292,7 +317,14 @@ export default function Composer({
                   setActiveIndex((prev) => (prev - 1 + suggestions.length) % suggestions.length);
                   return;
                 }
-                if ((event.key === "Enter" && !event.shiftKey) || event.key === "Tab") {
+                // Tab 或 →：目录则鼠入下一级，文件则确认
+                if (event.key === "Tab" || event.key === "ArrowRight") {
+                  event.preventDefault();
+                  drillIntoSuggestion(activeIndex);
+                  return;
+                }
+                // Enter：确认选中
+                if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
                   applySuggestion(activeIndex);
                   return;
