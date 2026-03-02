@@ -13,6 +13,18 @@ export type ChatRoutesDeps = {
   defaultSettings: RuntimeSettings;
   sessionMap: Map<string, string>;
   sessionSeedMap: Map<string, string>;
+  activeQueries?: Map<
+    string,
+    {
+      interrupt?: () => Promise<void>;
+      mcpServerStatus?: () => Promise<unknown[]>;
+      toggleMcpServer?: (name: string, enabled: boolean) => Promise<void>;
+      accountInfo?: () => Promise<{ email?: string; organization?: string }>;
+      supportedModels?: () => Promise<unknown[]>;
+      initializationResult?: () => Promise<{ commands?: unknown[]; models?: unknown[] }>;
+      close?: () => void;
+    }
+  >;
   sessionRuntimeManager?: SessionRuntimeManager;
 };
 

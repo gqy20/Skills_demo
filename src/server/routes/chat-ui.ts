@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { unstable_v2_createSession, unstable_v2_resumeSession, type PermissionUpdate } from "@anthropic-ai/claude-agent-sdk";
+import { query, type PermissionUpdate } from "@anthropic-ai/claude-agent-sdk";
 import type { Request, Response } from "express";
 import {
   buildRestartRecoveryPayload,
@@ -11,7 +11,7 @@ import {
 } from "../services/chat.js";
 import { type PendingNotify, type PendingRequestKind } from "../services/pending.js";
 import { appendSessionTurn, type StoredToolTrace } from "../services/sessions.js";
-import { applyMcpToggle, buildPermissionRuntimeOptions, buildQueryOptions, buildRuntimeEnv, withTimeout } from "../services/query.js";
+import { applyMcpToggle, buildQueryOptions, withTimeout } from "../services/query.js";
 import { readSettings } from "../services/settings.js";
 import { fetchSkills } from "../services/skills.js";
 import {
@@ -110,7 +110,7 @@ function buildCanUseToolHandler(params: {
 }
 
 export async function handleChatUiRequest(req: Request, res: Response, deps: ChatRoutesDeps): Promise<void> {
-  const { workspaceRegistry, defaultSettings, sessionMap, sessionSeedMap, pendingStore, sessionRuntimeManager } = deps;
+  const { workspaceRegistry, defaultSettings, sessionMap, sessionSeedMap, pendingStore, activeQueries } = deps;
   const workspace = workspaceRegistry.requireWorkspace(req, res);
   if (!workspace) return;
 
@@ -132,44 +132,36 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
   const settings = await readSettings(workspace.root, defaultSettings);
   const parsedDirectives = parsePromptDirectives(rawMessage);
   let availableSlashNames: Set<string> | null = null;
-  let slashNamesSource: "session_init" | "fetched" | "cache_fresh" | "cache_stale_on_error" | "unavailable" | "none" = "none";
+  let slashNamesSource: "fetched" | "cache_fresh" | "cache_stale_on_error" | "unavailable" | "none" = "none";
   if (parsedDirectives.slash) {
-    const runtimeCached = sessionRuntimeManager?.get(key);
-    if (runtimeCached?.capabilities?.slashCommands && runtimeCached.capabilities.slashCommands.size > 0) {
-      availableSlashNames = new Set(runtimeCached.capabilities.slashCommands);
-      slashNamesSource = "session_init";
-    } else {
-      const slashResolution = await resolveAvailableSlashNames(workspace.root, settings, {
-        fetchSkills: (workspaceRoot, runtimeSettings) =>
-          fetchSkills(workspaceRoot, runtimeSettings, { buildQueryOptions, withTimeout })
+    const slashResolution = await resolveAvailableSlashNames(workspace.root, settings, {
+      fetchSkills: (workspaceRoot, runtimeSettings) =>
+        fetchSkills(workspaceRoot, runtimeSettings, { buildQueryOptions, withTimeout })
+    });
+    availableSlashNames = slashResolution.names;
+    slashNamesSource = slashResolution.source;
+    if (slashResolution.source === "cache_stale_on_error" || slashResolution.source === "unavailable") {
+      logTrace(traceId, "slash_names_resolution_degraded", {
+        workspaceId: workspace.id,
+        sessionId,
+        source: slashResolution.source,
+        error: slashResolution.error
       });
-      availableSlashNames = slashResolution.names;
-      slashNamesSource = slashResolution.source;
-      if (slashResolution.source === "cache_stale_on_error" || slashResolution.source === "unavailable") {
-        logTrace(traceId, "slash_names_resolution_degraded", {
-          workspaceId: workspace.id,
-          sessionId,
+      writeDebugSse(
+        res,
+        false,
+        settings.debugEnabled && settings.debugSseEnabled,
+        traceId,
+        "slash_names_resolution_degraded",
+        {
           source: slashResolution.source,
           error: slashResolution.error
-        });
-        writeDebugSse(
-          res,
-          false,
-          settings.debugEnabled && settings.debugSseEnabled,
-          traceId,
-          "slash_names_resolution_degraded",
-          {
-            source: slashResolution.source,
-            error: slashResolution.error
-          }
-        );
-      }
+        }
+      );
     }
   }
 
-  const enhanced = await enhancePromptWithDirectives(workspace.root, rawMessage, availableSlashNames, {
-    rewriteOwnedSlash: slashNamesSource !== "session_init"
-  });
+  const enhanced = await enhancePromptWithDirectives(workspace.root, rawMessage, availableSlashNames, { rewriteOwnedSlash: false });
   const slashRewritten =
     Boolean(enhanced.directives.slash?.name) &&
     Boolean(availableSlashNames && availableSlashNames.has(enhanced.directives.slash?.name || ""));
@@ -180,10 +172,6 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
   const gateEnabled = settings.permissionProfile === "standard" && settings.toolGateEnabled;
   const debugSseEnabled = settings.debugEnabled && settings.debugSseEnabled;
   const partId = `text-${randomUUID()}`;
-  if (!sessionRuntimeManager) {
-    res.status(503).json({ ok: false, error: "persistent session runtime is not enabled" });
-    return;
-  }
   const runtime: RuntimeFlags = { closed: false, doneSent: false };
   const turnTrace = createTurnTrace();
   const canUseToolHandler = buildCanUseToolHandler({
@@ -196,47 +184,6 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
     traceId,
     debugSseEnabled
   });
-
-  let runtimeTurnAcquired = false;
-  let acquired: ReturnType<typeof sessionRuntimeManager.acquireTurn>;
-  try {
-    acquired = sessionRuntimeManager.acquireTurn({
-      workspaceId: workspace.id,
-      sessionId,
-      createSession: () => {
-        const env = buildRuntimeEnv(settings);
-        const options = {
-          model: settings.model,
-          cwd: workspace.root,
-          env,
-          ...(settings.speedModeEnabled
-            ? { settingSources: [] as const, thinking: { type: "disabled" as const } }
-            : { settingSources: ["project"] as const }),
-          ...buildPermissionRuntimeOptions(settings),
-          canUseTool: canUseToolHandler
-        };
-        if (sdkSessionId) {
-          return unstable_v2_resumeSession(sdkSessionId, options);
-        }
-        return unstable_v2_createSession(options);
-      }
-    });
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    logTrace(traceId, "persistent_session_create_failed", { workspaceId: workspace.id, sessionId, error: msg });
-    res.status(500).json({ ok: false, error: msg });
-    return;
-  }
-  runtimeTurnAcquired = acquired.acquired;
-  if (!acquired.acquired) {
-    res.status(409).json({
-      ok: false,
-      error: "session is busy",
-      workspaceId: workspace.id,
-      id: sessionId
-    });
-    return;
-  }
 
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache, no-transform");
@@ -289,9 +236,7 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
   req.on("close", () => {
     runtime.closed = true;
     clearInterval(heartbeat);
-    if (!runtime.doneSent) {
-      sessionRuntimeManager.close(key);
-    }
+    if (activeQueries) activeQueries.delete(key);
     logTrace(traceId, "client_closed", { workspaceId: workspace.id, sessionId });
   });
 
@@ -300,15 +245,22 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
 
   try {
     let mcpTogglePromise: Promise<void> | null = null;
-    const runtimeSession = sessionRuntimeManager.get(key);
-    if (!runtimeSession) throw new Error("persistent session runtime missing");
-    const sessionLike = runtimeSession.session as unknown as {
+    const options = buildQueryOptions(workspace.root, settings, seededSdkSessionId, sdkSessionId, {
+      canUseTool: canUseToolHandler
+    });
+    const queryInstance = query({
+      prompt: promptForQuery,
+      options
+    });
+    const sessionLike = queryInstance as unknown as {
+      interrupt?: () => Promise<void>;
       mcpServerStatus?: () => Promise<unknown[]>;
       toggleMcpServer?: (name: string, enabled: boolean) => Promise<void>;
       accountInfo?: () => Promise<{ email?: string; organization?: string }>;
       supportedModels?: () => Promise<unknown[]>;
       initializationResult?: () => Promise<{ commands?: unknown[]; models?: unknown[] }>;
     };
+    activeQueries?.set(key, queryInstance as unknown as { mcpServerStatus: () => Promise<unknown[]>; interrupt: () => Promise<void> });
     if (settings.debugEnabled) {
       const caps = {
         hasInitializationResult: typeof sessionLike.initializationResult === "function",
@@ -401,7 +353,7 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
         });
     }
     const streamPromise = consumeQueryEvents({
-      eventStream: runtimeSession.session.stream(),
+      eventStream: queryInstance,
       key,
       partId,
       traceId,
@@ -412,18 +364,10 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
       sessionMap,
       sessionSeedMap,
       turnTrace,
-      stopOnResult: true,
-      onSdkInit: (init) => {
-        sessionRuntimeManager.setCapabilities(key, {
-          cwd: init.cwd,
-          slashCommands: init.slashCommands,
-          skills: init.skills
-        });
-      }
+      stopOnResult: true
     });
-    await runtimeSession.session.send(promptForQuery);
     const streamResult = await streamPromise;
-    writeDebugSse(res, runtime.closed, debugSseEnabled, traceId, "persistent_session_turn", {
+    writeDebugSse(res, runtime.closed, debugSseEnabled, traceId, "query_turn", {
       workspaceId: workspace.id,
       sessionId,
       hasResume: Boolean(sdkSessionId)
@@ -464,9 +408,11 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
       writeSseData(res, { type: "finish" });
       writeSseDone(res);
       runtime.doneSent = true;
+      activeQueries?.delete(key);
       clearInterval(heartbeat);
       res.end();
     }
+    queryInstance.close();
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     logTrace(traceId, "stream_error", { workspaceId: workspace.id, sessionId, error: msg, streamEventCount, deltaCount });
@@ -475,13 +421,12 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
       writeSseData(res, { type: "finish" });
       writeSseDone(res);
       runtime.doneSent = true;
+      activeQueries?.delete(key);
       clearInterval(heartbeat);
       res.end();
     }
   } finally {
-    if (runtimeTurnAcquired) {
-      sessionRuntimeManager.endTurn(key);
-    }
+    activeQueries?.delete(key);
     logTrace(traceId, "request_finished", {
       workspaceId: workspace.id,
       sessionId,

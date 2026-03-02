@@ -2,7 +2,7 @@ import { type Request, type Response } from "express";
 import { type ChatRoutesDeps, sessionKey } from "./chat-shared.js";
 import { handleChatUiRequest } from "./chat-ui.js";
 
-function registerChatStopRoute({ app, workspaceRegistry, sessionRuntimeManager }: ChatRoutesDeps): void {
+function registerChatStopRoute({ app, workspaceRegistry, sessionRuntimeManager, activeQueries }: ChatRoutesDeps): void {
   app.post("/api/chat/stop", async (req: Request, res: Response) => {
     const workspace = workspaceRegistry.requireWorkspace(req, res);
     if (!workspace) return;
@@ -14,13 +14,25 @@ function registerChatStopRoute({ app, workspaceRegistry, sessionRuntimeManager }
     }
 
     const key = sessionKey(workspace.id, sessionId);
+    let queryInterrupted = false;
+    const activeQuery = activeQueries?.get(key) || null;
+    if (activeQuery?.interrupt) {
+      try {
+        await activeQuery.interrupt();
+        queryInterrupted = true;
+      } catch {
+        // Ignore interrupt failures and keep fallback behavior.
+      } finally {
+        activeQueries?.delete(key);
+      }
+    }
     const runtimeClosed = sessionRuntimeManager?.close(key) === true;
     res.json({
       ok: true,
       workspaceId: workspace.id,
       id: sessionId,
-      stopped: runtimeClosed,
-      reason: runtimeClosed ? "runtime_closed" : "no_active_session"
+      stopped: queryInterrupted || runtimeClosed,
+      reason: queryInterrupted ? "query_interrupted" : runtimeClosed ? "runtime_closed" : "no_active_session"
     });
   });
 }

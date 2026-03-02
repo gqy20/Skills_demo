@@ -29,6 +29,7 @@ const workspaceRegistry = new WorkspaceRegistry();
 const pendingStore = new PendingRequestStore();
 const sessionMap = new Map<string, string>();
 const sessionSeedMap = new Map<string, string>();
+const activeQueries = new Map<string, { mcpServerStatus: () => Promise<unknown[]>; interrupt: () => Promise<void> }>();
 const sessionRuntimeManager = new SessionRuntimeManager({
   maxSessions: Number(process.env.CHAT_PERSISTENT_MAX_SESSIONS || 100),
   idleTtlMs: Number(process.env.CHAT_PERSISTENT_IDLE_TTL_MS || 10 * 60_000)
@@ -63,6 +64,7 @@ registerSystemRoutes({
   app,
   workspaceRegistry,
   defaultSettings,
+  activeQueries,
   sessionRuntimeManager
 });
 
@@ -73,6 +75,7 @@ registerChatRoutes({
   defaultSettings,
   sessionMap,
   sessionSeedMap,
+  activeQueries,
   sessionRuntimeManager
 });
 
