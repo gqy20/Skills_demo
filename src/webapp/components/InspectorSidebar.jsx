@@ -19,12 +19,6 @@ export default function InspectorSidebar({
   onOpenSettings = () => {},
   sidebarSections,
   toggleSidebarSection,
-  files,
-  filteredFiles,
-  fileFilter,
-  setFileFilter,
-  openFile,
-  openedFilePath,
   pendingState,
   blockingPending,
   diagnostics,
@@ -196,47 +190,6 @@ export default function InspectorSidebar({
                 </li>
               ))}
               {mcpItems.length === 0 && !mcpCatalog.loading && <li className="sessions-empty">未发现 MCP 配置</li>}
-            </ul>
-          </>
-        )}
-      </section>
-
-      <section className="panel panel-collapsible">
-        <button type="button" className="panel-collapse-btn" onClick={() => toggleSidebarSection("files")}>
-          <h2>Files</h2>
-          <span>{sidebarSections.files ? "收起" : "展开"}</span>
-        </button>
-        {sidebarSections.files && (
-          <>
-            <div className="panel-toolbar">
-              <p className="session-tag">工作区文件 {files.length} 项</p>
-              <input
-                className="panel-filter-input"
-                value={fileFilter}
-                onChange={(event) => setFileFilter(event.target.value)}
-                placeholder="筛选文件"
-              />
-            </div>
-            <ul className="files-list">
-              {filteredFiles.map((file) => (
-                <li key={file.path}>
-                  {file.type === "file" ? (
-                    <button
-                      type="button"
-                      className={`file-item-btn ${openedFilePath === file.path ? "is-active" : ""}`}
-                      onClick={() => openFile(file.path)}
-                    >
-                      <span className="files-name" style={{ paddingLeft: `${(file.level || 0) * 14}px` }}>
-                        · {file.name}
-                      </span>
-                    </button>
-                  ) : (
-                    <span className="files-name files-dir" style={{ paddingLeft: `${(file.level || 0) * 14}px` }}>
-                      ▸ {file.name}
-                    </span>
-                  )}
-                </li>
-              ))}
             </ul>
           </>
         )}

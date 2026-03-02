@@ -7,20 +7,20 @@
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-columns: 260px minmax(0, 1fr);
   gap: 0;
 }
 
 .workspace.session-sidebar-collapsed {
-  grid-template-columns: 52px minmax(0, 1fr);
+  grid-template-columns: 64px minmax(0, 1fr);
 }
 
 .workspace.workspace-with-sidebar {
-  grid-template-columns: 220px minmax(0, 1fr) minmax(300px, 340px);
+  grid-template-columns: 260px minmax(0, 1fr) minmax(300px, 340px);
 }
 
 .workspace.workspace-with-sidebar.session-sidebar-collapsed {
-  grid-template-columns: 52px minmax(0, 1fr) minmax(300px, 340px);
+  grid-template-columns: 64px minmax(0, 1fr) minmax(300px, 340px);
 }
 
 .chat-shell,

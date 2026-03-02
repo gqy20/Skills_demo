@@ -61,8 +61,6 @@ export default function App() {
   const [sessionSidebarCollapsed, setSessionSidebarCollapsed] = useState(false);
   const [sidebarSections, setSidebarSections] = useState({
     mcps: true,
-    sessions: true,
-    files: false,
     pending: false,
     events: false
   });
@@ -443,6 +441,11 @@ export default function App() {
           blockingPending={blockingPending}
           collapsed={sessionSidebarCollapsed}
           onToggleCollapse={() => setSessionSidebarCollapsed((v) => !v)}
+          filteredFiles={filteredFiles}
+          fileFilter={fileFilter}
+          setFileFilter={setFileFilter}
+          openFile={(filePath) => requestOpenFile(filePath).catch(() => {})}
+          openedFilePath={openedFile?.path || ""}
         />
         <section className="chat-shell">
           <ChatHeader
@@ -571,12 +574,6 @@ export default function App() {
           onOpenSettings={() => setSettingsOpen(true)}
           sidebarSections={sidebarSections}
           toggleSidebarSection={toggleSidebarSection}
-          files={files}
-          filteredFiles={filteredFiles}
-          fileFilter={fileFilter}
-          setFileFilter={setFileFilter}
-          openFile={(filePath) => requestOpenFile(filePath).catch(() => {})}
-          openedFilePath={openedFile?.path || ""}
           pendingState={pendingState}
           blockingPending={blockingPending}
           diagnostics={diagnostics}
