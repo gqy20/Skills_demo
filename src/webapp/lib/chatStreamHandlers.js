@@ -153,6 +153,93 @@ export function handleChatStreamPart(part, deps) {
     return "handled";
   }
 
+  if (part?.type === "data-task-lifecycle") {
+    const kind = String(part?.data?.kind || "").trim();
+    const status = String(part?.data?.status || "").trim().toLowerCase();
+    const taskId = String(part?.data?.taskId || part?.data?.toolUseId || "task-unknown").trim();
+    const taskType = String(part?.data?.taskType || "").trim();
+    const description = String(part?.data?.description || "").trim();
+    const summary = String(part?.data?.summary || "").trim();
+    const lastToolName = String(part?.data?.lastToolName || "").trim();
+    const taskLabel = taskType || description || taskId;
+    const nowAt = Number(part?.data?.at || now || Date.now());
+    const finishedStatus =
+      status === "completed" || status === "failed" || status === "stopped"
+        ? status
+        : kind === "notification"
+          ? "completed"
+          : "";
+    const actionText =
+      kind === "started"
+        ? `任务启动：${taskLabel}`
+        : kind === "progress"
+          ? `任务进展：${description || lastToolName || taskId}`
+          : `任务${finishedStatus || "结束"}：${summary || taskLabel}`;
+
+    setExecutionState((prev) => {
+      const oldRuntime = prev.taskRuntime || {
+        tasks: {},
+        running: 0,
+        completed: 0,
+        failed: 0,
+        stopped: 0,
+        parallelPeak: 0
+      };
+      const oldTasks = oldRuntime.tasks || {};
+      const oldTask = oldTasks[taskId] || {
+        taskId,
+        taskType: "",
+        description: "",
+        status: "running",
+        startedAt: nowAt,
+        updatedAt: nowAt,
+        finishedAt: 0,
+        lastToolName: "",
+        toolUseId: ""
+      };
+      const nextStatus = finishedStatus || "running";
+      const nextTask = {
+        ...oldTask,
+        taskType: taskType || oldTask.taskType || "",
+        description: description || oldTask.description || "",
+        status: nextStatus,
+        updatedAt: nowAt,
+        finishedAt: nextStatus === "running" ? oldTask.finishedAt || 0 : nowAt,
+        lastToolName: lastToolName || oldTask.lastToolName || "",
+        toolUseId: String(part?.data?.toolUseId || oldTask.toolUseId || "")
+      };
+      const nextTasks = { ...oldTasks, [taskId]: nextTask };
+      const all = Object.values(nextTasks).sort((a, b) => Number(b?.updatedAt || 0) - Number(a?.updatedAt || 0));
+      const trimmed = all.slice(0, 24);
+      const trimmedMap = {};
+      for (const item of trimmed) trimmedMap[item.taskId] = item;
+      const running = trimmed.filter((item) => item.status === "running").length;
+      const completed = trimmed.filter((item) => item.status === "completed").length;
+      const failed = trimmed.filter((item) => item.status === "failed").length;
+      const stopped = trimmed.filter((item) => item.status === "stopped").length;
+      return {
+        ...prev,
+        phase: kind === "started" || kind === "progress" ? "planning" : prev.phase,
+        phaseDetail:
+          kind === "started" || kind === "progress"
+            ? `任务执行中：${description || taskType || taskId}`
+            : prev.phaseDetail || "",
+        lastActivityAt: now,
+        taskRuntime: {
+          tasks: trimmedMap,
+          running,
+          completed,
+          failed,
+          stopped,
+          parallelPeak: Math.max(Number(oldRuntime.parallelPeak || 0), running)
+        },
+        actions: [...(prev.actions || []).slice(-4), actionText],
+        dismissNoDelta: false
+      };
+    });
+    return "handled";
+  }
+
   if (part?.type === "data-agent-activity") {
     const agentType = String(part?.data?.agentType || "").trim();
     const agentId = String(part?.data?.agentId || "").trim();

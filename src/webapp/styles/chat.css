@@ -318,6 +318,82 @@
   padding-right: 2px;
 }
 
+.exec-task-strip {
+  border: 1px solid #e6ebf2;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.86) 0%, rgba(241, 245, 249, 0.72) 100%);
+  padding: 6px 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.exec-task-summary {
+  font-size: var(--fs-12);
+  color: #334155;
+}
+
+.exec-task-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.exec-task-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  border: 1px solid #d9e2ee;
+  background: #ffffff;
+  color: #334155;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 8px;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exec-task-pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #64748b;
+  flex-shrink: 0;
+}
+
+.exec-task-pill.is-running {
+  border-color: rgba(14, 116, 144, 0.28);
+  color: #0f766e;
+}
+
+.exec-task-pill.is-running .exec-task-pill-dot {
+  background: #10a37f;
+  box-shadow: 0 0 0 2px rgba(16, 163, 127, 0.14);
+}
+
+.exec-task-pill.is-completed {
+  border-color: rgba(5, 150, 105, 0.24);
+}
+
+.exec-task-pill.is-completed .exec-task-pill-dot {
+  background: #059669;
+}
+
+.exec-task-pill.is-failed {
+  border-color: rgba(220, 38, 38, 0.24);
+  color: #991b1b;
+}
+
+.exec-task-pill.is-failed .exec-task-pill-dot {
+  background: #dc2626;
+}
+
+.exec-task-pill.is-stopped .exec-task-pill-dot {
+  background: #f59e0b;
+}
+
 .exec-compact-main {
   flex: 1;
   min-width: 0;
@@ -364,6 +440,167 @@
 .exec-hint-actions {
   display: flex;
   gap: 8px;
+}
+
+.exec-task-lanes {
+  display: grid;
+  gap: 6px;
+}
+
+.exec-task-gantt {
+  border: 1px solid #e4ebf3;
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 7px 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.exec-task-gantt-head {
+  font-size: 11px;
+  font-weight: 650;
+  color: #334155;
+}
+
+.exec-task-gantt-grid {
+  display: grid;
+  gap: 6px;
+}
+
+.exec-task-gantt-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 32%) 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.exec-task-gantt-label {
+  font-size: 11px;
+  color: #475569;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.exec-task-gantt-track {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: #edf2f7;
+  overflow: hidden;
+}
+
+.exec-task-gantt-bar {
+  position: absolute;
+  top: 1px;
+  height: 8px;
+  border-radius: 999px;
+  background: #94a3b8;
+}
+
+.exec-task-gantt-bar.is-running {
+  background: linear-gradient(90deg, #10a37f 0%, #36c2a0 100%);
+  animation: exec-running-shimmer 1.25s linear infinite;
+}
+
+.exec-task-gantt-bar.is-completed {
+  background: #059669;
+}
+
+.exec-task-gantt-bar.is-failed {
+  background: #dc2626;
+}
+
+.exec-task-gantt-bar.is-stopped {
+  background: #f59e0b;
+}
+
+@keyframes exec-running-shimmer {
+  0% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.12);
+  }
+  100% {
+    filter: brightness(1);
+  }
+}
+
+.exec-task-lane {
+  border: 1px solid #e3e9f2;
+  border-left-width: 3px;
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 6px 8px;
+  display: grid;
+  gap: 4px;
+}
+
+.exec-task-lane.is-running {
+  border-left-color: #10a37f;
+}
+
+.exec-task-lane.is-completed {
+  border-left-color: #059669;
+}
+
+.exec-task-lane.is-failed {
+  border-left-color: #dc2626;
+}
+
+.exec-task-lane.is-stopped {
+  border-left-color: #f59e0b;
+}
+
+.exec-task-lane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.exec-task-lane-title {
+  font-size: var(--fs-12);
+  color: #1f2937;
+  font-weight: 600;
+}
+
+.exec-task-lane-status {
+  border: 1px solid #dbe3ee;
+  border-radius: 999px;
+  padding: 2px 6px;
+  font-size: 10px;
+  line-height: 1;
+  color: #475569;
+  background: #fff;
+  text-transform: uppercase;
+}
+
+.exec-task-lane-status.is-running {
+  color: #0f766e;
+  border-color: rgba(16, 163, 127, 0.3);
+}
+
+.exec-task-lane-status.is-completed {
+  color: #047857;
+  border-color: rgba(5, 150, 105, 0.25);
+}
+
+.exec-task-lane-status.is-failed {
+  color: #991b1b;
+  border-color: rgba(220, 38, 38, 0.24);
+}
+
+.exec-task-lane-status.is-stopped {
+  color: #92400e;
+  border-color: rgba(245, 158, 11, 0.24);
+}
+
+.exec-task-lane-detail {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.35;
 }
 
 .hook-timeline {

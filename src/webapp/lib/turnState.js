@@ -31,6 +31,14 @@ export function buildQueuedExecutionState(now) {
     currentTool: "",
     toolElapsedSeconds: 0,
     lastDeltaAt: now,
+    taskRuntime: {
+      tasks: {},
+      running: 0,
+      completed: 0,
+      failed: 0,
+      stopped: 0,
+      parallelPeak: 0
+    },
     actions: [],
     warnings: [],
     dismissNoDelta: false

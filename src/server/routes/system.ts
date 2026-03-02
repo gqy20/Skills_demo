@@ -119,7 +119,7 @@ export function registerSystemRoutes({
   const mcpProbeTtlMsRaw = Number(process.env.AGENT_WEB_MCP_PROBE_TTL_MS || "");
   const mcpProbeTtlMs = Number.isFinite(mcpProbeTtlMsRaw) && mcpProbeTtlMsRaw > 0 ? Math.floor(mcpProbeTtlMsRaw) : 60_000;
   const agentsTtlMsRaw = Number(process.env.AGENT_WEB_AGENTS_TTL_MS || "");
-  const agentsTtlMs = Number.isFinite(agentsTtlMsRaw) && agentsTtlMsRaw > 0 ? Math.floor(agentsTtlMsRaw) : 120_000;
+  const agentsTtlMs = Number.isFinite(agentsTtlMsRaw) && agentsTtlMsRaw > 0 ? Math.floor(agentsTtlMsRaw) : 3_000;
   const mcpAutoRefreshEnabled = process.env.AGENT_WEB_MCP_AUTO_REFRESH !== "0";
 
   const settingsEnvValue = (

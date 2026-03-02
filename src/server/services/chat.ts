@@ -405,6 +405,36 @@ export function extractSdkLifecycle(event: SDKMessage): Record<string, unknown> 
       };
     }
 
+    if (event.subtype === "task_started") {
+      return {
+        category: "task_started",
+        taskId: event.task_id || "",
+        taskType: event.task_type || "",
+        description: event.description || "",
+        toolUseId: event.tool_use_id || ""
+      };
+    }
+
+    if (event.subtype === "task_progress") {
+      return {
+        category: "task_progress",
+        taskId: event.task_id || "",
+        description: event.description || "",
+        toolUseId: event.tool_use_id || "",
+        lastToolName: event.last_tool_name || ""
+      };
+    }
+
+    if (event.subtype === "task_notification") {
+      return {
+        category: "task_notification",
+        taskId: event.task_id || "",
+        status: event.status || "",
+        summary: event.summary || "",
+        toolUseId: event.tool_use_id || ""
+      };
+    }
+
     return {
       category: "system",
       subtype: event.subtype || "unknown"
@@ -416,7 +446,8 @@ export function extractSdkLifecycle(event: SDKMessage): Record<string, unknown> 
       category: "tool_progress",
       toolName: event.tool_name,
       toolUseId: event.tool_use_id,
-      elapsedSeconds: event.elapsed_time_seconds
+      elapsedSeconds: event.elapsed_time_seconds,
+      taskId: event.task_id || ""
     };
   }
 

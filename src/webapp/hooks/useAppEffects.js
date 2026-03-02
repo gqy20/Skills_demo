@@ -52,17 +52,10 @@ export function useAppEffects({
     const timer = setInterval(() => {
       if (document.hidden) return;
       loadSkills().catch(() => {});
+      loadAgents().catch(() => {});
     }, 3000);
     return () => clearInterval(timer);
-  }, [loadSkills]);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if (document.hidden) return;
-      loadAgents().catch(() => {});
-    }, 60000);
-    return () => clearInterval(timer);
-  }, [loadAgents]);
+  }, [loadAgents, loadSkills]);
 
   useEffect(() => {
     const el = timelineRef.current;

@@ -103,6 +103,7 @@ export async function consumeQueryEvents({
   let deltaCount = 0;
   let assistantText = "";
   let responsePhaseMarked = false;
+  let taskStartedCount = 0;
   const streamStartedAt = Date.now();
   let firstTextTimeoutNotified = false;
   writeRuntimePhase(res, { phase: "planning", detail: "正在初始化代理与上下文", etaSeconds: 6, at: streamStartedAt });
@@ -264,6 +265,7 @@ export async function consumeQueryEvents({
 
       if (lifecycle.category === "tool_progress") {
         const label = normalizeToolLabel(lifecycle.toolName || "");
+        const taskId = String(lifecycle.taskId || "");
         const useId = String(lifecycle.toolUseId || "");
         const old = turnTrace.tools[label] || { count: 0, elapsedSeconds: 0 };
         const isNewUse = useId ? !turnTrace._seenUseIds.has(useId) : old.count === 0;
@@ -297,6 +299,19 @@ export async function consumeQueryEvents({
             elapsedSeconds: lifecycle.elapsedSeconds ?? null
           }
         });
+        if (taskId) {
+          writeSseData(res, {
+            type: "data-task-lifecycle",
+            data: {
+              kind: "progress",
+              taskId,
+              description: `工具执行中：${String(lifecycle.toolName || "tool")}`,
+              lastToolName: String(lifecycle.toolName || ""),
+              toolUseId: String(lifecycle.toolUseId || ""),
+              at: Date.now()
+            }
+          });
+        }
         writeHookStage(res, {
           stage: "tool_progress",
           at: Date.now(),
@@ -336,6 +351,92 @@ export async function consumeQueryEvents({
           stage: "tool_summary",
           at: Date.now(),
           detail: summary
+        });
+      }
+
+      if (lifecycle.category === "task_started") {
+        taskStartedCount += 1;
+        const taskId = String(lifecycle.taskId || lifecycle.toolUseId || `task-${taskStartedCount}`);
+        const taskType = String(lifecycle.taskType || "").trim();
+        const description = String(lifecycle.description || "").trim();
+        const detail = description || `子任务 #${taskStartedCount}`;
+        writeSseData(res, {
+          type: "data-task-lifecycle",
+          data: {
+            kind: "started",
+            taskId,
+            taskType,
+            description,
+            toolUseId: String(lifecycle.toolUseId || ""),
+            at: Date.now()
+          }
+        });
+        writeRuntimePhase(res, {
+          phase: "planning",
+          detail: `任务已启动${taskType ? `（${taskType}）` : ""}`,
+          etaSeconds: 18
+        });
+        onRuntimePhase?.({
+          phase: "planning",
+          detail: `任务已启动${taskType ? `（${taskType}）` : ""}`,
+          etaSeconds: 18
+        });
+        writeRuntimeActivity(res, `任务已启动 #${taskStartedCount}：${detail}`);
+        onRuntimeActivity?.({ detail: `任务已启动 #${taskStartedCount}：${detail}` });
+        writeHookStage(res, {
+          stage: "task_started",
+          at: Date.now(),
+          detail
+        });
+      }
+
+      if (lifecycle.category === "task_progress") {
+        const taskId = String(lifecycle.taskId || lifecycle.toolUseId || "task-unknown");
+        const description = String(lifecycle.description || "").trim();
+        const lastTool = String(lifecycle.lastToolName || "").trim();
+        const detail = description || (lastTool ? `最近工具：${lastTool}` : "任务执行中");
+        writeSseData(res, {
+          type: "data-task-lifecycle",
+          data: {
+            kind: "progress",
+            taskId,
+            description,
+            lastToolName: lastTool,
+            toolUseId: String(lifecycle.toolUseId || ""),
+            at: Date.now()
+          }
+        });
+        writeRuntimeActivity(res, `任务进展：${detail}`);
+        onRuntimeActivity?.({ detail: `任务进展：${detail}` });
+        writeHookStage(res, {
+          stage: "task_progress",
+          at: Date.now(),
+          detail
+        });
+      }
+
+      if (lifecycle.category === "task_notification") {
+        const taskId = String(lifecycle.taskId || lifecycle.toolUseId || "task-unknown");
+        const status = String(lifecycle.status || "").trim();
+        const summary = String(lifecycle.summary || "").trim();
+        const detail = `任务${status || "结束"}${summary ? `：${summary}` : ""}`;
+        writeSseData(res, {
+          type: "data-task-lifecycle",
+          data: {
+            kind: "notification",
+            taskId,
+            status,
+            summary,
+            toolUseId: String(lifecycle.toolUseId || ""),
+            at: Date.now()
+          }
+        });
+        writeRuntimeActivity(res, detail);
+        onRuntimeActivity?.({ detail });
+        writeHookStage(res, {
+          stage: "task_notification",
+          at: Date.now(),
+          detail
         });
       }
 

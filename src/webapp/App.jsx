@@ -88,6 +88,7 @@ export default function App() {
     currentTool: "",
     toolElapsedSeconds: 0,
     lastDeltaAt: 0,
+    taskRuntime: { tasks: {}, running: 0, completed: 0, failed: 0, stopped: 0, parallelPeak: 0 },
     actions: [],
     dismissNoDelta: false
   });
@@ -527,6 +528,7 @@ export default function App() {
                   settings={settings}
                   mcpRuntimeStatus={effectiveMcpRuntimeStatus}
                   mcpProbeRuntime={effectiveMcpProbeRuntime}
+                  skillUsageList={skillUsageList}
                   hookTimeline={hookTimeline}
                   showNoDeltaHint={showNoDeltaHint}
                   nowTick={nowTick}

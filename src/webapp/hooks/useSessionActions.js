@@ -76,6 +76,7 @@ export function useSessionActions({
           currentTool: "",
           toolElapsedSeconds: 0,
           lastDeltaAt: 0,
+          taskRuntime: { tasks: {}, running: 0, completed: 0, failed: 0, stopped: 0, parallelPeak: 0 },
           actions: [],
           dismissNoDelta: false
         });
@@ -124,6 +125,7 @@ export function useSessionActions({
       currentTool: "",
       toolElapsedSeconds: 0,
       lastDeltaAt: 0,
+      taskRuntime: { tasks: {}, running: 0, completed: 0, failed: 0, stopped: 0, parallelPeak: 0 },
       actions: [],
       dismissNoDelta: false
     });
