@@ -1702,14 +1702,16 @@
   align-items: center;
   justify-content: center;
   box-shadow: none;
-  opacity: 0;
-  pointer-events: none;
+  opacity: 0.58;
+  pointer-events: auto;
   transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
 }
 
-.session-item-wrap:hover .session-delete-btn {
+.session-item-wrap:hover .session-delete-btn,
+.session-item-wrap:focus-within .session-delete-btn,
+.session-item-wrap.is-active .session-delete-btn,
+.session-item-wrap.is-deleting .session-delete-btn {
   opacity: 1;
-  pointer-events: auto;
 }
 
 .session-delete-btn:hover {

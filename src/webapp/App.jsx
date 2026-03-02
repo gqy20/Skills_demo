@@ -59,6 +59,7 @@ export default function App() {
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionsError, setSessionsError] = useState("");
   const [openingSessionId, setOpeningSessionId] = useState("");
+  const [deletingSessionId, setDeletingSessionId] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sessionSidebarCollapsed, setSessionSidebarCollapsed] = useState(false);
   const [skillExpanded, setSkillExpanded] = useState({});
@@ -280,16 +281,29 @@ export default function App() {
     setHookTimeline
   });
   const deleteSession = async (sessionId) => {
-    if (!sessionId) return;
+    if (!sessionId || !currentWorkspaceId || deletingSessionId === sessionId) return;
+    setDeletingSessionId(sessionId);
     try {
-      await fetch(`/api/sessions/${encodeURIComponent(sessionId)}?workspaceId=${encodeURIComponent(currentWorkspaceId)}`, {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}?workspaceId=${encodeURIComponent(currentWorkspaceId)}`, {
         method: "DELETE"
       });
-    } catch {
-      // ignore
+      if (!res.ok) {
+        let body = null;
+        try {
+          body = await res.json();
+        } catch {
+          body = null;
+        }
+        throw new Error(parseError(body) || `删除失败 (${res.status})`);
+      }
+      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+      if (currentSessionId === sessionId) startNewSession({ force: true });
+      setSessionsError("");
+    } catch (error) {
+      setSessionsError(parseError(error));
+    } finally {
+      setDeletingSessionId("");
     }
-    setSessions((prev) => prev.filter((s) => s.id !== sessionId));
-    if (currentSessionId === sessionId) startNewSession();
   };
   const { openFile, requestOpenFile, saveOpenedFile } = useFileEditorActions({
     currentWorkspaceId,
@@ -486,6 +500,7 @@ export default function App() {
           onOpenSession={openSession}
           onNewSession={startNewSession}
           onDeleteSession={deleteSession}
+          deletingSessionId={deletingSessionId}
           isStreaming={isStreaming}
           blockingPending={blockingPending}
           collapsed={sessionSidebarCollapsed}

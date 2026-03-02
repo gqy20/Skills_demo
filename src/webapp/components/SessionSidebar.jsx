@@ -43,6 +43,7 @@ export default function SessionSidebar({
   onOpenSession,
   onNewSession,
   onDeleteSession,
+  deletingSessionId = "",
   isStreaming,
   blockingPending,
   collapsed = false,
@@ -247,8 +248,9 @@ export default function SessionSidebar({
                   {items.map((s) => {
                     const isActive = s.id === currentSessionId;
                     const isOpening = s.id === openingSessionId;
+                    const isDeleting = s.id === deletingSessionId;
                     return (
-                      <div key={s.id} className="session-item-wrap">
+                      <div key={s.id} className={`session-item-wrap ${isActive ? "is-active" : ""} ${isDeleting ? "is-deleting" : ""}`}>
                         <button
                           type="button"
                           className={`session-item ${isActive ? "is-active" : ""} ${isOpening ? "is-opening" : ""}`}
@@ -264,10 +266,10 @@ export default function SessionSidebar({
                         <button
                           type="button"
                           className="session-delete-btn"
-                          onClick={(e) => { e.stopPropagation(); onDeleteSession?.(s.id); }}
-                          title="删除对话"
+                          onClick={(e) => { e.stopPropagation(); if (!isDeleting) onDeleteSession?.(s.id); }}
+                          title={isDeleting ? "删除中..." : "删除对话"}
                           aria-label="删除对话"
-                          tabIndex={-1}
+                          disabled={isDeleting}
                         >
                           <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
                             <path d="M2 2l9 9M11 2l-9 9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>

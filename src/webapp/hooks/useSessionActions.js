@@ -105,8 +105,9 @@ export function useSessionActions({
     ]
   );
 
-  const startNewSession = useCallback(() => {
-    if (isStreaming || blockingPending) return;
+  const startNewSession = useCallback((options = {}) => {
+    const force = options?.force === true;
+    if (!force && (isStreaming || blockingPending)) return;
     setCurrentSessionId(null);
     setMessages([]);
     setEvents([]);
