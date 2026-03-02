@@ -975,6 +975,53 @@
   color: #475569;
 }
 
+.settings-key-preview {
+  margin-top: -4px;
+  margin-bottom: 6px;
+}
+
+.settings-plan-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.settings-plan-row > select {
+  flex: 1;
+  min-width: 220px;
+}
+
+.settings-plan-row .sidebar-mini-btn {
+  border-radius: 8px;
+  padding: 5px 10px;
+}
+
+.settings-model-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.settings-model-pill {
+  border: 1px solid #d9e0ea;
+  background: #ffffff;
+  color: #334155;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  box-shadow: none;
+}
+
+.settings-model-pill.is-active {
+  border-color: rgba(16, 163, 127, 0.4);
+  background: rgba(16, 163, 127, 0.12);
+  color: #0f766e;
+}
+
 .settings-inline-meta {
   display: flex;
   flex-wrap: wrap;

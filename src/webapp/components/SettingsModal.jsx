@@ -3,6 +3,114 @@ import { inspectEnvText, parseEnvText } from "../lib/chatUtils.js";
 
 const BUSINESS_ENV_KEYS = ["MINERU_API_KEY", "PDF_ENABLE_PARALLEL", "PDF_MAX_WORKERS"];
 const BUSINESS_ENV_PREFIXES = ["MINERU", "PDF"];
+const CODING_PLAN_META_KEY = "AGENT_WEB_CODING_PLANS_META";
+const CODING_PLAN_ACTIVE_KEY = "AGENT_WEB_ACTIVE_CODING_PLAN";
+const CODING_PLAN_TOKENS_KEY = "AGENT_WEB_CODING_PLANS_TOKENS";
+const CODING_PLAN_PRESETS = [
+  {
+    key: "minimax",
+    label: "MiniMax",
+    planNamePrefix: "MiniMax",
+    envKey: "ANTHROPIC_BASE_URL",
+    baseUrl: "https://api.minimaxi.com/anthropic",
+    model: "MiniMax-M2.5",
+    models: ["MiniMax-M2.5", "MiniMax-M2.5-highspeed", "MiniMax-M2.1", "MiniMax-M2.1-highspeed", "MiniMax-M2"]
+  },
+  {
+    key: "zhipu",
+    label: "智谱 (Zhipu)",
+    planNamePrefix: "Zhipu",
+    envKey: "ANTHROPIC_BASE_URL",
+    baseUrl: "https://open.bigmodel.cn/api/anthropic",
+    model: "glm-5",
+    models: ["glm-5", "glm-4.7", "glm-4.5-air", "glm-4.5-flash"]
+  },
+  {
+    key: "dashscope",
+    label: "阿里云百炼",
+    planNamePrefix: "DashScope",
+    envKey: "ANTHROPIC_BASE_URL",
+    baseUrl: "https://coding.dashscope.aliyuncs.com/apps/anthropic",
+    model: "qwen3-coder-plus",
+    models: ["qwen3-coder-plus", "qwen3-coder-flash", "qwen3-max", "qwen-plus", "qwen-flash"]
+  },
+  {
+    key: "volc-anthropic",
+    label: "火山方舟",
+    planNamePrefix: "Volc",
+    envKey: "ANTHROPIC_BASE_URL",
+    baseUrl: "https://ark.cn-beijing.volces.com/api/coding",
+    model: "Doubao-Seed-Code",
+    models: ["Doubao-Seed-Code", "DeepSeek-V3.2", "Kimi-K2.5", "Kimi-K2", "GLM-4.7"]
+  }
+];
+
+function parseCodingPlans(raw) {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => {
+        const id = String(item?.id || "").trim();
+        const name = String(item?.name || "").trim();
+        const baseUrl = String(item?.baseUrl || "").trim();
+        const model = String(item?.model || "").trim();
+        if (!id || !name || !baseUrl || !model) return null;
+        return { id, name, baseUrl, model };
+      })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function parseCodingPlanTokens(raw) {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const out = {};
+    for (const [id, token] of Object.entries(parsed)) {
+      const key = String(id || "").trim();
+      const value = String(token || "").trim();
+      if (key && value) out[key] = value;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function stringifyEnvMap(map) {
+  return Object.entries(map)
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+}
+
+function nextPlanName(plans, prefix = "Plan") {
+  const normalizedPrefix = String(prefix || "Plan").trim() || "Plan";
+  const names = (Array.isArray(plans) ? plans : []).map((item) => String(item?.name || "").trim());
+  let maxIndex = 0;
+  for (const name of names) {
+    if (!name.startsWith(normalizedPrefix)) continue;
+    const suffix = name.slice(normalizedPrefix.length);
+    const num = Number.parseInt(suffix, 10);
+    if (Number.isFinite(num) && num > maxIndex) maxIndex = num;
+  }
+  return `${normalizedPrefix}${maxIndex + 1}`;
+}
+
+function maskTokenPreview(token) {
+  const raw = String(token || "").trim();
+  if (!raw) return "";
+  if (raw.length <= 6) return `${raw[0] || "*"}***${raw[raw.length - 1] || "*"}`;
+  return `${raw.slice(0, 3)}...${raw.slice(-3)}`;
+}
+
+function isPlanInternalKey(key) {
+  return key === CODING_PLAN_META_KEY || key === CODING_PLAN_ACTIVE_KEY || key === CODING_PLAN_TOKENS_KEY;
+}
 
 export default function SettingsModal({
   open,
@@ -76,6 +184,7 @@ export default function SettingsModal({
     const businessPairs = [];
     const otherPairs = [];
     for (const [key, value] of Object.entries(map)) {
+      if (isPlanInternalKey(key)) continue;
       if (isMcpKey(key)) mcpPairs.push([key, value]);
       else if (isBusinessKey(key)) businessPairs.push([key, value]);
       else otherPairs.push([key, value]);
@@ -100,6 +209,10 @@ export default function SettingsModal({
       const input = parseEnvText(text);
       const next = {};
       for (const [key, value] of Object.entries(current)) {
+        if (isPlanInternalKey(key)) {
+          next[key] = value;
+          continue;
+        }
         if (
           target === "mcp"
             ? !isMcpKey(key)
@@ -111,6 +224,7 @@ export default function SettingsModal({
         }
       }
       for (const [key, value] of Object.entries(input)) {
+        if (isPlanInternalKey(key)) continue;
         if (
           target === "mcp"
             ? isMcpKey(key)
@@ -178,6 +292,26 @@ export default function SettingsModal({
   );
   const openSnapshotRef = React.useRef("");
   const [syncNotice, setSyncNotice] = React.useState({ type: "", message: "" });
+  const activePreset = React.useMemo(
+    () => CODING_PLAN_PRESETS.find((item) => item.baseUrl === String(settings.baseUrl || "").trim()) || null,
+    [settings.baseUrl]
+  );
+  const suggestedModels = React.useMemo(() => {
+    if (activePreset?.models?.length) return activePreset.models;
+    return Array.from(new Set(CODING_PLAN_PRESETS.flatMap((item) => item.models || [])));
+  }, [activePreset]);
+  const modelMatchesPreset = React.useMemo(
+    () => suggestedModels.includes(String(settings.model || "").trim()),
+    [settings.model, suggestedModels]
+  );
+  const savedPlans = React.useMemo(() => parseCodingPlans(runtimeEnvMap[CODING_PLAN_META_KEY]), [runtimeEnvMap]);
+  const activePlanId = String(runtimeEnvMap[CODING_PLAN_ACTIVE_KEY] || "").trim();
+  const planTokens = React.useMemo(() => parseCodingPlanTokens(runtimeEnvMap[CODING_PLAN_TOKENS_KEY]), [runtimeEnvMap]);
+  const selectedPlan = React.useMemo(
+    () => savedPlans.find((plan) => plan.id === activePlanId) || null,
+    [activePlanId, savedPlans]
+  );
+  const activeTokenPreview = React.useMemo(() => maskTokenPreview(settings.authToken), [settings.authToken]);
 
   React.useEffect(() => {
     if (open) {
@@ -206,6 +340,82 @@ export default function SettingsModal({
     const shouldDiscard = window.confirm("确认放弃未保存改动并关闭吗？");
     if (shouldDiscard) onClose();
   }, [dirty, onClose, onSave, settings]);
+
+  const handleAuthTokenChange = React.useCallback(
+    (nextTokenRaw) => {
+      setSettings((prev) => {
+        const nextToken = String(nextTokenRaw || "");
+        if (!activePlanId) {
+          return { ...prev, authToken: nextToken };
+        }
+        const envMap = parseEnvText(prev.runtimeEnvText);
+        const tokens = parseCodingPlanTokens(envMap[CODING_PLAN_TOKENS_KEY]);
+        const normalized = nextToken.trim();
+        if (normalized) tokens[activePlanId] = normalized;
+        else delete tokens[activePlanId];
+        if (Object.keys(tokens).length > 0) envMap[CODING_PLAN_TOKENS_KEY] = JSON.stringify(tokens);
+        else delete envMap[CODING_PLAN_TOKENS_KEY];
+        return {
+          ...prev,
+          authToken: nextToken,
+          runtimeEnvText: stringifyEnvMap(envMap)
+        };
+      });
+    },
+    [activePlanId, setSettings]
+  );
+
+  const updatePlanMeta = React.useCallback(
+    (updater) => {
+      setSettings((prev) => {
+        const envMap = parseEnvText(prev.runtimeEnvText);
+        const plans = parseCodingPlans(envMap[CODING_PLAN_META_KEY]);
+        const activeId = String(envMap[CODING_PLAN_ACTIVE_KEY] || "").trim();
+        const tokens = parseCodingPlanTokens(envMap[CODING_PLAN_TOKENS_KEY]);
+        const nextState = updater({ plans, activeId, tokens, settings: prev });
+        if (!nextState || !Array.isArray(nextState.plans)) return prev;
+
+        const sanitizedPlans = nextState.plans
+          .map((plan) => ({
+            id: String(plan?.id || "").trim(),
+            name: String(plan?.name || "").trim(),
+            baseUrl: String(plan?.baseUrl || "").trim(),
+            model: String(plan?.model || "").trim()
+          }))
+          .filter((plan) => plan.id && plan.name && plan.baseUrl && plan.model);
+
+        if (sanitizedPlans.length > 0) envMap[CODING_PLAN_META_KEY] = JSON.stringify(sanitizedPlans);
+        else delete envMap[CODING_PLAN_META_KEY];
+
+        const tokenMapRaw = nextState.tokens && typeof nextState.tokens === "object" ? nextState.tokens : {};
+        const validIds = new Set(sanitizedPlans.map((plan) => plan.id));
+        const nextTokens = {};
+        for (const [id, token] of Object.entries(tokenMapRaw)) {
+          const key = String(id || "").trim();
+          const value = String(token || "").trim();
+          if (!key || !value || !validIds.has(key)) continue;
+          nextTokens[key] = value;
+        }
+        if (Object.keys(nextTokens).length > 0) envMap[CODING_PLAN_TOKENS_KEY] = JSON.stringify(nextTokens);
+        else delete envMap[CODING_PLAN_TOKENS_KEY];
+
+        const nextActiveId = String(nextState.activeId || "").trim();
+        if (nextActiveId && sanitizedPlans.some((plan) => plan.id === nextActiveId)) envMap[CODING_PLAN_ACTIVE_KEY] = nextActiveId;
+        else delete envMap[CODING_PLAN_ACTIVE_KEY];
+
+        const activePlan = sanitizedPlans.find((plan) => plan.id === nextActiveId) || null;
+        const activePlanToken = nextActiveId ? nextTokens[nextActiveId] || "" : "";
+        return {
+          ...prev,
+          model: activePlan?.model || prev.model,
+          baseUrl: activePlan?.baseUrl || prev.baseUrl,
+          authToken: activePlan ? activePlanToken : prev.authToken,
+          runtimeEnvText: stringifyEnvMap(envMap)
+        };
+      });
+    },
+    [setSettings]
+  );
 
   return (
     <div
@@ -236,17 +446,158 @@ export default function SettingsModal({
         >
           <div className="settings-section">
             <h3 className="settings-section-title">基础配置</h3>
-            <label>模型（ANTHROPIC_MODEL）</label>
-            <input value={settings.model} onChange={(e) => setSettings((s) => ({ ...s, model: e.target.value }))} />
-            <label>接口地址（ANTHROPIC_BASE_URL）</label>
+            <label>Coding Plan 预设</label>
+            <select
+              value={activePreset?.key || "custom"}
+              onChange={(e) => {
+                const preset = CODING_PLAN_PRESETS.find((item) => item.key === e.target.value);
+                if (!preset) return;
+                setSettings((prev) => ({
+                  ...prev,
+                  baseUrl: preset.baseUrl,
+                  model: preset.model || prev.model
+                }));
+                if (syncNotice.type === "hint") {
+                  setSyncNotice({ type: "", message: "" });
+                }
+              }}
+            >
+              <option value="custom">自定义（手动填写）</option>
+              {CODING_PLAN_PRESETS.map((preset) => (
+                <option key={preset.key} value={preset.key}>
+                  {preset.label} · {preset.model}
+                </option>
+              ))}
+            </select>
+            <p className="settings-hint">选择预设后会自动填充基础参数。</p>
+            <div className="settings-plan-row">
+              <select
+                value={selectedPlan?.id || ""}
+                onChange={(e) => {
+                  const nextId = String(e.target.value || "");
+                  updatePlanMeta(({ plans, tokens }) => ({ plans, tokens, activeId: nextId }));
+                }}
+              >
+                <option value="">未启用保存方案</option>
+                {savedPlans.map((plan) => (
+                  <option key={plan.id} value={plan.id}>
+                    {plan.name} · {plan.model}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="sidebar-mini-btn"
+                onClick={() => {
+                  updatePlanMeta(({ plans }) => {
+                    const id = `plan_${Date.now()}`;
+                    const prefix = activePreset?.planNamePrefix || "Plan";
+                    const nextPlans = [
+                      ...plans,
+                      { id, name: nextPlanName(plans, prefix), baseUrl: settings.baseUrl, model: settings.model }
+                    ];
+                    return { plans: nextPlans, tokens: { ...planTokens, [id]: settings.authToken || "" }, activeId: id };
+                  });
+                }}
+              >
+                保存为新方案
+              </button>
+              <button
+                type="button"
+                className="sidebar-mini-btn"
+                disabled={!selectedPlan}
+                onClick={() => {
+                  if (!selectedPlan) return;
+                  updatePlanMeta(({ plans, activeId, tokens }) => ({
+                    plans: plans.map((plan) =>
+                      plan.id === activeId ? { ...plan, baseUrl: settings.baseUrl, model: settings.model } : plan
+                    ),
+                    tokens: { ...tokens, [activeId]: settings.authToken || "" },
+                    activeId
+                  }));
+                }}
+              >
+                覆盖
+              </button>
+              <button
+                type="button"
+                className="sidebar-mini-btn"
+                disabled={!selectedPlan}
+                onClick={() => {
+                  if (!selectedPlan) return;
+                  updatePlanMeta(({ plans, activeId, tokens }) => {
+                    const nextPlans = plans.filter((plan) => plan.id !== activeId);
+                    const nextTokens = { ...tokens };
+                    delete nextTokens[activeId];
+                    return { plans: nextPlans, tokens: nextTokens, activeId: nextPlans[0]?.id || "" };
+                  });
+                }}
+              >
+                删除
+              </button>
+            </div>
+            {selectedPlan && (
+              <input
+                value={selectedPlan.name}
+                onChange={(e) => {
+                  const nextName = String(e.target.value || "").trim();
+                  if (!nextName) return;
+                  updatePlanMeta(({ plans, activeId, tokens }) => ({
+                    plans: plans.map((plan) => (plan.id === activeId ? { ...plan, name: nextName } : plan)),
+                    tokens,
+                    activeId
+                  }));
+                }}
+                placeholder="方案名称"
+              />
+            )}
+            <label>模型</label>
+            <div className="settings-model-pills">
+              {suggestedModels.map((modelId) => (
+                <button
+                  key={modelId}
+                  type="button"
+                  className={`settings-model-pill ${settings.model === modelId ? "is-active" : ""}`}
+                  onClick={() => setSettings((s) => ({ ...s, model: modelId }))}
+                >
+                  {modelId}
+                </button>
+              ))}
+              <button
+                type="button"
+                className={`settings-model-pill ${modelMatchesPreset ? "" : "is-active"}`}
+                onClick={() => {
+                  if (modelMatchesPreset) setSettings((s) => ({ ...s, model: "" }));
+                }}
+              >
+                自定义
+              </button>
+            </div>
+            {!modelMatchesPreset && (
+              <input
+                value={settings.model}
+                onChange={(e) => setSettings((s) => ({ ...s, model: e.target.value }))}
+                placeholder="输入模型名称（与平台配置一致）"
+              />
+            )}
+            {activePreset?.key === "volc-anthropic" && (
+              <p className="settings-hint">火山方舟请填写控制台中的模型接入点名称（与方舟控制台配置保持一致）。</p>
+            )}
+            <label>接口地址</label>
             <input value={settings.baseUrl} onChange={(e) => setSettings((s) => ({ ...s, baseUrl: e.target.value }))} />
-            <label>API Key（ANTHROPIC_AUTH_TOKEN）</label>
+            <label>API Key</label>
+            {activeTokenPreview && (
+              <p className="settings-hint settings-key-preview">
+                当前密钥: <code>{activeTokenPreview}</code>
+              </p>
+            )}
             <input
               type="password"
               value={settings.authToken}
               placeholder={settings.hasToken ? `已保存: ${settings.tokenPreview}` : "请输入 API Key"}
-              onChange={(e) => setSettings((s) => ({ ...s, authToken: e.target.value }))}
+              onChange={(e) => handleAuthTokenChange(e.target.value)}
             />
+            <p className="settings-hint">方案已支持独立密钥；切换方案会自动切换对应密钥。</p>
           </div>
 
           <div className="settings-section">
