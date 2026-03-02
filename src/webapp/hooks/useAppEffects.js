@@ -12,6 +12,7 @@ export function useAppEffects({
   currentWorkspaceId,
   loadSettings,
   loadSkills,
+  loadAgents,
   loadMcps,
   loadFiles,
   loadSessions,
@@ -34,10 +35,11 @@ export function useAppEffects({
   useEffect(() => {
     loadSettings().catch(() => {});
     loadSkills().catch(() => {});
+    loadAgents().catch(() => {});
     loadMcps().catch(() => {});
     loadFiles().catch(() => {});
     loadSessions().catch(() => {});
-  }, [currentWorkspaceId, loadFiles, loadMcps, loadSettings, loadSkills, loadSessions]);
+  }, [currentWorkspaceId, loadAgents, loadFiles, loadMcps, loadSettings, loadSkills, loadSessions]);
 
   useEffect(() => {
     setOpenedFile(null);
@@ -53,6 +55,14 @@ export function useAppEffects({
     }, 3000);
     return () => clearInterval(timer);
   }, [loadSkills]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.hidden) return;
+      loadAgents().catch(() => {});
+    }, 60000);
+    return () => clearInterval(timer);
+  }, [loadAgents]);
 
   useEffect(() => {
     const el = timelineRef.current;

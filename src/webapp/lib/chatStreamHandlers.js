@@ -53,6 +53,7 @@ export function handleChatStreamPart(part, deps) {
     upsertPending,
     resolvePending,
     trackSkillUsage,
+    trackAgentUsage,
     toolLabel,
     shortText,
     setHookTimeline
@@ -149,6 +150,27 @@ export function handleChatStreamPart(part, deps) {
     } else {
       setExecutionState((prev) => ({ ...prev, lastActivityAt: now }));
     }
+    return "handled";
+  }
+
+  if (part?.type === "data-agent-activity") {
+    const agentType = String(part?.data?.agentType || "").trim();
+    const agentId = String(part?.data?.agentId || "").trim();
+    const status = String(part?.data?.status || "").trim();
+    const label = agentType || agentId || "agent";
+    const actionText = status === "stop" ? `子代理完成：${label}` : `子代理启动：${label}`;
+    if (typeof trackAgentUsage === "function") {
+      trackAgentUsage(label, status || "start");
+    }
+    setExecutionState((prev) => ({
+      ...prev,
+      currentAgent: status === "stop" ? "" : label,
+      phase: status === "stop" ? prev.phase : "running_tool",
+      phaseDetail: status === "stop" ? prev.phaseDetail : `子代理执行中：${label}`,
+      lastActivityAt: now,
+      actions: [...(prev.actions || []).slice(-4), actionText],
+      dismissNoDelta: false
+    }));
     return "handled";
   }
 
@@ -297,6 +319,7 @@ export function handleChatStreamPart(part, deps) {
       phaseEtaSeconds: 20,
       lastActivityAt: now,
       currentTool: String(part?.data?.toolName || prev.currentTool || ""),
+      currentAgent: prev.currentAgent || "",
       actions: [...(prev.actions || []).slice(-4), `工具调用：${String(part?.data?.toolName || "unknown_tool")}`],
       dismissNoDelta: false
     }));
@@ -383,6 +406,7 @@ export function handleChatStreamPart(part, deps) {
       phase: "error",
       phaseDetail: "请求执行失败",
       lastActivityAt: now,
+      currentAgent: "",
       actions: [...(prev.actions || []).slice(-4), String(part?.error || "未知错误")],
       dismissNoDelta: false
     }));

@@ -1,6 +1,6 @@
 ---
 name: academic-writer
-description: Assists with academic writing including papers, proposals, reports, and thesis chapters
+description: 协助学术写作，包括论文、课题申报书、研究报告和学位论文章节
 tools: Read, Write, Edit, Grep, Glob
 ---
 

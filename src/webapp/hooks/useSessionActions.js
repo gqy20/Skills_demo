@@ -46,6 +46,7 @@ export function useSessionActions({
   setEvents,
   setExecutionState,
   setMcpRuntimeStatus,
+  setAgentUsage,
   setLastUserText,
   resetRuntimeUsage,
   setHookTimeline
@@ -64,8 +65,14 @@ export function useSessionActions({
         resetPending();
         setEvents([]);
         setHookTimeline([]);
+        if (typeof setAgentUsage === "function") setAgentUsage({});
         setExecutionState({
           phase: "idle",
+          phaseDetail: "",
+          phaseStartedAt: 0,
+          phaseEtaSeconds: null,
+          lastActivityAt: 0,
+          currentAgent: "",
           currentTool: "",
           toolElapsedSeconds: 0,
           lastDeltaAt: 0,
@@ -103,11 +110,17 @@ export function useSessionActions({
     setMessages([]);
     setEvents([]);
     setHookTimeline([]);
+    if (typeof setAgentUsage === "function") setAgentUsage({});
     setLastUserText("");
     resetRuntimeUsage();
     resetPending();
     setExecutionState({
       phase: "idle",
+      phaseDetail: "",
+      phaseStartedAt: 0,
+      phaseEtaSeconds: null,
+      lastActivityAt: 0,
+      currentAgent: "",
       currentTool: "",
       toolElapsedSeconds: 0,
       lastDeltaAt: 0,

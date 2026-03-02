@@ -349,11 +349,24 @@ export function extractResultText(event: SDKMessage): string {
 export function extractSdkLifecycle(event: SDKMessage): Record<string, unknown> | null {
   if (event.type === "system") {
     if (event.subtype === "hook_started") {
+      const row = event as unknown as Record<string, unknown>;
       return {
         category: "hook_started",
         hookId: event.hook_id,
         hookName: event.hook_name,
-        hookEvent: event.hook_event
+        hookEvent: event.hook_event,
+        agentId:
+          typeof row.agent_id === "string"
+            ? row.agent_id
+            : typeof row.agentId === "string"
+              ? row.agentId
+              : "",
+        agentType:
+          typeof row.agent_type === "string"
+            ? row.agent_type
+            : typeof row.agentType === "string"
+              ? row.agentType
+              : ""
       };
     }
 
@@ -369,13 +382,26 @@ export function extractSdkLifecycle(event: SDKMessage): Record<string, unknown> 
     }
 
     if (event.subtype === "hook_response") {
+      const row = event as unknown as Record<string, unknown>;
       return {
         category: "hook_response",
         hookId: event.hook_id,
         hookName: event.hook_name,
         hookEvent: event.hook_event,
         outcome: event.outcome,
-        exitCode: event.exit_code ?? null
+        exitCode: event.exit_code ?? null,
+        agentId:
+          typeof row.agent_id === "string"
+            ? row.agent_id
+            : typeof row.agentId === "string"
+              ? row.agentId
+              : "",
+        agentType:
+          typeof row.agent_type === "string"
+            ? row.agent_type
+            : typeof row.agentType === "string"
+              ? row.agentType
+              : ""
       };
     }
 

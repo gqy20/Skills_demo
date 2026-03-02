@@ -43,6 +43,7 @@ export default function ExecutionPanel({
         : "MCP 检测中";
   const compactText = useMemo(() => {
     const parts = [];
+    if (executionState.currentAgent) parts.push(`Agent ${executionState.currentAgent}`);
     if (executionState.currentTool) parts.push(`工具 ${executionState.currentTool}`);
     if (hintText) parts.push(hintText);
     else if (latestAction) parts.push(latestAction);
@@ -50,6 +51,7 @@ export default function ExecutionPanel({
     else parts.push("正在处理请求");
     return parts.join(" · ");
   }, [
+    executionState.currentAgent,
     executionState.currentTool,
     executionState.phaseDetail,
     hintText,

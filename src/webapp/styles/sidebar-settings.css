@@ -252,6 +252,76 @@
   box-shadow: none;
 }
 
+.agents-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.agents-item {
+  border: 1px solid #e5e9f2;
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px 10px;
+}
+
+.agents-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.agents-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.agents-name {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  color: #1f2937;
+}
+
+.agents-model {
+  border: 1px solid #dbe5ef;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 10px;
+  line-height: 1;
+  padding: 4px 6px;
+  white-space: nowrap;
+}
+
+.agents-used-badge {
+  border: 1px solid rgba(16, 163, 127, 0.35);
+  border-radius: 999px;
+  background: rgba(16, 163, 127, 0.1);
+  color: #0f766e;
+  font-size: 10px;
+  line-height: 1;
+  padding: 4px 6px;
+  white-space: nowrap;
+}
+
+.agents-desc {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #4b5563;
+}
+
+.agents-last-used {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: #64748b;
+}
+
 .inspector-more-btn {
   margin-top: 8px;
 }

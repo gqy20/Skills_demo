@@ -1,5 +1,7 @@
 import type { Express } from "express";
 import { randomUUID } from "node:crypto";
+import path from "node:path";
+import { promises as fs } from "node:fs";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { RuntimeSettings } from "../types.js";
 import { fetchSkills, invalidateSkillsCache } from "../services/skills.js";
@@ -45,6 +47,66 @@ type McpProbeSnapshot = {
   rows: Map<string, McpRuntimeRow>;
 };
 
+type AgentRow = {
+  name: string;
+  description: string;
+  model: string;
+};
+
+type AgentsSnapshot = {
+  checkedAt: number;
+  items: AgentRow[];
+};
+
+function parseFrontmatterValue(raw: string, key: string): string {
+  const lines = raw.split(/\r?\n/);
+  if (lines.length < 3 || lines[0].trim() !== "---") return "";
+  let end = -1;
+  for (let i = 1; i < lines.length; i += 1) {
+    if (lines[i].trim() === "---") {
+      end = i;
+      break;
+    }
+  }
+  if (end <= 1) return "";
+  const prefix = `${key.toLowerCase()}:`;
+  for (let i = 1; i < end; i += 1) {
+    const line = lines[i].trim();
+    if (!line.toLowerCase().startsWith(prefix)) continue;
+    return line.slice(prefix.length).trim().replace(/^['"]|['"]$/g, "");
+  }
+  return "";
+}
+
+async function collectProjectAgents(workspaceRoot: string): Promise<AgentRow[]> {
+  const agentsDir = path.join(workspaceRoot, ".claude", "agents");
+  try {
+    const entries = await fs.readdir(agentsDir, { withFileTypes: true });
+    const rows = await Promise.all(
+      entries.map(async (entry) => {
+        if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".md")) return null;
+        const abs = path.join(agentsDir, entry.name);
+        const baseName = entry.name.replace(/\.md$/i, "").trim();
+        try {
+          const raw = await fs.readFile(abs, "utf-8");
+          const name = parseFrontmatterValue(raw, "name").trim() || baseName;
+          if (!name) return null;
+          const description = parseFrontmatterValue(raw, "description").trim();
+          return { name, description, model: "" };
+        } catch {
+          if (!baseName) return null;
+          return { name: baseName, description: "", model: "" };
+        }
+      })
+    );
+    return rows
+      .filter((row): row is AgentRow => Boolean(row?.name))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  } catch {
+    return [];
+  }
+}
+
 export function registerSystemRoutes({
   app,
   workspaceRegistry,
@@ -53,8 +115,11 @@ export function registerSystemRoutes({
   sessionRuntimeManager
 }: SystemRoutesDeps): void {
   const mcpProbeCache = new Map<string, McpProbeSnapshot>();
+  const agentsCache = new Map<string, AgentsSnapshot>();
   const mcpProbeTtlMsRaw = Number(process.env.AGENT_WEB_MCP_PROBE_TTL_MS || "");
   const mcpProbeTtlMs = Number.isFinite(mcpProbeTtlMsRaw) && mcpProbeTtlMsRaw > 0 ? Math.floor(mcpProbeTtlMsRaw) : 60_000;
+  const agentsTtlMsRaw = Number(process.env.AGENT_WEB_AGENTS_TTL_MS || "");
+  const agentsTtlMs = Number.isFinite(agentsTtlMsRaw) && agentsTtlMsRaw > 0 ? Math.floor(agentsTtlMsRaw) : 120_000;
   const mcpAutoRefreshEnabled = process.env.AGENT_WEB_MCP_AUTO_REFRESH !== "0";
 
   const settingsEnvValue = (
@@ -250,6 +315,124 @@ export function registerSystemRoutes({
       });
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).json({ ok: false, error: msg, items: [] });
+    }
+  });
+
+  app.get("/api/agents", async (req, res) => {
+    const workspace = workspaceRegistry.requireWorkspace(req, res);
+    if (!workspace) return;
+    try {
+      const cached = agentsCache.get(workspace.id) || null;
+      if (cached && Date.now() - cached.checkedAt < agentsTtlMs) {
+        res.json({
+          ok: true,
+          workspaceId: workspace.id,
+          count: cached.items.length,
+          source: "claude-agent-sdk-supportedAgents:cache",
+          stale: false,
+          items: cached.items
+        });
+        return;
+      }
+      const projectAgents = await collectProjectAgents(workspace.root);
+      if (projectAgents.length === 0) {
+        const empty: AgentRow[] = [];
+        agentsCache.set(workspace.id, { checkedAt: Date.now(), items: empty });
+        res.json({
+          ok: true,
+          workspaceId: workspace.id,
+          count: 0,
+          source: "workspace-.claude-agents",
+          stale: false,
+          items: empty
+        });
+        return;
+      }
+      const settings = await readSettings(workspace.root, defaultSettings);
+      const options = buildQueryOptions(workspace.root, settings, randomUUID(), undefined, {
+        includePartialMessages: false
+      });
+      const q = query({
+        prompt: "List supported agents",
+        options
+      }) as ReturnType<typeof query> & { close?: () => void; supportedAgents?: () => Promise<unknown[]> };
+      try {
+        const raw =
+          typeof q.supportedAgents === "function" ? await withTimeout(q.supportedAgents(), 20_000, "supportedAgents") : [];
+        const supportedItems = (Array.isArray(raw) ? raw : [])
+          .map((row) => {
+            const rowValue: unknown = row;
+            if (typeof rowValue === "string") {
+              const name = rowValue.trim();
+              if (!name) return null;
+              return { name, description: "", model: "" };
+            }
+            if (!rowValue || typeof rowValue !== "object") return null;
+            const item = rowValue as Record<string, unknown>;
+            const name = String(item.name || item.agent || item.id || "").trim();
+            if (!name) return null;
+            return { name, description: String(item.description || "").trim(), model: String(item.model || "").trim() };
+          })
+          .filter((x): x is AgentRow => Boolean(x));
+        const supportedMap = new Map<string, AgentRow>();
+        for (const item of supportedItems) {
+          supportedMap.set(item.name.trim().toLowerCase(), item);
+        }
+        const items = projectAgents.map((item) => {
+          const matched = supportedMap.get(item.name.trim().toLowerCase());
+          if (!matched) return item;
+          return {
+            name: item.name,
+            description: item.description || matched.description || "",
+            model: matched.model || ""
+          };
+        });
+        agentsCache.set(workspace.id, { checkedAt: Date.now(), items });
+        res.json({
+          ok: true,
+          workspaceId: workspace.id,
+          count: items.length,
+          source: "workspace-.claude-agents+sdk-enriched",
+          stale: false,
+          items
+        });
+      } finally {
+        try {
+          q.close?.();
+        } catch {
+          // ignore close errors
+        }
+      }
+    } catch (error) {
+      const cached = agentsCache.get(workspace.id) || null;
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      if (cached) {
+        res.json({
+          ok: true,
+          workspaceId: workspace.id,
+          count: cached.items.length,
+          source: "claude-agent-sdk-supportedAgents:cache-fallback",
+          stale: true,
+          warning: msg,
+          items: cached.items
+        });
+        return;
+      }
+      const projectAgents = await collectProjectAgents(workspace.root);
+      if (projectAgents.length > 0) {
+        agentsCache.set(workspace.id, { checkedAt: Date.now(), items: projectAgents });
+        res.json({
+          ok: true,
+          workspaceId: workspace.id,
+          count: projectAgents.length,
+          source: "workspace-.claude-agents:fallback",
+          stale: true,
+          warning: msg,
+          items: projectAgents
+        });
+        return;
+      }
       res.status(500).json({ ok: false, error: msg, items: [] });
     }
   });

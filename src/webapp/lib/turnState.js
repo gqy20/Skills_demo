@@ -27,6 +27,7 @@ export function buildQueuedExecutionState(now) {
     phaseStartedAt: now,
     phaseEtaSeconds: 3,
     lastActivityAt: now,
+    currentAgent: "",
     currentTool: "",
     toolElapsedSeconds: 0,
     lastDeltaAt: now,

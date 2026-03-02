@@ -52,9 +52,10 @@ function buildCanUseToolHandler(params: {
   const { gateEnabled, runtime, res, sessionId, pendingStore, turnTrace, traceId, debugSseEnabled } = params;
   return async (toolName: string, input?: unknown, hookOptions?: { toolUseID?: string; suggestions?: PermissionUpdate[] }) => {
     const inputObj = (input ?? {}) as Record<string, unknown>;
+    const isAskUserQuestion = isAskUserQuestionTool(toolName);
     const normalizedToolName = String(toolName || "").trim().toLowerCase();
     const isMcpTool = normalizedToolName.startsWith("mcp__") || normalizedToolName.startsWith("mcp:");
-    if (isMcpTool) {
+    if (isMcpTool && !isAskUserQuestion) {
       if (!runtime.closed) {
         writeSseData(res, {
           type: "data-tool-gate-hit",
@@ -78,7 +79,7 @@ function buildCanUseToolHandler(params: {
       };
       return decision;
     }
-    if (!gateEnabled) {
+    if (!gateEnabled && !isAskUserQuestion) {
       if (!runtime.closed) {
         writeSseData(res, {
           type: "data-tool-gate-hit",
@@ -101,7 +102,6 @@ function buildCanUseToolHandler(params: {
         updatedInput: inputObj
       } as PermissionResult;
     }
-    const isAskUserQuestion = isAskUserQuestionTool(toolName);
     if (!runtime.closed) {
       writeSseData(res, {
         type: "data-tool-gate-hit",

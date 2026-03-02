@@ -29,6 +29,7 @@ export function useWorkspaceData({
   setSettings,
   setDiagnostics,
   setSkills,
+  setAgents,
   setFiles,
   setMcpCatalog,
   setSessions,
@@ -55,6 +56,12 @@ export function useWorkspaceData({
     const data = await apiGetJson("/api/skills");
     setSkills(Array.isArray(data.items) ? data.items : []);
   }, [apiGetJson, currentWorkspaceId, setSkills]);
+
+  const loadAgents = useCallback(async () => {
+    if (!currentWorkspaceId) return;
+    const data = await apiGetJson("/api/agents");
+    setAgents(Array.isArray(data.items) ? data.items : []);
+  }, [apiGetJson, currentWorkspaceId, setAgents]);
 
   const loadFiles = useCallback(async () => {
     if (!currentWorkspaceId) return;
@@ -150,6 +157,7 @@ export function useWorkspaceData({
     loadWorkspaces,
     loadSettings,
     loadSkills,
+    loadAgents,
     loadFiles,
     loadMcps,
     refreshMcps,

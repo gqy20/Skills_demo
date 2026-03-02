@@ -1,6 +1,6 @@
 ---
 name: literature-reviewer
-description: Assists with academic literature review, paper search, summarization, and citation analysis
+description: 协助学术文献综述，包括论文检索、内容总结与引用分析
 tools: Read, Grep, Glob, WebSearch, WebFetch, Bash
 ---
 

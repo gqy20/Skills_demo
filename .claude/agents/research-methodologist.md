@@ -1,6 +1,6 @@
 ---
 name: research-methodologist
-description: Provides guidance on research methodology, experimental design, and data analysis strategies
+description: 提供研究方法论、实验设计与数据分析策略指导
 tools: Read, Grep, Glob, WebSearch, WebFetch
 ---
 

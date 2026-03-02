@@ -51,6 +51,8 @@ export default function App() {
   const [events, setEvents] = useState([]);
   const [hookTimeline, setHookTimeline] = useState([]);
   const [skills, setSkills] = useState([]);
+  const [agents, setAgents] = useState([]);
+  const [agentUsage, setAgentUsage] = useState({});
   const [files, setFiles] = useState([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sessions, setSessions] = useState([]);
@@ -78,6 +80,11 @@ export default function App() {
   });
   const [executionState, setExecutionState] = useState({
     phase: "idle",
+    phaseDetail: "",
+    phaseStartedAt: 0,
+    phaseEtaSeconds: null,
+    lastActivityAt: 0,
+    currentAgent: "",
     currentTool: "",
     toolElapsedSeconds: 0,
     lastDeltaAt: 0,
@@ -175,6 +182,21 @@ export default function App() {
         upsertPending,
         resolvePending,
         trackSkillUsage,
+        trackAgentUsage: (agentName, event = "start") => {
+          const name = String(agentName || "").trim();
+          if (!name) return;
+          setAgentUsage((prev) => {
+            const old = prev[name] || { count: 0, lastUsedAt: 0, lastEvent: "" };
+            return {
+              ...prev,
+              [name]: {
+                count: event === "start" ? old.count + 1 : old.count,
+                lastUsedAt: Date.now(),
+                lastEvent: String(event || "")
+              }
+            };
+          });
+        },
         toolLabel,
         shortText,
         setHookTimeline
@@ -214,6 +236,7 @@ export default function App() {
     loadWorkspaces,
     loadSettings,
     loadSkills,
+    loadAgents,
     loadFiles,
     loadMcps,
     refreshMcps,
@@ -229,6 +252,7 @@ export default function App() {
     setSettings,
     setDiagnostics,
     setSkills,
+    setAgents,
     setFiles,
     setMcpCatalog,
     setSessions,
@@ -249,6 +273,7 @@ export default function App() {
     setEvents,
     setExecutionState,
     setMcpRuntimeStatus,
+    setAgentUsage,
     setLastUserText,
     resetRuntimeUsage,
     setHookTimeline
@@ -294,6 +319,7 @@ export default function App() {
     currentWorkspaceId,
     loadSettings,
     loadSkills,
+    loadAgents,
     loadMcps,
     loadFiles,
     loadSessions,
@@ -320,6 +346,7 @@ export default function App() {
     setInputText("");
     setEvents([]);
     setHookTimeline([{ stage: "queued", at: now, source: "ui" }]);
+    setAgentUsage({});
     resetPending();
     setDiagnostics(resetDiagnosticsForTurn);
     startTurnUsage(initialSkillsState);
@@ -587,6 +614,7 @@ export default function App() {
         <InspectorSidebar
           sidebarOpen={sidebarOpen}
           skills={skills}
+          agents={agents}
           filteredSkills={filteredSkills}
           skillFilter={skillFilter}
           setSkillFilter={setSkillFilter}
@@ -603,6 +631,7 @@ export default function App() {
           diagnostics={diagnostics}
           settings={settings}
           events={events}
+          agentUsage={agentUsage}
         />
       </main>
 

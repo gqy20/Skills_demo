@@ -194,6 +194,28 @@ export async function consumeQueryEvents({
     const lifecycle = extractSdkLifecycle(event);
     if (lifecycle) {
       if (lifecycle.category === "hook_started") {
+        if (String(lifecycle.hookEvent || "") === "SubagentStart") {
+          writeSseData(res, {
+            type: "data-agent-activity",
+            data: {
+              status: "start",
+              agentId: String(lifecycle.agentId || ""),
+              agentType: String(lifecycle.agentType || ""),
+              hookName: String(lifecycle.hookName || ""),
+              at: Date.now()
+            }
+          });
+          writeRuntimePhase(res, {
+            phase: "running_tool",
+            detail: `子代理执行中：${String(lifecycle.agentType || lifecycle.agentId || "agent")}`,
+            etaSeconds: 20
+          });
+          onRuntimePhase?.({
+            phase: "running_tool",
+            detail: `子代理执行中：${String(lifecycle.agentType || lifecycle.agentId || "agent")}`,
+            etaSeconds: 20
+          });
+        }
         writeRuntimeActivity(res, `触发 Hook：${String(lifecycle.hookName || lifecycle.hookEvent || "unknown")}`);
         onRuntimeActivity?.({ detail: `触发 Hook：${String(lifecycle.hookName || lifecycle.hookEvent || "unknown")}` });
         writeHookStage(res, {
@@ -217,6 +239,18 @@ export async function consumeQueryEvents({
       }
 
       if (lifecycle.category === "hook_response") {
+        if (String(lifecycle.hookEvent || "") === "SubagentStop") {
+          writeSseData(res, {
+            type: "data-agent-activity",
+            data: {
+              status: "stop",
+              agentId: String(lifecycle.agentId || ""),
+              agentType: String(lifecycle.agentType || ""),
+              hookName: String(lifecycle.hookName || ""),
+              at: Date.now()
+            }
+          });
+        }
         writeHookStage(res, {
           stage: "hook_response",
           at: Date.now(),

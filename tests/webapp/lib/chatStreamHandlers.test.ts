@@ -137,4 +137,29 @@ describe("handleChatStreamPart", () => {
     expect(loadMcps).toHaveBeenCalled();
     expect(result).toBe("handled");
   });
+
+  it("updates execution state on agent activity", () => {
+    const setExecutionState = vi.fn();
+    const result = handleChatStreamPart(
+      { type: "data-agent-activity", data: { status: "start", agentType: "researcher", agentId: "a1" } },
+      {
+        setEvents: vi.fn(),
+        setCurrentSessionId: vi.fn(),
+        setActiveTurnTrace: vi.fn(),
+        loadSessions: vi.fn(),
+        setMcpRuntimeStatus: vi.fn(),
+        setExecutionState,
+        trackMcpUsage: vi.fn(),
+        setDiagnostics: vi.fn(),
+        upsertPending: vi.fn(),
+        resolvePending: vi.fn(),
+        trackSkillUsage: vi.fn(),
+        toolLabel: vi.fn(() => ""),
+        shortText: (v) => String(v || ""),
+        now: 1
+      }
+    );
+    expect(setExecutionState).toHaveBeenCalled();
+    expect(result).toBe("handled");
+  });
 });

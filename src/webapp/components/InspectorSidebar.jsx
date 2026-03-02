@@ -4,6 +4,7 @@ import { describeMcpProbe, resolveMcpServerState } from "../lib/chatUtils.js";
 export default function InspectorSidebar({
   sidebarOpen,
   skills,
+  agents = [],
   filteredSkills,
   skillFilter,
   setSkillFilter,
@@ -19,7 +20,8 @@ export default function InspectorSidebar({
   blockingPending,
   diagnostics,
   settings,
-  events
+  events,
+  agentUsage = {}
 }) {
   const [activeTab, setActiveTab] = useState("skills");
   const [showAllSkills, setShowAllSkills] = useState(false);
@@ -34,10 +36,26 @@ export default function InspectorSidebar({
   const visibleSkills = showAllSkills ? filteredSkills : filteredSkills.slice(0, 5);
   const hiddenSkillCount = Math.max(0, filteredSkills.length - visibleSkills.length);
   const pendingCount = pendingState.order.length;
+  const usedAgents = useMemo(
+    () => Object.entries(agentUsage).filter(([, value]) => Number(value?.count || 0) > 0),
+    [agentUsage]
+  );
+  const lastUsedAgent = useMemo(() => {
+    let latest = null;
+    for (const [name, value] of usedAgents) {
+      const at = Number(value?.lastUsedAt || 0);
+      if (!Number.isFinite(at) || at <= 0) continue;
+      if (!latest || at > latest.lastUsedAt) {
+        latest = { name, lastUsedAt: at };
+      }
+    }
+    return latest;
+  }, [usedAgents]);
 
   const tabItems = useMemo(() => {
     const base = [
       { key: "skills", label: "Skills", count: skills.length, warn: false },
+      { key: "agents", label: "Agents", count: agents.length, warn: false },
       { key: "mcps", label: "MCP", count: mcpRows.length, warn: mcpIssues.length > 0 },
       { key: "pending", label: "Pending", count: pendingCount, warn: blockingPending }
     ];
@@ -45,7 +63,7 @@ export default function InspectorSidebar({
       base.push({ key: "events", label: "Events", count: events.length, warn: false });
     }
     return base;
-  }, [blockingPending, events.length, mcpIssues.length, mcpRows.length, pendingCount, settings.debugEnabled, skills.length]);
+  }, [agents.length, blockingPending, events.length, mcpIssues.length, mcpRows.length, pendingCount, settings.debugEnabled, skills.length]);
 
   useEffect(() => {
     if (mcpIssues.length > 0) {
@@ -226,6 +244,59 @@ export default function InspectorSidebar({
             </div>
           )}
           {mcpItems.length === 0 && !mcpCatalog.loading && <p className="sessions-empty">未发现 MCP 配置</p>}
+        </section>
+      )}
+
+      {activeTab === "agents" && (
+        <section className="panel">
+          <h2>Agents</h2>
+          <div className="panel-toolbar">
+            <p className="session-tag">来自项目 `.claude/agents`，共 {agents.length} 个</p>
+            <p className="session-tag">
+              本轮已调用 {usedAgents.length} 个
+              {lastUsedAgent
+                ? ` · 最近 ${lastUsedAgent.name} @ ${new Date(lastUsedAgent.lastUsedAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit"
+                  })}`
+                : ""}
+            </p>
+          </div>
+          <ul className="agents-list">
+            {agents.map((item) => {
+              const usage =
+                agentUsage[item.name] ||
+                agentUsage[String(item.name || "").toLowerCase()] ||
+                agentUsage[String(item.name || "").toUpperCase()] ||
+                null;
+              const lastUsedAt = Number(usage?.lastUsedAt || 0);
+              const hasLastUsedAt = Number.isFinite(lastUsedAt) && lastUsedAt > 0;
+              return (
+                <li className="agents-item" key={item.name}>
+                  <div className="agents-head">
+                    <p className="agents-name">{item.name}</p>
+                    <div className="agents-badges">
+                      {usage?.count > 0 && <span className="agents-used-badge">本轮 x{usage.count}</span>}
+                      {item.model ? <span className="agents-model">{item.model}</span> : null}
+                    </div>
+                  </div>
+                  <p className="agents-desc">{item.description || "无描述"}</p>
+                  {usage?.count > 0 && hasLastUsedAt && (
+                    <p className="agents-last-used">
+                      最近使用：
+                      {new Date(lastUsedAt).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit"
+                      })}
+                    </p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          {agents.length === 0 && <p className="sessions-empty">未发现可用 agents</p>}
         </section>
       )}
 
