@@ -1,7 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { unstable_v2_createSession, unstable_v2_resumeSession, type PermissionUpdate } from "@anthropic-ai/claude-agent-sdk";
 import type { Request, Response } from "express";
-import { enhancePromptWithDirectives, extractPrompt, parsePromptDirectives, writeSseData, writeSseDone } from "../services/chat.js";
+import {
+  buildRestartRecoveryPrompt,
+  enhancePromptWithDirectives,
+  extractPrompt,
+  parsePromptDirectives,
+  writeSseData,
+  writeSseDone
+} from "../services/chat.js";
 import { type PendingNotify, type PendingRequestKind } from "../services/pending.js";
 import { appendSessionTurn, type StoredToolTrace } from "../services/sessions.js";
 import { applyMcpToggle, buildQueryOptions, withTimeout } from "../services/query.js";
@@ -146,6 +153,7 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
   }
 
   const enhanced = await enhancePromptWithDirectives(workspace.root, rawMessage, availableSlashNames);
+  const promptForQuery = sdkSessionId ? enhanced.prompt : buildRestartRecoveryPrompt(req.body?.messages, enhanced.prompt);
   const gateEnabled = settings.permissionProfile === "standard" && settings.toolGateEnabled;
   const debugSseEnabled = settings.debugEnabled && settings.debugSseEnabled;
   const partId = `text-${randomUUID()}`;
@@ -240,6 +248,7 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
     workspaceId: workspace.id,
     sessionId,
     hasResume: Boolean(sdkSessionId),
+    replayedHistory: !sdkSessionId,
     seededSdkSessionId,
     speedModeEnabled: settings.speedModeEnabled,
     mcpEnabled: settings.mcpEnabled,
@@ -384,7 +393,7 @@ export async function handleChatUiRequest(req: Request, res: Response, deps: Cha
       turnTrace,
       stopOnResult: true
     });
-    await runtimeSession.session.send(enhanced.prompt);
+    await runtimeSession.session.send(promptForQuery);
     const streamResult = await streamPromise;
     writeDebugSse(res, runtime.closed, debugSseEnabled, traceId, "persistent_session_turn", {
       workspaceId: workspace.id,

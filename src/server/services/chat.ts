@@ -77,6 +77,61 @@ export function extractPrompt(messages: unknown): string {
   return "";
 }
 
+function extractMessageText(msg: ChatMessage): string {
+  const partTexts = Array.isArray(msg.parts) ? msg.parts.filter((p) => p?.type === "text").map((p) => p.text || "") : [];
+  const fromParts = extractText(partTexts).join("\n").trim();
+  if (fromParts) return fromParts;
+  return extractText(msg.content).join("\n").trim();
+}
+
+export function buildRestartRecoveryPrompt(
+  messages: unknown,
+  latestUserText: string,
+  options: { maxMessages?: number; maxChars?: number } = {}
+): string {
+  const latest = String(latestUserText || "").trim();
+  if (!latest) return "";
+  if (!Array.isArray(messages)) return latest;
+
+  const maxMessages = Math.max(4, Math.floor(options.maxMessages ?? 24));
+  const maxChars = Math.max(2000, Math.floor(options.maxChars ?? 12000));
+  const list = messages as ChatMessage[];
+  const normalized = list
+    .map((msg) => {
+      const roleRaw = String(msg?.role || "").trim().toLowerCase();
+      const role = roleRaw === "assistant" ? "assistant" : roleRaw === "system" ? "system" : roleRaw === "user" ? "user" : "";
+      const text = extractMessageText(msg);
+      if (!role || !text) return null;
+      return { role, text };
+    })
+    .filter((item): item is { role: "user" | "assistant" | "system"; text: string } => Boolean(item))
+    .slice(-maxMessages);
+
+  if (normalized.length <= 1) return latest;
+
+  // Avoid duplicating the current user input in both transcript and current message sections.
+  if (normalized[normalized.length - 1]?.role === "user" && normalized[normalized.length - 1]?.text === latest) {
+    normalized.pop();
+  }
+  if (normalized.length === 0) return latest;
+
+  const lines = normalized.map((item) => `${item.role}: ${item.text}`);
+  let transcript = lines.join("\n\n");
+  if (transcript.length > maxChars) {
+    transcript = transcript.slice(transcript.length - maxChars);
+  }
+
+  return [
+    "[历史对话上下文（服务重启后自动回放）]",
+    transcript,
+    "",
+    "[当前用户消息]",
+    latest,
+    "",
+    "请基于以上历史上下文继续回答，保持与此前会话一致。"
+  ].join("\n");
+}
+
 function trimTrailingPunctuation(token: string): string {
   return token.replace(/[)\]}>,.;:!?，。；：！？、]+$/g, "");
 }

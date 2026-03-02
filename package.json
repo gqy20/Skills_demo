@@ -15,8 +15,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "tsc --noEmit",
+    "clean:server": "node -e \"require('node:fs').rmSync('dist/server', { recursive: true, force: true })\"",
     "build": "npm run build:server && npm run build:web",
-    "build:server": "tsc -p tsconfig.build.json",
+    "build:server": "npm run clean:server && tsc -p tsconfig.build.json",
     "build:web": "vite build",
     "start": "node dist/server/index.js"
   },
