@@ -40,6 +40,7 @@ describe("ExecutionPanel", () => {
         settings: { permissionProfile: "full_auto" },
         mcpRuntimeStatus: { ok: false, count: 0, error: "boom" },
         hookTimeline: [{ stage: "hook_started", at: Date.now(), hookEvent: "PostToolUse", hookName: "update-status.sh" }],
+        showHookTimeline: true,
         showNoDeltaHint: true,
         onDismissNoDelta: vi.fn(),
         onForceStopAndRetry: vi.fn()

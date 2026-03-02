@@ -127,6 +127,35 @@ export function describeMcpProbe(runtime) {
   return { probe, level, lastChecked };
 }
 
+export function resolveMcpServerState(item, mcpEnabled = true) {
+  const runtime = item && typeof item === "object" ? item.runtime || {} : {};
+  const runtimeStatus = String(runtime?.status || "");
+  const missingEnvVars = Array.isArray(item?.missingEnvVars) ? item.missingEnvVars.filter(Boolean) : [];
+
+  if (!mcpEnabled || runtimeStatus === "disabled") {
+    return { label: "全局关闭", className: "mcp-status-off", issue: false, kind: "disabled", runtime };
+  }
+  if (runtimeStatus === "missing_env" || missingEnvVars.length > 0) {
+    return { label: "缺少环境变量", className: "mcp-status-off", issue: true, kind: "missing_env", runtime };
+  }
+  if (runtimeStatus === "probe_failed") {
+    return { label: "探针失败", className: "mcp-status-off", issue: true, kind: "probe_failed", runtime };
+  }
+  if (runtimeStatus === "checking") {
+    return { label: "检测中", className: "mcp-status-unknown", issue: false, kind: "checking", runtime };
+  }
+  if (runtime?.connected === true || runtimeStatus === "connected") {
+    return { label: "在线", className: "mcp-status-ok", issue: false, kind: "connected", runtime };
+  }
+  if (runtime?.connected === false || runtimeStatus === "disconnected") {
+    return { label: "离线", className: "mcp-status-off", issue: true, kind: "disconnected", runtime };
+  }
+  if (runtimeStatus === "not_checked") {
+    return { label: "待检测", className: "mcp-status-unknown", issue: false, kind: "not_checked", runtime };
+  }
+  return { label: "未知", className: "mcp-status-unknown", issue: true, kind: "unknown", runtime };
+}
+
 export function extractSlashCommand(text) {
   const m = String(text || "").trim().match(/^\/([a-zA-Z0-9_-]+)/);
   return m ? m[1].toLowerCase() : "";

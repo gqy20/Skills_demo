@@ -45,6 +45,7 @@ export function handleChatStreamPart(part, deps) {
     setCurrentSessionId,
     setActiveTurnTrace,
     loadSessions,
+    loadMcps,
     setMcpRuntimeStatus,
     setExecutionState,
     trackMcpUsage,
@@ -88,6 +89,7 @@ export function handleChatStreamPart(part, deps) {
       error: rawError,
       status: isTimeout ? "timeout" : part?.data?.ok === true ? "ok" : rawError ? "error" : "unknown"
     });
+    if (typeof loadMcps === "function") loadMcps().catch(() => {});
     return "handled";
   }
 

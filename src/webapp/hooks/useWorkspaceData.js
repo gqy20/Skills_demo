@@ -82,12 +82,20 @@ export function useWorkspaceData({
       setMcpCatalog((prev) => ({ ...prev, loading: false, error: parseError(error), updatedAt: Date.now() }));
       return;
     }
-    const delays = [0, 400, 1200, 2600];
-    for (let i = 0; i < delays.length; i += 1) {
-      if (delays[i] > 0) await new Promise((resolve) => setTimeout(resolve, delays[i]));
-      await loadMcps();
+    const maxAttempts = 25;
+    for (let i = 0; i < maxAttempts; i += 1) {
+      if (i > 0) await new Promise((resolve) => setTimeout(resolve, 1200));
+      try {
+        const data = await apiGetJson("/api/mcps");
+        const normalized = normalizeMcpCatalogResponse(data);
+        setMcpCatalog(normalized);
+        if (normalized.runtime.checking !== true) break;
+      } catch (error) {
+        setMcpCatalog((prev) => ({ ...prev, loading: false, error: parseError(error), updatedAt: Date.now() }));
+        break;
+      }
     }
-  }, [apiPostJson, currentWorkspaceId, loadMcps, setMcpCatalog]);
+  }, [apiGetJson, apiPostJson, currentWorkspaceId, setMcpCatalog]);
 
   const loadSessions = useCallback(async () => {
     if (!currentWorkspaceId) return;

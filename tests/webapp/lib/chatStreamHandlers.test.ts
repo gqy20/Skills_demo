@@ -109,4 +109,32 @@ describe("handleChatStreamPart", () => {
     expect(setExecutionState).toHaveBeenCalled();
     expect(result).toBe("handled");
   });
+
+  it("refreshes mcp catalog on mcp status event", () => {
+    const loadMcps = vi.fn(() => Promise.resolve());
+    const setMcpRuntimeStatus = vi.fn();
+    const result = handleChatStreamPart(
+      { type: "data-mcp-status", data: { ok: true, count: 3 } },
+      {
+        setEvents: vi.fn(),
+        setCurrentSessionId: vi.fn(),
+        setActiveTurnTrace: vi.fn(),
+        loadSessions: vi.fn(),
+        loadMcps,
+        setMcpRuntimeStatus,
+        setExecutionState: vi.fn(),
+        trackMcpUsage: vi.fn(),
+        setDiagnostics: vi.fn(),
+        upsertPending: vi.fn(),
+        resolvePending: vi.fn(),
+        trackSkillUsage: vi.fn(),
+        toolLabel: vi.fn(() => ""),
+        shortText: (v) => String(v || ""),
+        now: 1
+      }
+    );
+    expect(setMcpRuntimeStatus).toHaveBeenCalled();
+    expect(loadMcps).toHaveBeenCalled();
+    expect(result).toBe("handled");
+  });
 });

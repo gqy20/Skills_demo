@@ -1,4 +1,4 @@
-import { describeMcpProbe } from "../lib/chatUtils.js";
+import { describeMcpProbe, resolveMcpServerState } from "../lib/chatUtils.js";
 
 export default function InspectorSidebar({
   sidebarOpen,
@@ -16,6 +16,7 @@ export default function InspectorSidebar({
   setSkillExpanded,
   mcpCatalog,
   reloadMcps,
+  onOpenSettings = () => {},
   sidebarSections,
   toggleSidebarSection,
   sessions,
@@ -52,6 +53,12 @@ export default function InspectorSidebar({
   };
 
   const probeInfo = describeMcpProbe(mcpCatalog.runtime);
+  const mcpItems = Array.isArray(mcpCatalog.items) ? mcpCatalog.items : [];
+  const mcpRows = mcpItems.map((item) => ({ item, state: resolveMcpServerState(item, mcpCatalog.mcpEnabled !== false) }));
+  const mcpIssues = mcpRows.filter((row) => row.state.issue);
+  const mcpConnected = mcpRows.filter((row) => row.state.kind === "connected");
+  const mcpMissingEnv = mcpRows.filter((row) => row.state.kind === "missing_env");
+  const mcpChecking = mcpRows.filter((row) => row.state.kind === "checking" || row.state.kind === "not_checked");
 
   return (
     <aside className={`inspector ${sidebarOpen ? "" : "hidden"}`}>
@@ -135,63 +142,81 @@ export default function InspectorSidebar({
           <>
             <div className="panel-toolbar">
               <div className="session-toolbar-row">
-                <p className="session-tag">
-                  开关={mcpCatalog.mcpEnabled ? "ON" : "OFF"} · 数量={mcpCatalog.items.length}
-                </p>
-                <button type="button" className="sidebar-mini-btn" onClick={reloadMcps} disabled={mcpCatalog.loading}>
-                  {mcpCatalog.loading ? "刷新中..." : "刷新"}
-                </button>
+                <p className="session-tag">MCP 总览</p>
+                <div className="session-toolbar-actions">
+                  <button type="button" className="sidebar-mini-btn" onClick={reloadMcps} disabled={mcpCatalog.loading}>
+                    {mcpCatalog.loading ? "刷新中..." : "刷新"}
+                  </button>
+                  <button type="button" className="sidebar-mini-btn" onClick={onOpenSettings}>
+                    配置变量
+                  </button>
+                </div>
+              </div>
+              <div className="mcp-summary-chips">
+                <span className="meta-chip">开关 {mcpCatalog.mcpEnabled ? "ON" : "OFF"}</span>
+                <span className="meta-chip">在线 {mcpConnected.length}</span>
+                <span className={`meta-chip ${mcpIssues.length > 0 ? "warn" : ""}`}>异常 {mcpIssues.length}</span>
+                <span className={`meta-chip ${mcpMissingEnv.length > 0 ? "warn" : ""}`}>缺变量 {mcpMissingEnv.length}</span>
+                <span className="meta-chip">待检测 {mcpChecking.length}</span>
               </div>
               <p className="session-tag">
                 探针={probeInfo.probe} · 最近检测 {probeInfo.lastChecked}
               </p>
               {mcpCatalog.error && <p className="session-tag">加载失败：{mcpCatalog.error}</p>}
             </div>
+            {mcpIssues.length > 0 && (
+              <div className="mcp-issues">
+                <p className="session-tag">待处理项（{mcpIssues.length}）</p>
+                <ul className="mcps-list">
+                  {mcpIssues.map(({ item, state }) => (
+                    <li className="mcp-item mcp-item-issue" key={`issue-${item.name}`}>
+                      <div className="mcp-head">
+                        <p className="mcp-name">{item.name}</p>
+                        <span className={`mcp-status ${state.className}`}>{state.label}</span>
+                      </div>
+                      {state.kind === "missing_env" && Array.isArray(item?.missingEnvVars) && item.missingEnvVars.length > 0 && (
+                        <p className="mcp-error">缺少变量: {item.missingEnvVars.join(", ")}</p>
+                      )}
+                      {state.runtime?.error && <p className="mcp-error">错误: {state.runtime.error}</p>}
+                      <div className="mcp-actions">
+                        {state.kind === "missing_env" && (
+                          <button type="button" className="sidebar-mini-btn" onClick={onOpenSettings}>
+                            去补变量
+                          </button>
+                        )}
+                        {(state.kind === "disconnected" || state.kind === "probe_failed" || state.kind === "unknown") && (
+                          <button type="button" className="sidebar-mini-btn" onClick={reloadMcps}>
+                            重试检测
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <ul className="mcps-list">
-              {mcpCatalog.items.map((item) => {
-                const runtime = item?.runtime || null;
-                const runtimeStatus = String(runtime?.status || "");
-                const status =
-                  !mcpCatalog.mcpEnabled || runtimeStatus === "disabled"
-                    ? "全局关闭"
-                    : runtimeStatus === "missing_env"
-                      ? "缺少环境变量"
-                    : runtimeStatus === "probe_failed"
-                        ? "探针失败"
-                      : runtimeStatus === "checking"
-                        ? "检测中"
-                        : runtime?.connected === true || runtimeStatus === "connected"
-                          ? "在线"
-                          : runtime?.connected === false || runtimeStatus === "disconnected"
-                            ? "离线"
-                            : runtimeStatus === "not_checked"
-                              ? "待检测"
-                              : "未知";
-                const statusClass =
-                  status === "在线"
-                    ? "mcp-status-ok"
-                    : status === "离线" || status === "全局关闭" || status === "缺少环境变量" || status === "探针失败"
-                      ? "mcp-status-off"
-                      : "mcp-status-unknown";
-                return (
-                  <li className="mcp-item" key={item.name}>
-                    <div className="mcp-head">
-                      <p className="mcp-name">{item.name}</p>
-                      <span className={`mcp-status ${statusClass}`}>{status}</span>
+              {mcpRows.map(({ item, state }) => (
+                <li className="mcp-item" key={item.name}>
+                  <div className="mcp-head">
+                    <p className="mcp-name">{item.name}</p>
+                    <span className={`mcp-status ${state.className}`}>{state.label}</span>
+                  </div>
+                  <p className="mcp-meta">类型: {item.type || "unknown"}</p>
+                  <details className="mcp-details">
+                    <summary>查看详情</summary>
+                    <div className="mcp-details-body">
+                      {item.endpoint && <p className="mcp-endpoint">{item.endpoint}</p>}
+                      {state.runtime?.status && <p className="mcp-meta">运行状态: {state.runtime.status}</p>}
+                      {Array.isArray(item?.missingEnvVars) && item.missingEnvVars.length > 0 && (
+                        <p className="mcp-error">缺少变量: {item.missingEnvVars.join(", ")}</p>
+                      )}
+                      {state.runtime?.error && <p className="mcp-error">错误: {state.runtime.error}</p>}
                     </div>
-                    <p className="mcp-meta">
-                      类型: {item.type || "unknown"}
-                      {runtime?.status ? ` · ${runtime.status}` : ""}
-                    </p>
-                    {item.endpoint && <p className="mcp-endpoint">{item.endpoint}</p>}
-                    {Array.isArray(item?.missingEnvVars) && item.missingEnvVars.length > 0 && (
-                      <p className="mcp-error">缺少变量: {item.missingEnvVars.join(", ")}</p>
-                    )}
-                    {runtime?.error && <p className="mcp-error">错误: {runtime.error}</p>}
-                  </li>
-                );
-              })}
-              {mcpCatalog.items.length === 0 && !mcpCatalog.loading && <li className="sessions-empty">未发现 MCP 配置</li>}
+                  </details>
+                </li>
+              ))}
+              {mcpItems.length === 0 && !mcpCatalog.loading && <li className="sessions-empty">未发现 MCP 配置</li>}
             </ul>
           </>
         )}

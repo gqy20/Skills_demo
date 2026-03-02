@@ -12,6 +12,7 @@ export default function ExecutionPanel({
   mcpRuntimeStatus,
   mcpProbeRuntime,
   hookTimeline = [],
+  showHookTimeline = false,
   showNoDeltaHint,
   onDismissNoDelta,
   onForceStopAndRetry
@@ -66,7 +67,7 @@ export default function ExecutionPanel({
           </div>
         </div>
       )}
-      <HookTimeline items={hookTimeline} />
+      {showHookTimeline && <HookTimeline items={hookTimeline} />}
     </section>
   );
 }

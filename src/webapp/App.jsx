@@ -171,6 +171,7 @@ export default function App() {
         setCurrentSessionId,
         setActiveTurnTrace,
         loadSessions,
+        loadMcps,
         setMcpRuntimeStatus,
         setExecutionState,
         trackMcpUsage,
@@ -203,7 +204,6 @@ export default function App() {
     executionState.phase !== "responding" &&
     !executionState.dismissNoDelta &&
     !blockingPending;
-  const showExecutionPanel = isStreaming || blockingPending;
 
   useEffect(() => {
     if (!lastAssistantId || !activeTurnTrace?.completedAt) return;
@@ -373,6 +373,28 @@ export default function App() {
       ageSeconds: null
     };
   }, [mcpCatalog, mcpRuntimeStatus]);
+  const mcpProbeHasIssue = effectiveMcpProbeRuntime?.ok === false;
+  const showExecutionPanel =
+    blockingPending || executionState.phase === "error" || showNoDeltaHint || (isStreaming && mcpProbeHasIssue);
+
+  useEffect(() => {
+    if (!currentWorkspaceId) return;
+    const timer = setInterval(() => {
+      if (document.hidden || isStreaming || blockingPending || openingSessionId) return;
+      loadSessions().catch(() => {});
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [blockingPending, currentWorkspaceId, isStreaming, loadSessions, openingSessionId]);
+
+  useEffect(() => {
+    if (!currentWorkspaceId) return;
+    if (mcpCatalog?.runtime?.checking !== true) return;
+    const timer = setInterval(() => {
+      if (document.hidden) return;
+      loadMcps().catch(() => {});
+    }, 1200);
+    return () => clearInterval(timer);
+  }, [currentWorkspaceId, loadMcps, mcpCatalog?.runtime?.checking]);
 
   const toggleSidebarSection = (key) =>
     setSidebarSections((prev) => ({
@@ -430,6 +452,7 @@ export default function App() {
                   showNoDeltaHint={showNoDeltaHint}
                   onDismissNoDelta={() => setExecutionState((prev) => ({ ...prev, dismissNoDelta: true }))}
                   onForceStopAndRetry={forceStopAndRetry}
+                  showHookTimeline={settings.debugEnabled}
                 />
 
                 <ChatMessageList
@@ -506,6 +529,7 @@ export default function App() {
           setSkillExpanded={setSkillExpanded}
           mcpCatalog={mcpCatalog}
           reloadMcps={() => refreshMcps().catch(() => {})}
+          onOpenSettings={() => setSettingsOpen(true)}
           sidebarSections={sidebarSections}
           toggleSidebarSection={toggleSidebarSection}
           sessions={sessions}
