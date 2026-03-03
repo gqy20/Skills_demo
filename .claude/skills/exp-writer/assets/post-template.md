@@ -1,6 +1,6 @@
 ---
 id: exp-{{YYYYMMDD}}-{{shortid}}
-title: "{{title}}"
+title: "[{{module}}] {{title}}"
 date: {{YYYY-MM-DD}}
 doc_type: postmortem
 status: draft
@@ -8,9 +8,23 @@ owner: "{{owner}}"
 tags: []
 summary: ""
 impact: ""
+service: ""
+module: ""
+env: prod
+version: ""
+problem_signature:
+  error_code: ""
+  keyword: ""
+  log: ""
+  trigger: ""
 root_cause: ""
-actions: ""
+decision_rationale: ""
+actions: []
 evidence_links: []
+applies_to: ""
+not_applies_to: ""
+verification_steps: []
+success_criteria: []
 reviewer: ""
 severity: medium
 repo: ""
@@ -24,17 +38,26 @@ visibility: team
 
 ## 2. 现象与影响
 
-## 3. 根因分析
+## 3. 排查/思路时间线（观察 -> 假设 -> 验证 -> 结论）
 
-## 4. 解决方案
+## 4. 根因分析
 
-## 5. 验证与结果
+## 5. 方案对比与决策理由
 
-## 6. 踩坑与反模式
+## 6. 最终方案
 
-## 7. Action Items
+### changes
+
+### prerequisites
+
+### rollback
+
+## 7. 验证与结果
+
+## 8. 踩坑与反模式
+
+## 9. Action Items
 
 - [ ] owner: @, due: YYYY-MM-DD, item:
 
-## 8. 关联资料
-
+## 10. 关联资料

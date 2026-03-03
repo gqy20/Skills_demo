@@ -4,10 +4,10 @@ set -euo pipefail
 # Usage:
 #   new_post.sh "topic" [target_dir] [owner]
 # Example:
-#   new_post.sh "cache invalidation" ~/.exp qy
+#   new_post.sh "cache invalidation" ./knowledge/exp qy
 
 TOPIC="${1:-}"
-TARGET_DIR="${2:-$HOME/.exp}"
+TARGET_DIR="${2:-$(pwd)/knowledge/exp}"
 OWNER="${3:-}"
 
 if [[ -z "$TOPIC" ]]; then
@@ -41,7 +41,7 @@ while [[ -e "$FILE" ]]; do
   FILE="$TARGET_DIR/${DATE_DASH}-${SLUG}-${SHORTID}.md"
 done
 
-TITLE="[$SLUG] ${TOPIC}"
+TITLE="[待补充] ${TOPIC}"
 ID="exp-${DATE_COMPACT}-${SHORTID}"
 
 cat > "$FILE" <<EOM
@@ -51,13 +51,27 @@ title: "${TITLE}"
 date: ${DATE_DASH}
 doc_type: postmortem
 status: draft
-owner: "${OWNER}"
+owner: "${OWNER:-待补充}"
 tags: []
 summary: ""
 impact: ""
+service: ""
+module: ""
+env: prod
+version: ""
+problem_signature:
+  error_code: ""
+  keyword: ""
+  log: ""
+  trigger: ""
 root_cause: ""
-actions: ""
+decision_rationale: ""
+actions: []
 evidence_links: []
+applies_to: ""
+not_applies_to: ""
+verification_steps: []
+success_criteria: []
 reviewer: ""
 severity: medium
 repo: ""
@@ -71,19 +85,29 @@ visibility: team
 
 ## 2. 现象与影响
 
-## 3. 根因分析
+## 3. 排查/思路时间线（观察 -> 假设 -> 验证 -> 结论）
 
-## 4. 解决方案
+## 4. 根因分析
 
-## 5. 验证与结果
+## 5. 方案对比与决策理由
 
-## 6. 踩坑与反模式
+## 6. 最终方案
 
-## 7. Action Items
+### changes
+
+### prerequisites
+
+### rollback
+
+## 7. 验证与结果
+
+## 8. 踩坑与反模式
+
+## 9. Action Items
 
 - [ ] owner: @, due: YYYY-MM-DD, item:
 
-## 8. 关联资料
+## 10. 关联资料
 
 EOM
 
